@@ -1,0 +1,25 @@
+{
+  "name": "urbanfleet-monorepo",
+  "version": "1.0.0",
+  "description": "UrbanFleet Event-Driven Microservices Monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "vitest run",
+    "prisma:generate:all": "npm run prisma:generate --workspaces --if-present",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  }
+}

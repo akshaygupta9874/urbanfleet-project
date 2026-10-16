@@ -1,0 +1,194 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+enum PayoutStatus {
+  PENDING
+  SUBMITTED
+  PROCESSED
+  FAILED
+  REVERSED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum LedgerAccount {
+  RIDER
+  PLATFORM
+  DRIVER
+  BANK
+  RIDER_WALLET
+  DRIVER_WALLET
+  PLATFORM_COMMISSION
+  GATEWAY_CLEARING
+  TAX_COLLECTED
+}
+
+enum LedgerEntryType {
+  DEBIT
+  CREDIT
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+model Payment {
+  id                         String        @id @default(uuid()) @db.Uuid
+  rideId                     String        @unique @map("ride_id") @db.Uuid
+  riderId                    String        @map("rider_id") @db.Uuid
+  driverId                   String?       @map("driver_id") @db.Uuid
+
+  paymentSequence            Int           @default(1) @map("payment_sequence")
+  gateway                    String        @default("RAZORPAY") @db.VarChar(50)
+  gatewayOrderId             String?       @map("gateway_order_id") @db.VarChar(255)
+  gatewayPaymentId           String?       @unique @map("gateway_payment_id") @db.VarChar(255)
+  amountPaise                Int           @map("amount_paise")
+  currency                   String        @default("INR") @db.VarChar(3)
+  status                     PaymentStatus @default(PENDING)
+  method                     String?       @db.VarChar(50)
+  fareBreakdown              Json?         @map("fare_breakdown")
+  idempotencyKey             String?       @unique @map("idempotency_key") @db.VarChar(255)
+  attemptNumber              Int           @default(1) @map("attempt_number")
+  failureReason              String?       @map("failure_reason")
+  failureCode                String?       @map("failure_code")
+  lastFailedGatewayPaymentId String?       @map("last_failed_gateway_payment_id") @db.VarChar(255)
+  refundedAmountPaise        Int           @default(0) @map("refunded_amount_paise")
+  ledgerTransactionId        String?       @map("ledger_transaction_id") @db.VarChar(255)
+  metadata                   Json?
+  capturedAt                 DateTime?     @map("captured_at")
+  refundedAt                 DateTime?     @map("refunded_at")
+
+  createdAt                  DateTime      @default(now()) @map("created_at")
+  updatedAt                  DateTime      @updatedAt @map("updated_at")
+
+  payouts                    Payout[]
+  refunds                    Refund[]
+
+  @@map("payments")
+}
+
+model Refund {
+  id                  String       @id @default(uuid()) @db.Uuid
+  paymentId           String       @map("payment_id") @db.Uuid
+  payment             Payment      @relation(fields: [paymentId], references: [id])
+  amountPaise         Int          @map("amount_paise")
+  reason              String?
+  gatewayRefundId     String?      @unique @map("gateway_refund_id") @db.VarChar(255)
+  ledgerTransactionId String       @map("ledger_transaction_id") @db.Uuid
+  status              RefundStatus @default(PENDING)
+  createdAt           DateTime     @default(now()) @map("created_at")
+
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+model Payout {
+  id                          String       @id @default(uuid()) @db.Uuid
+  driverId                    String       @map("driver_id") @db.Uuid
+  paymentId                   String?      @map("payment_id") @db.Uuid
+  payment                     Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  rideId                      String       @map("ride_id") @db.Uuid
+
+  amountPaise                 Int          @map("amount_paise")
+  currency                    String       @default("INR") @db.VarChar(3)
+  status                      PayoutStatus @default(PENDING)
+  mode                        String       @default("IMPS") @db.VarChar(20)
+  gatewayPayoutId             String?      @unique @map("gateway_payout_id") @db.VarChar(255)
+  utr                         String?      @db.VarChar(255)
+  ledgerTransactionId         String?      @map("ledger_transaction_id") @db.VarChar(255)
+  reversalLedgerTransactionId String?      @map("reversal_ledger_transaction_id") @db.VarChar(255)
+  failureReason               String?      @map("failure_reason")
+  metadata                    Json?
+
+  processedAt                 DateTime?    @map("processed_at")
+  failedAt                    DateTime?    @map("failed_at")
+  reversedAt                  DateTime?    @map("reversed_at")
+
+  createdAt                   DateTime     @default(now()) @map("created_at")
+  updatedAt                   DateTime     @updatedAt @map("updated_at")
+
+  @@index([driverId])
+  @@index([rideId])
+  @@map("payouts")
+}
+
+model LedgerEntry {
+  id             String          @id @default(uuid()) @db.Uuid
+  transactionId  String          @map("transaction_id") @db.Uuid
+  account        LedgerAccount
+  entryType      LedgerEntryType @map("entry_type")
+  amountPaise    BigInt          @map("amount_paise")
+  currency       String          @default("INR") @db.VarChar(3)
+
+  ownerId        String?         @map("owner_id") @db.VarChar(255)
+  referenceType  String          @map("reference_type") @db.VarChar(50)
+  referenceId    String?         @map("reference_id") @db.VarChar(255)
+  idempotencyKey String?         @map("idempotency_key") @db.VarChar(255)
+  legIndex       Int?            @map("leg_index")
+  description    String?
+  metadata       Json?
+
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@unique([idempotencyKey, legIndex])
+  @@index([transactionId])
+  @@index([account, ownerId])
+  @@map("ledger_entries")
+}
+
+model OutboxEvent {
+  id                String       @id @default(uuid()) @db.Uuid
+  topic             String       @db.VarChar(100)
+  partitionKey      String       @map("partition_key") @db.VarChar(100)
+  eventType         String       @map("event_type") @db.VarChar(100)
+  aggregateType     String       @map("aggregate_type") @db.VarChar(50)
+  aggregateId       String       @map("aggregate_id") @db.VarChar(100)
+  aggregateSequence Int          @map("aggregate_sequence")
+  payload           Json
+  status            OutboxStatus @default(PENDING)
+  retryCount        Int          @default(0) @map("retry_count")
+  lastError         String?      @map("last_error")
+  lockedAt          DateTime?    @map("locked_at")
+  lockedBy          String?      @map("locked_by") @db.VarChar(100)
+  leaseExpiresAt    DateTime?    @map("lease_expires_at")
+  publishedAt       DateTime?    @map("published_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@unique([aggregateType, aggregateId, aggregateSequence])
+  @@index([status, leaseExpiresAt, createdAt])
+  @@index([partitionKey, aggregateSequence])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @map("event_id") @db.Uuid
+  consumerGroup String   @map("consumer_group") @db.VarChar(100)
+  processedAt   DateTime @default(now()) @map("processed_at")
+
+  @@id([eventId, consumerGroup])
+  @@map("processed_events")
+}

@@ -1,0 +1,108 @@
+_format_version: "3.0"
+
+services:
+  # ========================================================
+  # 1. AUTH SERVICE (Internal Port 4001)
+  # ========================================================
+  - name: auth-service
+    url: http://auth-service:4001
+    routes:
+      - name: auth-routes
+        paths:
+          - /api/auth
+        strip_path: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 60
+              policy: local
+
+  # ========================================================
+  # 2. DRIVER SERVICE (Internal Port 4002)
+  # ========================================================
+  - name: driver-service
+    url: http://driver-service:4002
+    routes:
+      - name: driver-routes
+        paths:
+          - /api/driver
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+  # ========================================================
+  # 3. RIDE SERVICE (HTTP - Internal Port 4004)
+  # ========================================================
+  - name: ride-service
+    url: http://ride-service:4004
+    routes:
+      - name: ride-routes
+        paths:
+          - /api/ride
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+  # ========================================================
+  # 4. RIDE WEBSOCKET SERVICE (Native WS Upgrade)
+  # ========================================================
+  - name: ride-websocket-service
+    url: http://ride-service:4004
+    routes:
+      - name: ride-websocket-route
+        paths:
+          - /ws/ride
+        strip_path: false
+        protocols:
+          - http
+          - https # 👈 Native WS upgrades transparently handled over HTTP/HTTPS
+
+  # ========================================================
+  # 5. PAYMENT SERVICE (Internal Port 4005)
+  # ========================================================
+  - name: payment-service
+    url: http://payment-service:4005
+    routes:
+      - name: payment-routes
+        paths:
+          - /api/payment
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+plugins:
+  # Global Dynamic CORS Plugin
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:5173"
+        - "http://localhost:3000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-Type
+        - Authorization
+        - X-Request-ID
+      credentials: true
+      max_age: 3600
+
+  # Global Correlation ID Plugin
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true

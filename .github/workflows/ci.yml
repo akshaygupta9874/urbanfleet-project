@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  monorepo-ci:
+    name: Microservices Monorepo CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_admin_pwd
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres_admin_pwd@127.0.0.1:5432/postgres?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      KAFKA_BROKERS: localhost:9092
+      FRONTEND_URL: http://localhost:5173
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Initialize PostgreSQL multi-databases & roles
+        run: |
+          echo "Initializing 5 microservices databases and least-privilege roles..."
+          PGPASSWORD=postgres_admin_pwd psql -h 127.0.0.1 -U postgres -f infra/init-databases.sql
+
+      - name: Generate Prisma clients for all services
+        run: npm run prisma:generate:all
+        env:
+          DATABASE_URL: postgresql://postgres:postgres_admin_pwd@127.0.0.1:5432/postgres?schema=public
+
+      - name: Typecheck monorepo packages & services
+        run: npm run typecheck
+
+      - name: Run automated test suites (Vitest)
+        run: npm test
+
+      - name: Build monorepo packages & services
+        run: npm run build
+
+      - name: Validate Docker build for auth-service
+        run: docker build -f services/auth-service/Dockerfile -t urbanfleet/auth-service:ci .
+
+      - name: Validate Docker build for driver-service
+        run: docker build -f services/driver-service/Dockerfile -t urbanfleet/driver-service:ci .
+
+      - name: Validate Docker build for ride-service
+        run: docker build -f services/ride-service/Dockerfile -t urbanfleet/ride-service:ci .
+
+      - name: Validate Docker build for payment-service
+        run: docker build -f services/payment-service/Dockerfile -t urbanfleet/payment-service:ci .
+
+      - name: Validate Docker build for notification-service
+        run: docker build -f services/notification-service/Dockerfile -t urbanfleet/notification-service:ci .
+
+  frontend-ci:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Build frontend production bundle
+        run: npm run build
+        env:
+          VITE_API_URL: http://localhost:3001
+          VITE_WS_URL: ws://localhost:3001/ws/ride

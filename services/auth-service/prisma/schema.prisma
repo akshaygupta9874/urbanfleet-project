@@ -1,0 +1,63 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  RIDER
+  DRIVER
+  ADMIN
+}
+
+model User {
+  id                  String        @id @default(uuid()) @db.Uuid
+  email               String        @unique @db.VarChar(255)
+  passwordHash        String        @map("password_hash") @db.VarChar(255)
+  fullName            String        @map("full_name") @db.VarChar(100)
+  phone               String?       @unique @db.VarChar(20)
+  role                Role          @default(RIDER)
+  isEmailVerified     Boolean       @default(false) @map("is_email_verified")
+  twoFactorEnabled    Boolean       @default(false) @map("two_factor_enabled")
+  twoFactorSecret     String?       @map("two_factor_secret") @db.VarChar(255)
+  avatarUrl           String?       @map("avatar_url") @db.VarChar(500)
+  status              String        @default("ACTIVE") @db.VarChar(20)
+
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  sessions            Session[]
+  auditLogs           AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String    @unique @map("refresh_token") @db.VarChar(500)
+  userAgent    String?   @map("user_agent") @db.VarChar(255)
+  ipAddress    String?   @map("ip_address") @db.VarChar(45)
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   @db.VarChar(100)
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("audit_logs")
+}

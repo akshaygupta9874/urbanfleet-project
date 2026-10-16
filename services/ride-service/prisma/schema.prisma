@@ -1,0 +1,125 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RideStatus {
+  REQUESTED
+  OFFERED
+  ACCEPTED
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum RidePaymentStatus {
+  PENDING
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+model Ride {
+  id                 String            @id @default(uuid()) @db.Uuid
+  riderId            String            @map("rider_id") @db.Uuid
+  driverId           String?           @map("driver_id") @db.Uuid
+  vehicleCategory    String            @default("SEDAN") @map("vehicle_category") @db.VarChar(20)
+
+  status             RideStatus        @default(REQUESTED)
+  paymentStatus      RidePaymentStatus @default(PENDING) @map("payment_status")
+  rideSequence       Int               @default(1) @map("ride_sequence") // Monotonic aggregate sequence
+
+  pickupLat          Decimal           @map("pickup_lat") @db.Decimal(10, 7)
+  pickupLng          Decimal           @map("pickup_lng") @db.Decimal(10, 7)
+  pickupAddress      String            @map("pickup_address") @db.VarChar(255)
+
+  destinationLat     Decimal           @map("destination_lat") @db.Decimal(10, 7)
+  destinationLng     Decimal           @map("destination_lng") @db.Decimal(10, 7)
+  destinationAddress String            @map("destination_address") @db.VarChar(255)
+
+  distanceKm         Decimal           @map("distance_km") @db.Decimal(6, 2)
+  durationMinutes    Int               @map("duration_minutes")
+
+  baseFarePaise      Int               @map("base_fare_paise")
+  surgeMultiplier    Decimal           @default(1.0) @map("surge_multiplier") @db.Decimal(3, 2)
+  totalFarePaise     Int               @map("total_fare_paise")
+
+  otp                String?           @db.VarChar(6)
+  cancelledBy        String?           @map("cancelled_by") @db.VarChar(20)
+  cancellationReason String?           @map("cancellation_reason")
+
+  acceptedAt         DateTime?         @map("accepted_at")
+  arrivedAt          DateTime?         @map("arrived_at")
+  startedAt          DateTime?         @map("started_at")
+  completedAt        DateTime?         @map("completed_at")
+  cancelledAt        DateTime?         @map("cancelled_at")
+
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  ratings            Rating[]
+
+  @@index([riderId])
+  @@index([driverId])
+  @@index([status])
+  @@map("rides")
+}
+
+model Rating {
+  id        String   @id @default(uuid()) @db.Uuid
+  rideId    String   @map("ride_id") @db.Uuid
+  ride      Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  fromId    String   @map("from_id") @db.Uuid
+  toId      String   @map("to_id") @db.Uuid
+  score     Int
+  feedback  String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([rideId])
+  @@map("ratings")
+}
+
+model OutboxEvent {
+  id                String       @id @default(uuid()) @db.Uuid
+  topic             String       @db.VarChar(100)
+  partitionKey      String       @map("partition_key") @db.VarChar(100)
+  eventType         String       @map("event_type") @db.VarChar(100)
+  aggregateType     String       @map("aggregate_type") @db.VarChar(50)
+  aggregateId       String       @map("aggregate_id") @db.VarChar(100)
+  aggregateSequence Int          @map("aggregate_sequence")
+  payload           Json
+  status            OutboxStatus @default(PENDING)
+  retryCount        Int          @default(0) @map("retry_count")
+  lastError         String?      @map("last_error")
+  lockedAt          DateTime?    @map("locked_at")
+  lockedBy          String?      @map("locked_by") @db.VarChar(100)
+  leaseExpiresAt    DateTime?    @map("lease_expires_at")
+  publishedAt       DateTime?    @map("published_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@unique([aggregateType, aggregateId, aggregateSequence])
+  @@index([status, leaseExpiresAt, createdAt])
+  @@index([partitionKey, aggregateSequence])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @map("event_id") @db.Uuid
+  consumerGroup String   @map("consumer_group") @db.VarChar(100)
+  processedAt   DateTime @default(now()) @map("processed_at")
+
+  @@id([eventId, consumerGroup])
+  @@map("processed_events")
+}

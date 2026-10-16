@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.env
+.git
+.github
+*.log
+certs/
+*.pem
+*.key
