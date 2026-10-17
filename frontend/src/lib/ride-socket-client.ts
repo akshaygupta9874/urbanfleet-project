@@ -12,12 +12,22 @@ export class RideSocketClient {
   private heartbeatTimer: any = null;
   private isExplicitlyClosed = false;
 
+  private gatewayUrl: string;
+  private token: string;
+  private onStateRehydrate: () => Promise<void>;
+  private onMessage: (event: string, data: any) => void;
+
   constructor(
-    private gatewayUrl: string, // E.g., 'ws://localhost:3001/ws/ride'
-    private token: string,
-    private onStateRehydrate: () => Promise<void>,
-    private onMessage: (event: string, data: any) => void
-  ) {}
+    gatewayUrl: string, // E.g., 'ws://localhost:3001/ws/ride'
+    token: string,
+    onStateRehydrate: () => Promise<void>,
+    onMessage: (event: string, data: any) => void
+  ) {
+    this.gatewayUrl = gatewayUrl;
+    this.token = token;
+    this.onStateRehydrate = onStateRehydrate;
+    this.onMessage = onMessage;
+  }
 
   public connect(): void {
     this.isExplicitlyClosed = false;
@@ -47,7 +57,7 @@ export class RideSocketClient {
       }
     };
 
-    this.ws.onclose = (event: CloseEvent) => {
+    this.ws.onclose = (_event: CloseEvent) => {
       this.stopHeartbeat();
       if (!this.isExplicitlyClosed) {
         this.scheduleReconnect();

@@ -89,7 +89,7 @@ export const getCookieValue = (name: string) => {
 
 const attachAuthInterceptors = (instance: AxiosInstance) => {
   instance.interceptors.request.use((config) => {
-    config.headers = config.headers || {};
+    config.headers = config.headers || ({} as any);
 
     if (accessToken) {
       (config.headers as Record<string, string>).Authorization =
