@@ -223,13 +223,16 @@ model ProcessedEvent {
 }
 
 model Ride {
-  id            String            @id @default(uuid()) @db.Uuid
-  riderId       String            @map("rider_id") @db.Uuid
-  driverId      String?           @map("driver_id") @db.Uuid
-  status        RideStatus        @default(SEARCHING)
-  paymentStatus RidePaymentStatus @default(PENDING) @map("payment_status")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
+  id                 String            @id @default(uuid()) @db.Uuid
+  riderId            String            @map("rider_id") @db.Uuid
+  driverId           String?           @map("driver_id") @db.Uuid
+  status             RideStatus        @default(SEARCHING)
+  paymentStatus      RidePaymentStatus @default(PENDING) @map("payment_status")
+  otp                String?           @db.VarChar(6)
+  cancelledBy        String?           @map("cancelled_by") @db.VarChar(20)
+  cancellationReason String?           @map("cancellation_reason")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
 
   @@map("rides")
 }

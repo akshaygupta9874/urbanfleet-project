@@ -74,7 +74,7 @@ export class RideService {
     });
   }
 
-  async getRideById(id: string, requestingUserId?: string, userRole?: string | string[]) {
+  async getRideById(id: string, requestingUserId?: string, userRole?: string | string[]): Promise<any> {
     const ride = await this.rideRepo.findById(id);
     if (!ride) throw new NotFoundError('Ride not found');
 
@@ -328,7 +328,7 @@ export class RideService {
     });
   }
 
-  async cancelRide(rideId: string, userId: string, reason?: string) {
+  async cancelRide(rideId: string, userId: string, reason?: string): Promise<any> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');

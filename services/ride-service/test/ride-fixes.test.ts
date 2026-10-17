@@ -188,21 +188,21 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'ACCEPTED', otp: '7890' });
 
       // 1. Rider can see OTP
-      const riderView = await rideService.getRideById('ride-test-1', 'rider-abc', 'RIDER');
+      const riderView: any = await rideService.getRideById('ride-test-1', 'rider-abc', 'RIDER');
       expect(riderView.otp).toBe('7890');
 
       // 2. Assigned driver cannot see OTP while ride is active
-      const driverView = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
+      const driverView: any = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
       expect(driverView.otp).toBeNull();
 
       // 3. Assigned driver CAN see OTP once completed
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'COMPLETED', otp: '7890' });
-      const completedDriverView = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
+      const completedDriverView: any = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
       expect(completedDriverView.otp).toBe('7890');
 
       // 4. Admin can always see OTP
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'ACCEPTED', otp: '7890' });
-      const adminView = await rideService.getRideById('ride-test-1', 'admin-1', 'ADMIN');
+      const adminView: any = await rideService.getRideById('ride-test-1', 'admin-1', 'ADMIN');
       expect(adminView.otp).toBe('7890');
 
       // 5. Unrelated third-party is Forbidden (403)
@@ -297,7 +297,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
         acceptedAt: new Date(Date.now() - 250000), // ~4 mins ago
       });
 
-      const riderCancel = await rideService.cancelRide('ride-test-1', 'rider-abc', 'Change of plans');
+      const riderCancel: any = await rideService.cancelRide('ride-test-1', 'rider-abc', 'Change of plans');
       expect(riderCancel.status).toBe('CANCELLED');
       expect(riderCancel.cancelledBy).toBe('RIDER');
       expect(riderCancel.cancellationFeePaise).toBe(5000); // ₹50
@@ -308,7 +308,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
         status: 'ACCEPTED',
         acceptedAt: new Date(Date.now() - 250000),
       });
-      const driverCancel = await rideService.cancelRide('ride-test-1', 'driver-xyz', 'Vehicle puncture');
+      const driverCancel: any = await rideService.cancelRide('ride-test-1', 'driver-xyz', 'Vehicle puncture');
       expect(driverCancel.status).toBe('CANCELLED');
       expect(driverCancel.cancelledBy).toBe('DRIVER');
       expect(driverCancel.cancellationFeePaise).toBe(0);
