@@ -158,6 +158,45 @@ export class AuthService {
     };
   }
 
+  async complete2FALogin(user: { id: string; email: string; role: Role; fullName?: string }, ipAddress?: string, userAgent?: string) {
+    const sessionId = crypto.randomUUID();
+    const accessToken = signAccessToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId
+    });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
+
+    const session = await this.sessionRepo.create({
+      id: sessionId,
+      userId: user.id,
+      refreshToken,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      ipAddress,
+      userAgent
+    });
+
+    await cacheTokens(user.id, session.id, accessToken, refreshToken);
+
+    await this.auditRepo.record({
+      userId: user.id,
+      action: 'USER_LOGIN_2FA',
+      ipAddress
+    });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName || '',
+        role: user.role
+      },
+      accessToken,
+      refreshToken
+    };
+  }
+
   async logout(refreshToken: string) {
     const session = await this.sessionRepo.findByToken(refreshToken);
     if (session) {

@@ -27,5 +27,19 @@ export function createAuthRouter(controller: AuthController): Router {
     router.post('/refresh-csrf', controller.refreshCSRF);
   }
 
+  // 2FA Management Endpoints
+  if (controller.enable2FA) {
+    router.post('/2fa/initiate', controller.enable2FA);
+  }
+  if (controller.verify2FA) {
+    router.post('/2fa/verify', controller.verify2FA);
+  }
+  if (controller.disable2FA) {
+    router.post('/2fa/disable', controller.disable2FA);
+  }
+  if (controller.regenerateRecoveryCodes) {
+    router.post('/2fa/recovery-codes', controller.regenerateRecoveryCodes);
+  }
+
   return router;
 }

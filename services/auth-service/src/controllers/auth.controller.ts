@@ -4,7 +4,7 @@ import { UserService } from '../services/user.service.js';
 import { TwoFactorService } from '../services/two-factor.service.js';
 import { getCookieOptions, getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
 import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from '../middlewares/csrf.middleware.js';
-import { UnauthorizedError, AuthenticatedRequest } from '@urbanfleet/common';
+import { UnauthorizedError, BadRequestError, AuthenticatedRequest } from '@urbanfleet/common';
 import asyncHandler from '../middlewares/asyncHandler.js';
 
 export class AuthController {
@@ -37,6 +37,14 @@ export class AuthController {
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         csrfToken,
+        tokens: {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        }
+      },
+      tokens: {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       },
       user: result.user,
       accessToken: result.accessToken,
@@ -51,13 +59,15 @@ export class AuthController {
       userAgent: req.headers['user-agent']
     });
 
-    if (result.requires2FA) {
+    if (result.requires2FA && result.userId) {
+      const challenge = await this.twoFactorService.initiateLoginChallenge(result.userId, req.ip);
       return res.status(200).json({
         success: true,
         data: {
           requiresTwoFactor: true,
-          userId: result.userId,
-          message: 'Two-Factor Authentication required. Please provide TOTP token.'
+          challengeToken: challenge.challengeToken,
+          expiresInSeconds: challenge.expiresInSeconds,
+          message: 'Two-Factor Authentication required. Please provide TOTP verification code or recovery code.'
         }
       });
     }
@@ -78,12 +88,88 @@ export class AuthController {
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         csrfToken,
+        tokens: {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        }
+      },
+      tokens: {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       },
       user: result.user,
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
     });
   });
+
+  login2FA = asyncHandler(async (req: Request, res: Response) => {
+    let user: any = null;
+
+    if (req.body.challengeToken) {
+      if (req.body.recoveryCode) {
+        const result = await this.twoFactorService.verifyRecoveryCode(
+          req.body.challengeToken,
+          req.body.recoveryCode,
+          req.ip
+        );
+        user = result.user;
+      } else {
+        const code = req.body.code || req.body.token || req.body.otp;
+        user = await this.twoFactorService.verifyLoginChallenge(
+          req.body.challengeToken,
+          code,
+          req.ip
+        );
+      }
+    } else if (req.body.userId) {
+      // Backward compatibility for legacy test callers
+      const isValid = await this.twoFactorService.verifyToken(
+        req.body.userId,
+        req.body.token || req.body.otp
+      );
+      if (!isValid) return res.status(401).json({ success: false, message: 'Invalid 2FA code' });
+      user = await this.userService.getUserById(req.body.userId);
+    } else {
+      throw new UnauthorizedError('2FA challenge token or credentials required');
+    }
+
+    const authResult = await this.authService.complete2FALogin(
+      user,
+      req.ip,
+      req.headers['user-agent']
+    );
+
+    // Set httpOnly refresh cookie
+    res.cookie('refreshToken', authResult.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+
+    // Generate CSRF cookie
+    const csrfToken = await generateCSRFToken(user.id, res);
+
+    res.status(200).json({
+      success: true,
+      message: '2FA authentication successful',
+      data: {
+        user: authResult.user,
+        accessToken: authResult.accessToken,
+        refreshToken: authResult.refreshToken,
+        csrfToken,
+        tokens: {
+          accessToken: authResult.accessToken,
+          refreshToken: authResult.refreshToken,
+        }
+      },
+      tokens: {
+        accessToken: authResult.accessToken,
+        refreshToken: authResult.refreshToken,
+      },
+      user: authResult.user,
+      accessToken: authResult.accessToken,
+      refreshToken: authResult.refreshToken,
+    });
+  });
+
+  verifyOtp = asyncHandler(async (req: Request, res: Response, next: NextFunction) => this.login2FA(req, res, next));
 
   refreshToken = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     // Refresh token is strictly and only extracted from httpOnly cookies
@@ -108,6 +194,14 @@ export class AuthController {
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         csrfToken,
+        tokens: {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        }
+      },
+      tokens: {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       },
       user: result.user,
       accessToken: result.accessToken,
@@ -196,8 +290,16 @@ export class AuthController {
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
-    const result = await this.twoFactorService.generateSecret(userId);
-    res.status(200).json({ success: true, data: result });
+    const result = await this.twoFactorService.initiateSetup(userId);
+    res.status(200).json({
+      success: true,
+      message: '2FA setup initiated successfully. Scan QR code with your authenticator app.',
+      data: {
+        qrCodeUrl: result.qrCodeUrl,
+        otpauthUri: result.otpauthUri,
+        expiresInSeconds: result.expiresInSeconds,
+      }
+    });
   });
 
   verify2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -206,8 +308,17 @@ export class AuthController {
       throw new UnauthorizedError('User unauthenticated');
     }
     const { token } = req.body;
-    const result = await this.twoFactorService.enable2FA(userId, token);
-    res.status(200).json({ success: true, data: result });
+    if (!token) {
+      throw new BadRequestError('Verification token is required');
+    }
+    const result = await this.twoFactorService.verifyAndEnable(userId, token);
+    res.status(200).json({
+      success: true,
+      message: '2FA enabled successfully',
+      data: {
+        recoveryCodes: result.recoveryCodes,
+      }
+    });
   });
 
   disable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -215,21 +326,31 @@ export class AuthController {
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
-    const { token } = req.body;
-    const result = await this.twoFactorService.disable2FA(userId, token);
-    res.status(200).json({ success: true, data: result });
+    const { password, code } = req.body;
+    if (!password) {
+      throw new BadRequestError('Password is required to disable 2FA');
+    }
+    await this.twoFactorService.disable2FA(userId, password, code);
+    res.status(200).json({ success: true, message: '2FA disabled successfully' });
   });
 
-  verifyOtp = asyncHandler(async (req: Request, res: Response, next: NextFunction) => this.login2FA(req, res, next));
-
-  login2FA = asyncHandler(async (req: Request, res: Response) => {
-    const { userId, token } = req.body;
-    const isValid = await this.twoFactorService.verifyToken(userId, token);
-    if (!isValid) return res.status(401).json({ success: false, message: 'Invalid 2FA code' });
-
-    // Generate CSRF cookie for authenticated 2FA session
-    const csrfToken = await generateCSRFToken(userId, res);
-    res.status(200).json({ success: true, message: '2FA authentication successful', data: { csrfToken } });
+  regenerateRecoveryCodes = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId || req.user?.id || req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+    const { password } = req.body;
+    if (!password) {
+      throw new BadRequestError('Password is required to regenerate recovery codes');
+    }
+    const result = await this.twoFactorService.regenerateRecoveryCodes(userId, password);
+    res.status(200).json({
+      success: true,
+      message: 'Recovery codes regenerated successfully',
+      data: {
+        recoveryCodes: result.recoveryCodes,
+      }
+    });
   });
 
   refreshCSRF = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

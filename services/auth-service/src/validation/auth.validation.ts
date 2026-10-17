@@ -17,9 +17,34 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-export const verifyOtpSchema = z.object({
-  email: z.string().email('Invalid email address format'),
-  otp: z.string().min(4, 'OTP must be at least 4 digits').max(8),
+export const verifyOtpSchema = z.union([
+  z.object({
+    challengeToken: z.string().min(1, 'Challenge token is required'),
+    token: z.string().min(4).max(8).optional(),
+    code: z.string().min(4).max(8).optional(),
+    otp: z.string().min(4).max(8).optional(),
+    recoveryCode: z.string().min(6).optional(),
+  }),
+  z.object({
+    email: z.string().email('Invalid email address format').optional(),
+    userId: z.string().optional(),
+    otp: z.string().min(4, 'OTP must be at least 4 digits').max(8).optional(),
+    token: z.string().min(4).max(8).optional(),
+    code: z.string().min(4).max(8).optional(),
+  }),
+]);
+
+export const verify2FASchema = z.object({
+  token: z.string().min(6, 'TOTP code must be 6 digits').max(8),
+});
+
+export const disable2FASchema = z.object({
+  password: z.string().min(1, 'Password is required to disable 2FA'),
+  code: z.string().optional(),
+});
+
+export const regenerateRecoveryCodesSchema = z.object({
+  password: z.string().min(1, 'Password is required to regenerate recovery codes'),
 });
 
 export const refreshTokenSchema = z.object({

@@ -41,7 +41,7 @@ const auditRepo = new AuditRepository(prisma);
 
 const authService = new AuthService(userRepo, sessionRepo, auditRepo);
 const userService = new UserService(userRepo);
-const twoFactorService = new TwoFactorService(userRepo);
+const twoFactorService = new TwoFactorService(userRepo, auditRepo);
 const adminService = new AdminService(userRepo);
 
 const authController = new AuthController(authService, userService, twoFactorService);
