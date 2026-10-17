@@ -11,13 +11,13 @@ import { AppError } from "../../utils/AppError.js";
  */
 export class NonRetryablePaymentError extends AppError {}
 
-/** MongoDB (E11000) and Prisma/PostgreSQL (P2002, 23505) duplicate-key detector. */
+/** Unique-constraint / duplicate-key detector (PostgreSQL 23505, Prisma P2002, or numeric violation code). */
 export function isDuplicateKeyError(err: unknown): boolean {
     if (typeof err !== "object" || err === null) {
         return false;
     }
     const code = (err as { code?: unknown }).code;
-    return code === 11000 || code === "P2002" || code === "23505";
+    return code === "P2002" || code === "23505" || code === 11000 || code === "11000";
 }
 
 /**

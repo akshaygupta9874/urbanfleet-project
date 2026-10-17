@@ -3,3 +3,4 @@ export * from './logger/logger.js';
 export * from './middlewares/validate.middleware.js';
 export * from './middlewares/async-handler.middleware.js';
 export * from './ledger/ledger-validator.js';
+export * from './middlewares/auth-request.interface.js';

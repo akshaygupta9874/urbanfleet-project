@@ -1,4 +1,3 @@
-import { Types } from "../types/objectid.js";
 import { randomUUID } from "crypto";
 
 import { razorpayClient } from "../../config/razorpay.config.js";
@@ -49,7 +48,7 @@ interface BookRefundArgs {
     reason: string;
     origin: RefundOrigin;
     status: RefundStatus;
-    initiatedBy?: Types.ObjectId;
+    initiatedBy?: string;
     gatewayRefundId?: string;
     processedAt?: Date;
 }
@@ -511,7 +510,7 @@ class RefundService {
             refundPaise: args.amountPaise,
         });
 
-        const refundId = new Types.ObjectId();
+        const refundId = randomUUID();
 
         const newRefunded = totals.refundedPaise + args.amountPaise;
 

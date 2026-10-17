@@ -1,5 +1,5 @@
+import { ClientSession } from "../types/database.types.js";
 import { prisma } from "../../db/client.js";
-import { ClientSession } from "../types/objectid.js";
 import { IPayout } from "../types/payment.models.js";
 import { PayoutMode, PayoutStatus } from "../types/payment.types.js";
 import { LIVE_PAYOUT_STATUSES } from "../constants/payment.constants.js";

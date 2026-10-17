@@ -1,6 +1,5 @@
 import { Response } from "express";
 import { createHash } from "crypto";
-import { Types } from "../types/objectid.js";
 import {
   AppError,
 } from "../../utils/AppError.js";
@@ -99,8 +98,8 @@ export const createOrder =
 
     const result =
       await paymentService.createOrder({
-        ride: new Types.ObjectId(rideId),
-        rider: new Types.ObjectId(req.userId),
+        ride: rideId,
+        rider: req.userId,
         idempotencyKey:
           deriveIdempotencyKey(rideId, req.userId),
       });
@@ -140,7 +139,7 @@ export const verifyCheckout =
           razorpay_signature,
 
         requesterId:
-          new Types.ObjectId(req.userId),
+          req.userId,
 
       });
 
@@ -331,18 +330,13 @@ export const refundPayment =
     const result = await paymentService.initiateRefund({
 
       paymentId:
-        new Types.ObjectId(
-          req.params.paymentId
-        ),
+        req.params.paymentId,
 
       amountPaise,
 
       reason,
 
-      initiatedBy:
-        new Types.ObjectId(
-          req.userId
-        ),
+      initiatedBy: req.userId,
 
     });
 

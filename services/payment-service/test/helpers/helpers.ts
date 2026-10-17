@@ -1,8 +1,8 @@
 import { vi } from "vitest";
-import { Types } from "../../src/payment/types/objectid.js";
+import { randomUUID } from "node:crypto";
 import { PaymentStatus } from "../../src/payment/types/payment.types.js";
 
-/** A session whose transactions simply run the callback once (no MongoDB needed). */
+/** A session whose transactions simply run the callback once. */
 export function fakeSession() {
   return {
     withTransaction: async (fn: () => Promise<unknown>) => {
@@ -24,7 +24,7 @@ export function retryingSession(times: number) {
   };
 }
 
-export const oid = () => new Types.ObjectId();
+export const oid = () => randomUUID();
 
 export function makePayment(over: Record<string, unknown> = {}) {
   const payment: any = {

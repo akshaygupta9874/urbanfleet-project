@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { PaymentStatus } from '../types/payment.types.js';
-import { Types } from '../types/objectid.js';
 
-const objectIdSchema = z.string().trim().refine((val) => Types.ObjectId.isValid(val), 'Invalid id');
+const ID_PATTERN = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-fA-F]{24})$/;
+export const idSchema = z.string().trim().refine((val) => ID_PATTERN.test(val), 'Invalid id');
+export const objectIdSchema = idSchema;
 
 /**
  * @deprecated The fare is NEVER taken from the client - the server prices the ride from

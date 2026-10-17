@@ -34,7 +34,7 @@ import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoa
 import CityMapBackground from "./components/CityMapBackground";
 import { type PaymentStatus } from "./lib/payment";
 
-// --- Types mirrored from backend Mongoose models (Driver.ts / Ride.ts) ---
+// --- Types mirrored from backend models (Driver / Ride) ---
 type VehicleType = "CAR" | "BIKE" | "AUTO";
 
 type RideStatus =

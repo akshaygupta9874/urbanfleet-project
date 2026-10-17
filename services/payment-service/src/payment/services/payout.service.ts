@@ -1,4 +1,4 @@
-import { Types, ClientSession } from "../types/objectid.js";
+import { ClientSession } from "../types/database.types.js";
 import { randomUUID } from "crypto";
 
 import { AppError } from "../../utils/AppError.js";
@@ -43,9 +43,9 @@ export class PayoutService {
    * with the gateway payout id, and pass our payout _id as `reference_id`.
    */
   async createPayout(input: {
-    driverId: Types.ObjectId;
-    paymentId: Types.ObjectId;
-    rideId: Types.ObjectId;
+    driverId: string;
+    paymentId: string;
+    rideId: string;
     amountPaise: number;
     mode?: PayoutMode;
     metadata?: Record<string, unknown>;
@@ -287,7 +287,7 @@ export class PayoutService {
    *                                     ledger balance simply goes lower / negative.
    */
   async handleRefundBooked(
-    paymentId: Types.ObjectId,
+    paymentId: string,
     driverReversalPaise: number,
     session?: ClientSession
   ): Promise<{ cancelledPayoutId?: string; clawbackRequired: boolean }> {
@@ -317,7 +317,7 @@ export class PayoutService {
   }
 
   /** How much the platform owes a driver and how much of it is already spoken for. */
-  async getDriverBalance(driverId: Types.ObjectId): Promise<DriverBalance> {
+  async getDriverBalance(driverId: string): Promise<DriverBalance> {
     const owner = await ledgerService.getOwnerBalance(LedgerAccount.DRIVER, driverId);
 
     const reservedPaise = await payoutRepository.sumAmountByDriver(
@@ -341,7 +341,7 @@ export class PayoutService {
   ): Promise<void> {
     let payout = await payoutRepository.findByGatewayPayoutId(entity.id);
 
-    if (!payout && entity.reference_id && Types.ObjectId.isValid(entity.reference_id)) {
+    if (!payout && entity.reference_id && typeof entity.reference_id === 'string' && entity.reference_id.length > 0) {
       payout = await payoutRepository.findById(entity.reference_id);
     }
 

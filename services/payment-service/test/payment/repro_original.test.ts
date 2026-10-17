@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * Regression tests for the payment module.
  *
@@ -7,7 +8,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Types } from "../../src/payment/types/objectid.js";
 
 // -----------------------------------------------------------------------------
 // Fake Redis
@@ -78,13 +78,13 @@ const fakeSession = () => ({
 const basePayment = (
     over: Record<string, unknown> = {}
 ) => ({
-    _id: new Types.ObjectId(),
+    _id: randomUUID(),
 
-    ride: new Types.ObjectId(),
+    ride: randomUUID(),
 
-    rider: new Types.ObjectId(),
+    rider: randomUUID(),
 
-    driver: new Types.ObjectId(),
+    driver: randomUUID(),
 
     status: PaymentStatus.PENDING,
 

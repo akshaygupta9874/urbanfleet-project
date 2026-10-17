@@ -1,4 +1,3 @@
-import { Types } from "./objectid.js";
 
 import type {
   CurrencyType,
@@ -18,13 +17,13 @@ import type {
 
 /** One refund attempt (sub-document of Payment.refunds). */
 export interface IRefundRecord {
-  _id: Types.ObjectId;
+  _id: string;
   gatewayRefundId?: string;
   amountPaise: Paise;
   status: RefundStatus;
   origin: RefundOrigin;
   reason: string;
-  initiatedBy?: Types.ObjectId;
+  initiatedBy?: string;
 
   driverReversalPaise: Paise;
   platformReversalPaise: Paise;
@@ -40,10 +39,10 @@ export interface IRefundRecord {
 }
 
 export interface IPayment {
-  _id: Types.ObjectId;
-  ride: Types.ObjectId;
-  rider: Types.ObjectId;
-  driver: Types.ObjectId;
+  _id: string;
+  ride: string;
+  rider: string;
+  driver: string;
 
   gateway: PaymentGateway;
   gatewayOrderId: string;
@@ -78,15 +77,15 @@ export interface IPayment {
 }
 
 export interface ILedgerEntry {
-  _id: Types.ObjectId;
+  _id: string;
   transactionId: string;
   account: LedgerAccount;
-  ownerId?: Types.ObjectId;
+  ownerId?: string;
   entryType: LedgerEntryType;
   amountPaise: Paise;
   currency: CurrencyType;
   referenceType: LedgerReferenceType;
-  referenceId: Types.ObjectId;
+  referenceId: string;
 
   idempotencyKey?: string;
   legIndex?: number;
@@ -98,10 +97,10 @@ export interface ILedgerEntry {
 }
 
 export interface IPayout {
-  _id: Types.ObjectId;
-  payment: Types.ObjectId;
-  ride: Types.ObjectId;
-  driver: Types.ObjectId;
+  _id: string;
+  payment: string;
+  ride: string;
+  driver: string;
 
   amountPaise: Paise;
   currency: CurrencyType;

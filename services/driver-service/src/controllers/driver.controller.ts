@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { AuthenticatedRequest, AppError } from '@urbanfleet/common';
 import { DriverService } from '../services/driver.service.js';
 import { DocumentService } from '../services/document.service.js';
 import {
@@ -27,15 +28,23 @@ export interface DriverUploadFiles {
 }
 
 export class DriverController {
+  private getAuthenticatedUserId(req: AuthenticatedRequest): string {
+    const userId = req.userId || req.user?.userId || req.user?.id;
+    if (!userId) {
+      throw new AppError('Unauthorized: User ID required', 401, 'UNAUTHORIZED');
+    }
+    return userId;
+  }
+
   constructor(
     private driverService: DriverService,
     private documentService: DocumentService,
     private cloudinaryService: CloudinaryService = defaultCloudinaryService
   ) {}
 
-  registerDriver = asyncHandler(async (req: any, res: Response) => {
+  registerDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const files = (req.files as DriverUploadFiles) || {};
-    const userId = req.user?.userId || req.body?.userId;
+    const userId = req.userId || req.user?.userId || req.user?.id || req.body?.userId;
 
     if (!userId) {
       return res.status(401).json({
@@ -239,7 +248,7 @@ export class DriverController {
     }
   });
 
-  uploadImage = asyncHandler(async (req: any, res: Response) => {
+  uploadImage = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No image file provided' });
     }
@@ -248,7 +257,7 @@ export class DriverController {
     return res.status(200).json({ success: true, data: result });
   });
 
-  deleteImage = asyncHandler(async (req: any, res: Response) => {
+  deleteImage = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { publicId } = req.body;
     if (!publicId) {
       return res.status(400).json({ success: false, message: 'publicId is required' });
@@ -257,23 +266,27 @@ export class DriverController {
     return res.status(200).json({ success: true, message: 'Image deleted successfully' });
   });
 
-  getDriverProfile = asyncHandler(async (req: any, res: Response) => {
-    const profile = await this.driverService.getDriverByUserId(req.user.userId);
+  getDriverProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const profile = await this.driverService.getDriverByUserId(userId);
     res.status(200).json({ success: true, data: profile });
   });
 
-  updateDriverProfile = asyncHandler(async (req: any, res: Response) => {
-    const profile = await this.driverService.updateProfile(req.user.userId, req.body);
+  updateDriverProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const profile = await this.driverService.updateProfile(userId, req.body);
     res.status(200).json({ success: true, data: profile });
   });
 
-  updateVehicle = asyncHandler(async (req: any, res: Response) => {
-    const vehicle = await this.driverService.updateVehicleInfo(req.user.userId, req.body);
+  updateVehicle = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const vehicle = await this.driverService.updateVehicleInfo(userId, req.body);
     res.status(200).json({ success: true, data: vehicle });
   });
 
-  uploadDocument = asyncHandler(async (req: any, res: Response) => {
-    const profile = await this.driverService.getDriverByUserId(req.user.userId);
+  uploadDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const profile = await this.driverService.getDriverByUserId(userId);
     const { type, documentUrl, fileUrl, number, documentNumber, expiresAt, frontImage, backImage } = req.body;
     const doc = await this.documentService.uploadDocument({
       driverProfileId: profile.id,
@@ -287,43 +300,47 @@ export class DriverController {
     res.status(201).json({ success: true, data: doc });
   });
 
-  getDriverDocuments = asyncHandler(async (req: any, res: Response) => {
-    const profile = await this.driverService.getDriverByUserId(req.user.userId);
+  getDriverDocuments = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const profile = await this.driverService.getDriverByUserId(userId);
     const docs = await this.documentService.getDocumentsByDriverId(profile.id);
     res.status(200).json({ success: true, data: docs });
   });
 
-  getDocumentSummary = asyncHandler(async (req: any, res: Response) => {
-    const profile = await this.driverService.getDriverByUserId(req.user.userId);
+  getDocumentSummary = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const profile = await this.driverService.getDriverByUserId(userId);
     const summary = await this.documentService.getDocumentSummary(profile.id);
     res.status(200).json({ success: true, data: summary });
   });
 
-  verifyDocument = asyncHandler(async (req: any, res: Response) => {
+  verifyDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { status, rejectionReason } = req.body;
     const doc = await this.documentService.verifyDocument(req.params.id, status, rejectionReason);
     res.status(200).json({ success: true, data: doc });
   });
 
-  checkDocumentExpiry = asyncHandler(async (req: any, res: Response) => {
+  checkDocumentExpiry = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const isExpired = await this.documentService.checkDocumentExpiry(req.params.id);
     res.status(200).json({ success: true, data: { isExpired } });
   });
 
 
-  toggleAvailability = asyncHandler(async (req: any, res: Response) => {
+  toggleAvailability = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const isAvailable =
       req.body?.isAvailable !== undefined
         ? req.body.isAvailable
         : req.body?.isOnline !== undefined
         ? req.body.isOnline
         : true;
-    const profile = await this.driverService.setAvailability(req.user.userId, Boolean(isAvailable));
+    const userId = this.getAuthenticatedUserId(req);
+    const profile = await this.driverService.setAvailability(userId, Boolean(isAvailable));
     res.status(200).json({ success: true, data: profile });
   });
 
-  getEarnings = asyncHandler(async (req: any, res: Response) => {
-    const earnings = await this.driverService.calculateEarnings(req.user.userId);
+  getEarnings = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const earnings = await this.driverService.calculateEarnings(userId);
     res.status(200).json({ success: true, data: earnings });
   });
 

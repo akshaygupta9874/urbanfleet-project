@@ -50,24 +50,17 @@ export class AuthService {
       role: (input.role as Role) || Role.RIDER
     });
 
-    const session = await this.sessionRepo.create({
-      userId: user.id,
-      refreshToken: 'temp-token',
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      ipAddress: input.ipAddress,
-      userAgent: input.userAgent
-    });
-
+    const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
       role: user.role,
-      sessionId: session.id
+      sessionId
     });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId: session.id });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
 
-    // Update session with signed refresh token
-    await this.sessionRepo.create({
+    const session = await this.sessionRepo.create({
+      id: sessionId,
       userId: user.id,
       refreshToken,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
@@ -125,21 +118,23 @@ export class AuthService {
       };
     }
 
-    const session = await this.sessionRepo.create({
-      userId: user.id,
-      refreshToken: 'placeholder',
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      ipAddress: input.ipAddress,
-      userAgent: input.userAgent
-    });
-
+    const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
       role: user.role,
-      sessionId: session.id
+      sessionId
     });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId: session.id });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
+
+    const session = await this.sessionRepo.create({
+      id: sessionId,
+      userId: user.id,
+      refreshToken,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent
+    });
 
     // Cache tokens in Redis for fast access
     await cacheTokens(user.id, session.id, accessToken, refreshToken);

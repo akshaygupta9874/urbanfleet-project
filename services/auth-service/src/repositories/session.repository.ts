@@ -4,6 +4,7 @@ export class SessionRepository {
   constructor(private prisma: PrismaClient) {}
 
   async create(data: {
+    id?: string;
     userId: string;
     refreshToken: string;
     expiresAt: Date;

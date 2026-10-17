@@ -1,4 +1,3 @@
-import { Types } from "./objectid.js";
 
 import {
     CurrencyType,
@@ -12,8 +11,8 @@ import {
 } from "./payment.types.js";
 
 export interface CreateOrderInput {
-    ride: Types.ObjectId;
-    rider: Types.ObjectId;
+    ride: string;
+    rider: string;
     idempotencyKey: string;
 }
 
@@ -31,14 +30,14 @@ export interface VerifyCheckoutInput {
     gatewayPaymentId: string;
     signature: string;
     /** The authenticated caller. When supplied it must be the rider that owns the payment. */
-    requesterId?: Types.ObjectId;
+    requesterId?: string;
 }
 
 export interface InitiateRefundInput {
-    paymentId: Types.ObjectId;
+    paymentId: string;
     amountPaise?: Paise;
     reason: string;
-    initiatedBy: Types.ObjectId;
+    initiatedBy: string;
 }
 
 export interface InitiateRefundResult {
@@ -56,13 +55,13 @@ export interface LedgerEntryInput {
     amountPaise: Paise;
     description: string;
     /** Owner of this leg (e.g. the driver whose earning it is). */
-    ownerId?: Types.ObjectId;
+    ownerId?: string;
 }
 
 export interface RecordLedgerTransactionInput {
     entries: LedgerEntryInput[];
     referenceType: LedgerReferenceType;
-    referenceId: Types.ObjectId;
+    referenceId: string;
     currency?: CurrencyType;
     metadata?: Record<string, unknown>;
     /** Pre-allocated transaction id (lets a caller store it on another document atomically). */
@@ -72,9 +71,9 @@ export interface RecordLedgerTransactionInput {
 }
 
 export interface CreatePayoutInput {
-    driver: Types.ObjectId;
-    payment: Types.ObjectId;
-    ride: Types.ObjectId;
+    driver: string;
+    payment: string;
+    ride: string;
     amountPaise: Paise;
     mode: PayoutMode;
     metadata?: Record<string, unknown>;

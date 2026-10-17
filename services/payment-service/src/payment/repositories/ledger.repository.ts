@@ -1,4 +1,3 @@
-import { ObjectId } from "../types/objectid.js";
 import { prisma } from "../../db/client.js";
 import { ILedgerEntry } from "../types/payment.models.js";
 import {
@@ -12,12 +11,12 @@ import {
 interface InsertableEntry {
     transactionId: string;
     account: LedgerAccount;
-    ownerId?: ObjectId | string | undefined;
+    ownerId?: string | undefined;
     entryType: LedgerEntryType;
     amountPaise: Paise;
     currency: CurrencyType;
     referenceType: LedgerReferenceType;
-    referenceId: ObjectId | string;
+    referenceId: string;
     idempotencyKey?: string | undefined;
     legIndex?: number | undefined;
     description: string;
@@ -132,7 +131,7 @@ class LedgerRepository {
 
     async listByReference(
         referenceType: LedgerReferenceType,
-        referenceId: ObjectId | string
+        referenceId: string
     ): Promise<ILedgerEntry[]> {
         const rows = await prisma.ledgerEntry.findMany({
             where: {
@@ -156,7 +155,7 @@ class LedgerRepository {
             from?: Date;
             to?: Date;
         },
-        ownerId?: ObjectId | string
+        ownerId?: string
     ): Promise<AccountTotals> {
         const where: any = {
             account: account as any,

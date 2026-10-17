@@ -16,8 +16,8 @@ export function createAuthRouter(controller: AuthController): Router {
   router.post('/login', validateRequest({ body: loginSchema }), controller.login);
   router.post('/verify-otp', validateRequest({ body: verifyOtpSchema }), controller.verifyOtp);
   router.post('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
-  router.post('/refresh-token', validateRequest({ body: refreshTokenSchema }), controller.refreshToken);
-  router.post('/refresh', validateRequest({ body: refreshTokenSchema }), controller.refreshToken);
+  router.post('/refresh-token', controller.refreshToken);
+  router.post('/refresh', controller.refreshToken);
   router.post('/logout', controller.logout);
   router.get('/me', controller.getProfile);
   if (controller.getUserById) {

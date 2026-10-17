@@ -1,5 +1,5 @@
+import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
-import { Types } from "../../src/payment/types/objectid.js";
 import { ledgerService } from "../../src/payment/services/ledger.service.js";
 import { ledgerRepository } from "../../src/payment/repositories/ledger.repository.js";
 import {
@@ -121,7 +121,7 @@ describe("posting rules", () => {
   it("refund booking and compensation are exact mirrors and always balance", async () => {
     const rows = captureInserts();
     const payment = makePayment();
-    const refundId = new Types.ObjectId();
+    const refundId = randomUUID();
     const args = {
       payment, refundId, amountPaise: 250,
       split: { driverPaise: 175, platformPaise: 75 }, reason: "test", transactionId: "tx-r",

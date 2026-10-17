@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from "vitest";
-import { Types } from "../../src/payment/types/objectid.js";
 import { createHash } from "crypto";
 import {
   createOrderSchema, verifyCheckoutSchema, refundSchema, listPaymentsQuerySchema,
@@ -98,7 +97,7 @@ describe("controllers", () => {
     const { res } = await call(controller.createOrder, { userId: riderId, body: { rideId, idempotencyKey: "client-chosen" } });
     const arg = create.mock.calls[0]![0];
     expect(arg.idempotencyKey).toBe(createHash("sha256").update(`${rideId}:${riderId}`).digest("hex"));
-    expect(arg.ride).toBeInstanceOf(Types.ObjectId);
+    expect(typeof arg.ride).toBe('string');
     expect(res.statusCode).toBe(201);
   });
 

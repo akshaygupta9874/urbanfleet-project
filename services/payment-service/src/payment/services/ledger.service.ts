@@ -1,4 +1,4 @@
-import { Types, ClientSession } from "../types/objectid.js";
+import { ClientSession } from "../types/database.types.js";
 import { randomUUID } from "crypto";
 
 import { ledgerRepository } from "../repositories/ledger.repository.js";
@@ -256,7 +256,7 @@ class LedgerService {
     async recordRefundBooking(
         args: {
             payment: PaymentForPosting;
-            refundId: Types.ObjectId;
+            refundId: string;
             amountPaise: Paise;
             split: RefundAllocation;
             reason: string;
@@ -310,7 +310,7 @@ class LedgerService {
     async recordRefundCompensation(
         args: {
             payment: PaymentForPosting;
-            refundId: Types.ObjectId;
+            refundId: string;
             amountPaise: Paise;
             split: RefundAllocation;
             reason: string;
@@ -367,8 +367,8 @@ class LedgerService {
      */
     async recordPayoutDisbursement(
         args: {
-            payoutId: Types.ObjectId;
-            driverId: Types.ObjectId;
+            payoutId: string;
+            driverId: string;
             amountPaise: Paise;
             transactionId: string;
         },
@@ -405,8 +405,8 @@ class LedgerService {
     /** The bank returned a PROCESSED payout: the platform owes the driver again. */
     async recordPayoutReversal(
         args: {
-            payoutId: Types.ObjectId;
-            driverId: Types.ObjectId;
+            payoutId: string;
+            driverId: string;
             amountPaise: Paise;
             transactionId: string;
             reason: string;
@@ -447,7 +447,7 @@ class LedgerService {
     /** Debit / credit totals of one owner's account (e.g. one driver's earnings). */
     async getOwnerBalance(
         account: LedgerAccount,
-        ownerId: Types.ObjectId
+        ownerId: string
     ): Promise<OwnerBalance> {
 
         const totals =
@@ -480,7 +480,7 @@ class LedgerService {
         originalTransactionId: string,
         fraction: number,
         referenceType: LedgerReferenceType,
-        referenceId: Types.ObjectId,
+        referenceId: string,
         reason: string,
         session?: ClientSession
     ): Promise<string> {

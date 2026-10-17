@@ -4,7 +4,7 @@ import { UserService } from '../services/user.service.js';
 import { TwoFactorService } from '../services/two-factor.service.js';
 import { getCookieOptions, getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
 import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from '../middlewares/csrf.middleware.js';
-import { UnauthorizedError } from '@urbanfleet/common';
+import { UnauthorizedError, AuthenticatedRequest } from '@urbanfleet/common';
 import asyncHandler from '../middlewares/asyncHandler.js';
 
 export class AuthController {
@@ -26,11 +26,12 @@ export class AuthController {
       res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
     }
 
-    // 2. Generate and set CSRF cookie
+    // 2. Set double-submit anti-CSRF token cookie
     const csrfToken = await generateCSRFToken(result.user.id, res);
 
     res.status(201).json({
       success: true,
+      message: 'User registered successfully',
       data: {
         user: result.user,
         accessToken: result.accessToken,
@@ -51,19 +52,27 @@ export class AuthController {
     });
 
     if (result.requires2FA) {
-      return res.status(200).json({ success: true, data: result });
+      return res.status(200).json({
+        success: true,
+        data: {
+          requiresTwoFactor: true,
+          userId: result.userId,
+          message: 'Two-Factor Authentication required. Please provide TOTP token.'
+        }
+      });
     }
 
-    // 1. Set httpOnly refresh cookie (XSS mitigation)
+    // 1. Set httpOnly refresh cookie
     if (result.refreshToken) {
       res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
     }
 
-    // 2. Generate and set CSRF cookie
+    // 2. Set CSRF cookie
     const csrfToken = await generateCSRFToken(result.user!.id, res);
 
     res.status(200).json({
       success: true,
+      message: 'Login successful',
       data: {
         user: result.user,
         accessToken: result.accessToken,
@@ -76,8 +85,9 @@ export class AuthController {
     });
   });
 
-  refreshToken = asyncHandler(async (req: Request, res: Response) => {
-    const token = req.cookies?.refreshToken || req.body?.refreshToken;
+  refreshToken = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    // Refresh token is strictly and only extracted from httpOnly cookies
+    const token = req.cookies?.refreshToken;
     if (!token) {
       throw new UnauthorizedError('Please provide refresh token');
     }
@@ -105,13 +115,14 @@ export class AuthController {
     });
   });
 
-  logout = asyncHandler(async (req: Request, res: Response) => {
-    const token = req.cookies?.refreshToken || req.body?.refreshToken;
+  logout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    // Refresh token is strictly read from cookies
+    const token = req.cookies?.refreshToken;
     if (token) {
       await this.authService.logout(token);
     }
 
-    const userId = (req as any).user?.userId || req.body?.userId;
+    const userId = req.user?.userId || req.user?.id || req.userId;
     if (userId) {
       await revokeCSRFToken(userId, res);
     }
@@ -123,9 +134,13 @@ export class AuthController {
     res.status(200).json({ success: true, message: 'Logged out successfully' });
   });
 
-  changePassword = asyncHandler(async (req: any, res: Response) => {
+  changePassword = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { oldPassword, newPassword } = req.body;
-    await this.authService.changePassword(req.user.userId, oldPassword, newPassword);
+    const userId = req.user?.userId || req.user?.id || req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+    await this.authService.changePassword(userId, oldPassword, newPassword);
     res.status(200).json({ success: true, message: 'Password updated successfully' });
   });
 
@@ -153,8 +168,12 @@ export class AuthController {
     res.status(200).json({ success: true, data: result });
   });
 
-  getProfile = asyncHandler(async (req: any, res: Response) => {
-    const profile = await this.userService.getUserById(req.user.userId);
+  getProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId || req.user?.id || req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+    const profile = await this.userService.getUserById(userId);
     res.status(200).json({ success: true, data: profile });
   });
 
@@ -163,25 +182,41 @@ export class AuthController {
     res.status(200).json({ success: true, data: profile });
   });
 
-  updateProfile = asyncHandler(async (req: any, res: Response) => {
-    const updated = await this.userService.updateUser(req.user.userId, req.body);
+  updateProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId || req.user?.id || req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+    const updated = await this.userService.updateUser(userId, req.body);
     res.status(200).json({ success: true, data: updated });
   });
 
-  enable2FA = asyncHandler(async (req: any, res: Response) => {
-    const result = await this.twoFactorService.generateSecret(req.user.userId);
+  enable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId || req.user?.id || req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+    const result = await this.twoFactorService.generateSecret(userId);
     res.status(200).json({ success: true, data: result });
   });
 
-  verify2FA = asyncHandler(async (req: any, res: Response) => {
+  verify2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId || req.user?.id || req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
     const { token } = req.body;
-    const result = await this.twoFactorService.enable2FA(req.user.userId, token);
+    const result = await this.twoFactorService.enable2FA(userId, token);
     res.status(200).json({ success: true, data: result });
   });
 
-  disable2FA = asyncHandler(async (req: any, res: Response) => {
+  disable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId || req.user?.id || req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
     const { token } = req.body;
-    const result = await this.twoFactorService.disable2FA(req.user.userId, token);
+    const result = await this.twoFactorService.disable2FA(userId, token);
     res.status(200).json({ success: true, data: result });
   });
 
@@ -197,8 +232,8 @@ export class AuthController {
     res.status(200).json({ success: true, message: '2FA authentication successful', data: { csrfToken } });
   });
 
-  refreshCSRF = asyncHandler(async (req: any, res: Response) => {
-    const userId = req.user?.userId || req.body?.userId;
+  refreshCSRF = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId || req.user?.id || req.userId;
     if (!userId) {
       return res.status(401).json({ success: false, message: 'User not authenticated' });
     }
