@@ -274,15 +274,42 @@ export class DriverController {
 
   uploadDocument = asyncHandler(async (req: any, res: Response) => {
     const profile = await this.driverService.getDriverByUserId(req.user.userId);
-    const { type, documentUrl, expiresAt } = req.body;
-    const doc = await this.documentService.uploadDocument(
-      profile.id,
+    const { type, documentUrl, fileUrl, number, documentNumber, expiresAt, frontImage, backImage } = req.body;
+    const doc = await this.documentService.uploadDocument({
+      driverProfileId: profile.id,
       type,
-      documentUrl,
-      expiresAt ? new Date(expiresAt) : undefined
-    );
+      documentUrl: documentUrl || fileUrl || frontImage,
+      number: number || documentNumber,
+      frontImage: frontImage || documentUrl || fileUrl,
+      backImage,
+      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+    });
     res.status(201).json({ success: true, data: doc });
   });
+
+  getDriverDocuments = asyncHandler(async (req: any, res: Response) => {
+    const profile = await this.driverService.getDriverByUserId(req.user.userId);
+    const docs = await this.documentService.getDocumentsByDriverId(profile.id);
+    res.status(200).json({ success: true, data: docs });
+  });
+
+  getDocumentSummary = asyncHandler(async (req: any, res: Response) => {
+    const profile = await this.driverService.getDriverByUserId(req.user.userId);
+    const summary = await this.documentService.getDocumentSummary(profile.id);
+    res.status(200).json({ success: true, data: summary });
+  });
+
+  verifyDocument = asyncHandler(async (req: any, res: Response) => {
+    const { status, rejectionReason } = req.body;
+    const doc = await this.documentService.verifyDocument(req.params.id, status, rejectionReason);
+    res.status(200).json({ success: true, data: doc });
+  });
+
+  checkDocumentExpiry = asyncHandler(async (req: any, res: Response) => {
+    const isExpired = await this.documentService.checkDocumentExpiry(req.params.id);
+    res.status(200).json({ success: true, data: { isExpired } });
+  });
+
 
   toggleAvailability = asyncHandler(async (req: any, res: Response) => {
     const isAvailable =

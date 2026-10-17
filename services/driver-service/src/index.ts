@@ -30,7 +30,7 @@ app.use(express.json());
 const driverRepo = new DriverRepository(prisma);
 const docRepo = new DocumentRepository(prisma);
 const driverService = new DriverService(driverRepo);
-const docService = new DocumentService(docRepo);
+const docService = new DocumentService(docRepo, driverRepo);
 const driverController = new DriverController(driverService, docService, cloudinaryService);
 
 // Routes

@@ -24,6 +24,10 @@ export function createDriverRouter(controller: DriverController): Router {
   router.put('/profile', validateRequest({ body: createProfileSchema }), controller.updateDriverProfile);
   router.put('/vehicle', controller.updateVehicle);
   router.post('/documents', validateRequest({ body: uploadDocumentSchema }), controller.uploadDocument);
+  router.get('/documents', controller.getDriverDocuments);
+  router.get('/documents/summary', controller.getDocumentSummary);
+  router.patch('/documents/:id/verify', controller.verifyDocument);
+  router.post('/documents/:id/check-expiry', controller.checkDocumentExpiry);
   router.post('/availability', validateRequest({ body: updateStatusSchema }), controller.toggleAvailability);
   router.get('/earnings', controller.getEarnings);
   router.get('/by-user/:userId', controller.getDriverByUserId);
