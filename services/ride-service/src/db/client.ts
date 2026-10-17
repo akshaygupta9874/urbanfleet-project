@@ -1,10 +1,40 @@
+import 'dotenv/config';
+import pg, { type PoolConfig } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
+const { Pool } = pg;
+
+const connectionString =
+  process.env.DATABASE_URL ||
+  'postgresql://ride_user:ride_secure_pass@localhost:5432/urbanfleet_ride?schema=public';
+
+/**
+ * Production-grade PostgreSQL connection pooling:
+ * - max: 20 concurrent connections in pool
+ * - min: 2 warm idle connections
+ * - idleTimeoutMillis: 30000 (close idle connections after 30s)
+ * - connectionTimeoutMillis: 5000 (fail fast after 5s)
+ * - keepAlive: true (prevent firewall socket drops)
+ */
+const poolConfig: PoolConfig = {
+  connectionString,
+  max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+  min: parseInt(process.env.DB_POOL_MIN || '2', 10),
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+  keepAlive: true,
+};
+
+export const pool = new Pool(poolConfig);
+
+pool.on('error', (err) => {
+  console.error('[ride-db] Unexpected error on idle PostgreSQL pool client:', err);
+});
+
+const adapter = new PrismaPg(pool);
+
 export const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL || 'postgresql://ride_user:ride_secure_pass@localhost:5432/urbanfleet_ride?schema=public',
-    },
-  },
+  adapter,
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
 });

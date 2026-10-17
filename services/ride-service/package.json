@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate deploy"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^5.22.0",
     "@prisma/client": "^5.14.0",
     "@urbanfleet/common": "*",
     "@urbanfleet/contracts": "*",
@@ -21,6 +22,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
+    "pg": "^8.13.0",
     "redis": "^4.6.13",
     "ws": "^8.17.0",
     "zod": "^3.23.8"
@@ -30,6 +32,7 @@
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.10",
     "@types/ws": "^8.5.10",
     "prisma": "^5.14.0",
     "tsx": "^4.11.0",
