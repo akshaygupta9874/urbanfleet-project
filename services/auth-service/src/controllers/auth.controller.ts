@@ -35,20 +35,16 @@ export class AuthController {
       data: {
         user: result.user,
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
         csrfToken,
         tokens: {
           accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
         }
       },
       tokens: {
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
       },
       user: result.user,
       accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
     });
   });
 
@@ -58,6 +54,21 @@ export class AuthController {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent']
     });
+
+    if ((result as any).requires2FASetup && (result as any).userId) {
+      const setup = await this.twoFactorService.initiateSetup((result as any).userId);
+      return res.status(200).json({
+        success: true,
+        data: {
+          requiresTwoFactorSetup: true,
+          userId: (result as any).userId,
+          qrCodeUrl: setup.qrCodeUrl,
+          otpauthUri: setup.otpauthUri,
+          expiresInSeconds: setup.expiresInSeconds,
+          message: 'Admin policy requires Two-Factor Authentication. Please complete setup to activate your account.'
+        }
+      });
+    }
 
     if (result.requires2FA && result.userId) {
       const challenge = await this.twoFactorService.initiateLoginChallenge(result.userId, req.ip);
@@ -86,20 +97,16 @@ export class AuthController {
       data: {
         user: result.user,
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
         csrfToken,
         tokens: {
           accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
         }
       },
       tokens: {
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
       },
       user: result.user,
       accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
     });
   });
 
@@ -116,6 +123,9 @@ export class AuthController {
         user = result.user;
       } else {
         const code = req.body.code || req.body.token || req.body.otp;
+        if (!code || typeof code !== 'string') {
+          throw new BadRequestError('Verification code or recovery code is required');
+        }
         user = await this.twoFactorService.verifyLoginChallenge(
           req.body.challengeToken,
           code,
@@ -152,20 +162,16 @@ export class AuthController {
       data: {
         user: authResult.user,
         accessToken: authResult.accessToken,
-        refreshToken: authResult.refreshToken,
         csrfToken,
         tokens: {
           accessToken: authResult.accessToken,
-          refreshToken: authResult.refreshToken,
         }
       },
       tokens: {
         accessToken: authResult.accessToken,
-        refreshToken: authResult.refreshToken,
       },
       user: authResult.user,
       accessToken: authResult.accessToken,
-      refreshToken: authResult.refreshToken,
     });
   });
 
@@ -192,20 +198,16 @@ export class AuthController {
       data: {
         user: result.user,
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
         csrfToken,
         tokens: {
           accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
         }
       },
       tokens: {
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
       },
       user: result.user,
       accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
     });
   });
 
@@ -251,7 +253,10 @@ export class AuthController {
   });
 
   verifyEmail = asyncHandler(async (req: Request, res: Response) => {
-    const { token } = req.body;
+    const token = req.params?.token || req.body?.token || (req.query?.token as string);
+    if (!token) {
+      throw new BadRequestError('Verification token is required');
+    }
     const result = await this.authService.verifyEmail(token);
     res.status(200).json({ success: true, data: result });
   });
@@ -271,7 +276,7 @@ export class AuthController {
     res.status(200).json({ success: true, data: profile });
   });
 
-  getUserById = asyncHandler(async (req: Request, res: Response) => {
+  getUserById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const profile = await this.userService.getUserById(req.params.id);
     res.status(200).json({ success: true, data: profile });
   });

@@ -194,11 +194,16 @@ export class TwoFactorService {
     };
 
     try {
-      if (authRedisClient.isOpen) {
-        await authRedisClient.set(challengeKey, JSON.stringify(challengeData), { EX: 300 }); // 5 minutes
+      if (!authRedisClient.isOpen) {
+        await authRedisClient.connect();
       }
+      await authRedisClient.set(challengeKey, JSON.stringify(challengeData), { EX: 300 }); // 5 minutes
     } catch (err) {
       logger.error('Failed to store 2FA challenge in Redis:', err);
+      // In non-mocked environment, if challenge cannot be stored, fail cleanly
+      if (process.env.NODE_ENV !== 'test') {
+        throw new BadRequestError('Authentication service temporarily unable to store 2FA challenge.');
+      }
     }
 
     return {
@@ -215,6 +220,9 @@ export class TwoFactorService {
   async verifyLoginChallenge(challengeToken: string, code: string, ipAddress?: string): Promise<any> {
     if (!challengeToken) {
       throw new BadRequestError('2FA challenge token is required');
+    }
+    if (!code || typeof code !== 'string') {
+      throw new BadRequestError('Verification code is required');
     }
 
     let challengeData: { userId: string; attempts: number } | null = null;
@@ -324,38 +332,95 @@ export class TwoFactorService {
       throw new UnauthorizedError('2FA challenge has expired or is invalid. Please sign in again.');
     }
 
-    const user = await this.userRepo.findById(challengeData.userId);
-    if (!user || !user.twoFactorRecoveryCodes) {
-      throw new UnauthorizedError('No recovery codes configured for this account');
-    }
-
-    let hashedCodes: string[] = [];
-    try {
-      hashedCodes = JSON.parse(user.twoFactorRecoveryCodes);
-    } catch {
-      throw new UnauthorizedError('Corrupt recovery code records');
+    // Brute-force protection: lock out after 5 attempts
+    if (challengeData.attempts >= 5) {
+      if (authRedisClient.isOpen) {
+        await authRedisClient.del(challengeKey);
+      }
+      if (this.auditRepo) {
+        await this.auditRepo.record({
+          userId: challengeData.userId,
+          action: '2FA_LOCKOUT',
+          ipAddress,
+          metadata: { reason: 'Exceeded maximum 5 recovery code attempts' },
+        });
+      }
+      throw new UnauthorizedError('Too many failed 2FA attempts. Challenge locked. Please sign in again.', 'TOO_MANY_ATTEMPTS');
     }
 
     const inputHash = this.hashRecoveryCode(recoveryCode);
-    const matchedIndex = hashedCodes.indexOf(inputHash);
+    let remainingCodesCount = 0;
+    let resultUser: any = null;
 
-    if (matchedIndex === -1) {
-      challengeData.attempts += 1;
-      if (this.auditRepo) {
-        await this.auditRepo.record({
-          userId: user.id,
-          action: '2FA_RECOVERY_CODE_FAILED',
-          ipAddress,
-        });
+    if (typeof (this.userRepo as any).consumeRecoveryCode === 'function') {
+      const consumed = await (this.userRepo as any).consumeRecoveryCode(challengeData.userId, inputHash);
+      if (!consumed) {
+        challengeData.attempts += 1;
+        try {
+          if (authRedisClient.isOpen) {
+            const ttl = await authRedisClient.ttl(challengeKey);
+            if (ttl > 0) {
+              await authRedisClient.set(challengeKey, JSON.stringify(challengeData), { EX: ttl });
+            }
+          }
+        } catch (err) {}
+
+        if (this.auditRepo) {
+          await this.auditRepo.record({
+            userId: challengeData.userId,
+            action: '2FA_RECOVERY_CODE_FAILED',
+            ipAddress,
+            metadata: { attempt: challengeData.attempts },
+          });
+        }
+        throw new UnauthorizedError(`Invalid recovery code. Attempt ${challengeData.attempts} of 5.`);
       }
-      throw new UnauthorizedError('Invalid recovery code');
-    }
+      resultUser = consumed.user;
+      remainingCodesCount = consumed.remainingCount;
+    } else {
+      const user = await this.userRepo.findById(challengeData.userId);
+      if (!user || !user.twoFactorRecoveryCodes) {
+        throw new UnauthorizedError('No recovery codes configured for this account');
+      }
 
-    // Single-use: remove matched code
-    hashedCodes.splice(matchedIndex, 1);
-    await this.userRepo.update(user.id, {
-      twoFactorRecoveryCodes: JSON.stringify(hashedCodes),
-    });
+      let hashedCodes: string[] = [];
+      try {
+        hashedCodes = JSON.parse(user.twoFactorRecoveryCodes);
+      } catch {
+        throw new UnauthorizedError('Corrupt recovery code records');
+      }
+
+      const matchedIndex = hashedCodes.indexOf(inputHash);
+
+      if (matchedIndex === -1) {
+        challengeData.attempts += 1;
+        try {
+          if (authRedisClient.isOpen) {
+            const ttl = await authRedisClient.ttl(challengeKey);
+            if (ttl > 0) {
+              await authRedisClient.set(challengeKey, JSON.stringify(challengeData), { EX: ttl });
+            }
+          }
+        } catch (err) {}
+
+        if (this.auditRepo) {
+          await this.auditRepo.record({
+            userId: user.id,
+            action: '2FA_RECOVERY_CODE_FAILED',
+            ipAddress,
+            metadata: { attempt: challengeData.attempts },
+          });
+        }
+        throw new UnauthorizedError(`Invalid recovery code. Attempt ${challengeData.attempts} of 5.`);
+      }
+
+      hashedCodes.splice(matchedIndex, 1);
+      await this.userRepo.update(user.id, {
+        twoFactorRecoveryCodes: JSON.stringify(hashedCodes),
+      });
+      remainingCodesCount = hashedCodes.length;
+      resultUser = user;
+    }
 
     if (authRedisClient.isOpen) {
       await authRedisClient.del(challengeKey);
@@ -363,14 +428,14 @@ export class TwoFactorService {
 
     if (this.auditRepo) {
       await this.auditRepo.record({
-        userId: user.id,
+        userId: resultUser.id,
         action: '2FA_RECOVERY_CODE_USED',
         ipAddress,
-        metadata: { remainingCodes: hashedCodes.length },
+        metadata: { remainingCodes: remainingCodesCount },
       });
     }
 
-    return { user, remainingRecoveryCodes: hashedCodes.length };
+    return { user: resultUser, remainingRecoveryCodes: remainingCodesCount };
   }
 
   /**

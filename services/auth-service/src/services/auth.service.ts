@@ -5,10 +5,16 @@ import { SessionRepository } from '../repositories/session.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
 import { ConflictError, UnauthorizedError, NotFoundError, createLogger } from '@urbanfleet/common';
-import { publishUserRegistered } from '../events/auth.publisher.js';
 import { Role } from '@prisma/client';
 import { cacheTokens, revokeCachedTokens } from '../redis/token-cache.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
+import { OutboxRepository } from '../repositories/outbox.repository.js';
+import { EventTopics } from '@urbanfleet/contracts';
+import {
+  publishUserRegistered,
+  publishPasswordResetRequested,
+  publishEmailVerificationRequested,
+} from '../events/auth.publisher.js';
 
 const logger = createLogger('auth-service');
 
@@ -16,7 +22,8 @@ export class AuthService {
   constructor(
     private userRepo: UserRepository,
     private sessionRepo: SessionRepository,
-    private auditRepo: AuditRepository
+    private auditRepo: AuditRepository,
+    private outboxRepo?: OutboxRepository
   ) {}
 
   async hashPassword(password: string): Promise<string> {
@@ -30,9 +37,12 @@ export class AuthService {
   async register(input: {
     email: string;
     password: string;
-    fullName: string;
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
     phone?: string;
-    role?: 'RIDER' | 'DRIVER' | 'ADMIN';
+    role?: Role | 'RIDER' | 'DRIVER' | 'ADMIN';
+    roles?: Array<Role | 'RIDER' | 'DRIVER' | 'ADMIN'>;
     ipAddress?: string;
     userAgent?: string;
   }) {
@@ -41,13 +51,22 @@ export class AuthService {
       throw new ConflictError('A user with this email address already exists');
     }
 
+    const fullName =
+      input.fullName ||
+      [input.firstName, input.lastName].filter(Boolean).join(' ').trim() ||
+      'User';
+    const role =
+      (input.role as Role) ||
+      (input.roles && input.roles.length > 0 ? (input.roles[0] as Role) : undefined) ||
+      ('RIDER' as Role);
+
     const passwordHash = await this.hashPassword(input.password);
     const user = await this.userRepo.create({
       email: input.email,
       passwordHash,
-      fullName: input.fullName,
+      fullName,
       phone: input.phone,
-      role: (input.role as Role) || Role.RIDER
+      role,
     });
 
     const sessionId = crypto.randomUUID();
@@ -55,9 +74,10 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
-      sessionId
+      sessionId,
+      tokenType: 'ACCESS',
     });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
 
     const session = await this.sessionRepo.create({
       id: sessionId,
@@ -77,6 +97,39 @@ export class AuthService {
       action: 'USER_REGISTERED',
       ipAddress: input.ipAddress
     });
+
+    // Durable Outbox event staging
+    if (this.outboxRepo) {
+      try {
+        await this.outboxRepo.stageEvent(null, {
+          topic: EventTopics.AUTH_EVENTS,
+          partitionKey: user.id,
+          eventType: 'USER_REGISTERED',
+          aggregateType: 'USER',
+          aggregateId: user.id,
+          payload: {
+            id: crypto.randomUUID(),
+            version: 1,
+            eventType: 'USER_REGISTERED',
+            producer: 'auth-service',
+            timestamp: new Date().toISOString(),
+            partitionKey: user.id,
+            aggregateType: 'USER',
+            aggregateId: user.id,
+            aggregateSequence: 1,
+            payload: {
+              userId: user.id,
+              email: user.email,
+              fullName: user.fullName,
+              phone: user.phone || undefined,
+              role: user.role as any,
+            },
+          },
+        });
+      } catch (err) {
+        logger.error('Failed to stage outbox event for registration:', err);
+      }
+    }
 
     // Emit Kafka event asynchronously
     await publishUserRegistered({
@@ -111,6 +164,14 @@ export class AuthService {
       throw new UnauthorizedError('Invalid email or password');
     }
 
+    // Admin 2FA Policy: Admins must complete 2FA setup before full system access
+    if (user.role === 'ADMIN' && !user.twoFactorEnabled) {
+      return {
+        requires2FASetup: true,
+        userId: user.id,
+      };
+    }
+
     if (user.twoFactorEnabled) {
       return {
         requires2FA: true,
@@ -123,9 +184,10 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
-      sessionId
+      sessionId,
+      tokenType: 'ACCESS',
     });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
 
     const session = await this.sessionRepo.create({
       id: sessionId,
@@ -164,9 +226,10 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
-      sessionId
+      sessionId,
+      tokenType: 'ACCESS',
     });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
 
     const session = await this.sessionRepo.create({
       id: sessionId,
@@ -217,26 +280,37 @@ export class AuthService {
       throw new UnauthorizedError('User not found');
     }
 
+    const newSessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
       role: user.role,
-      sessionId: session.id
+      sessionId: newSessionId,
+      tokenType: 'ACCESS',
     });
 
-    const newRefreshToken = signRefreshToken({ userId: user.id, sessionId: session.id });
+    const newRefreshToken = signRefreshToken({
+      userId: user.id,
+      sessionId: newSessionId,
+      tokenType: 'REFRESH',
+    });
 
+    // Delete old session and revoke its cache
+    await this.sessionRepo.delete(session.id);
+    await revokeCachedTokens(user.id, session.id);
+
+    // Create new session with matching newSessionId
     await this.sessionRepo.create({
+      id: newSessionId,
       userId: user.id,
       refreshToken: newRefreshToken,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       ipAddress: session.ipAddress || undefined,
       userAgent: session.userAgent || undefined
     });
-    await this.sessionRepo.delete(session.id);
 
     // Cache updated tokens in Redis for fast access
-    await cacheTokens(user.id, session.id, accessToken, newRefreshToken);
+    await cacheTokens(user.id, newSessionId, accessToken, newRefreshToken);
 
     return {
       accessToken,
@@ -276,11 +350,22 @@ export class AuthService {
       logger.error('Failed to cache reset token in Redis:', err);
     }
 
+    // Publish notification event to Kafka for email dispatch
+    await publishPasswordResetRequested({
+      userId: user.id,
+      email: user.email,
+      resetToken,
+    });
+
     return {
       success: true,
       message: 'Password reset instructions dispatched',
       ...(process.env.NODE_ENV !== 'production' ? { resetToken } : {})
     };
+  }
+
+  async forgotPassword(email: string) {
+    return this.requestPasswordReset(email);
   }
 
   async resetPassword(token: string, newPass: string) {
@@ -369,6 +454,13 @@ export class AuthService {
     } catch (err) {
       logger.error('Failed to store verification token in Redis:', err);
     }
+
+    // Publish notification event to Kafka for email dispatch
+    await publishEmailVerificationRequested({
+      userId: user.id,
+      email: user.email,
+      verifyToken,
+    });
 
     return {
       success: true,

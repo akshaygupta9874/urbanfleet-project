@@ -48,6 +48,10 @@ export function createAuthMiddleware(publicKeyBase64?: string) {
         audience: 'urbanfleet-api',
       }) as AuthenticatedUserPayload;
 
+      if ((decoded as any).tokenType && (decoded as any).tokenType !== 'ACCESS') {
+        return next(new UnauthorizedError('Invalid token type. Access token required.', 'INVALID_TOKEN_TYPE'));
+      }
+
       req.user = decoded;
       next();
     } catch (err: any) {

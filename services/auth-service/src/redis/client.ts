@@ -21,3 +21,13 @@ authRedisClient.on('connect', () => {
 });
 
 export const authRedisKey = (key: string) => `auth:${key}`;
+
+export async function initAuthRedis(): Promise<void> {
+  if (!authRedisClient.isOpen) {
+    try {
+      await authRedisClient.connect();
+    } catch (err) {
+      logger.error('Failed to establish initial Redis connection:', err);
+    }
+  }
+}

@@ -18,14 +18,19 @@ import { AdminController } from './controllers/admin.controller.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { createAdminRouter } from './routes/admin.routes.js';
 
+import { initAuthRedis } from './redis/client.js';
+import { OutboxRepository } from './repositories/outbox.repository.js';
+import { OutboxWorker } from './workers/outbox.worker.js';
+
 const logger = createLogger('auth-service');
 import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.PORT || 4001;
 
-// 1. Initialize RS256 Asymmetric Keys & Kafka Publisher
+// 1. Initialize RS256 Asymmetric Keys, Redis & Kafka Publisher
 initAsymmetricKeys();
+initAuthRedis().catch(err => logger.error('Redis init error:', err));
 initAuthPublisher().catch(err => logger.error('Kafka init error:', err));
 
 // 2. Middlewares
@@ -38,8 +43,12 @@ app.use(express.json());
 const userRepo = new UserRepository(prisma);
 const sessionRepo = new SessionRepository(prisma);
 const auditRepo = new AuditRepository(prisma);
+const outboxRepo = new OutboxRepository(prisma);
 
-const authService = new AuthService(userRepo, sessionRepo, auditRepo);
+const outboxWorker = new OutboxWorker(outboxRepo);
+outboxWorker.start();
+
+const authService = new AuthService(userRepo, sessionRepo, auditRepo, outboxRepo);
 const userService = new UserService(userRepo);
 const twoFactorService = new TwoFactorService(userRepo, auditRepo);
 const adminService = new AdminService(userRepo);
