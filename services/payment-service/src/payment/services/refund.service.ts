@@ -13,7 +13,6 @@ import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
 import { payoutService } from "./payout.service.js";
 
-import { prisma } from "../../db/client.js";
 import { acquireLock } from "../../redis/redis-lock.js";
 import { paymentLog } from "../utils/payment-logger.js";
 import { allocateRefund } from "../utils/refund-allocation.js";
@@ -523,7 +522,7 @@ class RefundService {
 
         const transactionId = randomUUID();
 
-        const { updated, record } = await prisma.$transaction(async (tx) => {
+        const { updated, record } = await paymentRepository.transaction(async (tx) => {
             const payoutEffect =
                 await payoutService.handleRefundBooked(
                     payment._id,
@@ -633,7 +632,7 @@ class RefundService {
 
             const transactionId = randomUUID();
 
-            const updated = await prisma.$transaction(async (tx) => {
+            const updated = await paymentRepository.transaction(async (tx) => {
                 const res = await paymentRepository.failRefund(
                     paymentId,
                     refundId,

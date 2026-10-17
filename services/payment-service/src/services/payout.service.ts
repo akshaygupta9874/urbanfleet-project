@@ -1,10 +1,8 @@
 import { PayoutRepository } from '../repositories/payout.repository.js';
 import { LedgerService } from './ledger.service.js';
-import { PrismaClient } from '@prisma/client';
 
 export class PayoutService {
   constructor(
-    private prisma: PrismaClient,
     private payoutRepo: PayoutRepository,
     private ledgerService: LedgerService
   ) {}
@@ -19,11 +17,11 @@ export class PayoutService {
   }
 
   async processPayout(payoutId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const payout = await tx.payout.update({
-        where: { id: payoutId },
-        data: { status: 'PROCESSED', processedAt: new Date() }
-      });
+    return this.payoutRepo.executeTransaction(async (tx) => {
+      const payout = await this.payoutRepo.update(payoutId, {
+        status: 'PROCESSED',
+        processedAt: new Date()
+      }, tx);
       await this.ledgerService.recordDriverPayout(tx, payout);
       return payout;
     });

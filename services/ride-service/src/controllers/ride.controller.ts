@@ -1,13 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { RideService } from '../services/ride.service.js';
 import { FareService } from '../services/fare.service.js';
-import { RideRepository } from '../repositories/ride.repository.js';
-
 export class RideController {
   constructor(
     private rideService: RideService,
-    private fareService: FareService,
-    private rideRepo: RideRepository
+    private fareService: FareService
   ) {}
 
   estimateFare = async (req: Request, res: Response, next: NextFunction) => {
@@ -44,14 +41,14 @@ export class RideController {
 
   getRiderHistory = async (req: any, res: Response, next: NextFunction) => {
     try {
-      const history = await this.rideRepo.findHistoryByRiderId(req.user.userId);
+      const history = await this.rideService.getRiderHistory(req.user.userId);
       res.status(200).json({ success: true, data: history });
     } catch (err) { next(err); }
   };
 
   getDriverHistory = async (req: any, res: Response, next: NextFunction) => {
     try {
-      const history = await this.rideRepo.findHistoryByDriverId(req.user.userId);
+      const history = await this.rideService.getDriverHistory(req.user.userId);
       res.status(200).json({ success: true, data: history });
     } catch (err) { next(err); }
   };

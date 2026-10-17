@@ -6,7 +6,6 @@ import { NonRetryablePaymentError, isDuplicateKeyError } from "../errors/payment
 import { payoutRepository } from "../repositories/payout.repository.js";
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
-import { prisma } from "../../db/client.js";
 import { IPayout } from "../types/payment.models.js";
 import { RazorpayPayoutEntity } from "../types/razorpay.types.js";
 import { computeRefundTotals } from "../utils/refund-totals.js";
@@ -166,7 +165,7 @@ export class PayoutService {
       update.utr = utr;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const updated = await payoutRepository.transaction(async (tx) => {
       const res = await payoutRepository.transition(
         payoutId,
         [PayoutStatus.PENDING, PayoutStatus.PROCESSING],
@@ -248,7 +247,7 @@ export class PayoutService {
     const transactionId = randomUUID();
     const failureReason = reason ?? "Payout reversed by the bank";
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const updated = await payoutRepository.transaction(async (tx) => {
       const res = await payoutRepository.transition(
         payoutId,
         [PayoutStatus.PROCESSED],

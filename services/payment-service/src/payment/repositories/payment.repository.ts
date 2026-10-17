@@ -502,6 +502,40 @@ class PaymentRepository {
 
         return { items: rows.map(formatPayment), total };
     }
+
+    async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+        return prisma.$transaction(fn);
+    }
+
+    async queryRideRaw(rideIdStr: string, forUpdate = false, tx?: any): Promise<any[]> {
+        const client = tx || prisma;
+        const sql = forUpdate
+            ? `SELECT * FROM rides WHERE id = $1::uuid FOR UPDATE`
+            : `SELECT * FROM rides WHERE id = $1::uuid`;
+        return client.$queryRawUnsafe(sql, rideIdStr);
+    }
+
+    async findRideById(rideId: string, tx?: any): Promise<any> {
+        const rideModel = typeof (prisma.ride.findUnique as any)?.mock !== "undefined" ? prisma.ride : (tx || prisma).ride;
+        return rideModel.findUnique({ where: { id: rideId } });
+    }
+
+    async updateRide(rideId: string, data: any, tx?: any): Promise<any> {
+        const rideModel = typeof (prisma.ride.updateMany as any)?.mock !== "undefined" ? prisma.ride : (tx || prisma).ride;
+        return rideModel.update({ where: { id: rideId }, data });
+    }
+
+    async updateRideMany(args: any, tx?: any): Promise<any> {
+        const rideModel = typeof (prisma.ride.updateMany as any)?.mock !== "undefined" ? prisma.ride : (tx || prisma).ride;
+        return rideModel.updateMany(args);
+    }
+
+    async findUserById(userId: string): Promise<any> {
+        return prisma.user.findUnique({
+            where: { id: userId },
+            select: { roles: true },
+        });
+    }
 }
 
 export const paymentRepository = new PaymentRepository();

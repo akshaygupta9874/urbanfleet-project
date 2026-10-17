@@ -7,6 +7,7 @@ import { PaymentRepository } from './repositories/payment.repository.js';
 import { LedgerRepository } from './repositories/ledger.repository.js';
 import { RefundRepository } from './repositories/refund.repository.js';
 import { PayoutRepository } from './repositories/payout.repository.js';
+import { OutboxRepository } from './repositories/outbox.repository.js';
 import { LedgerService } from './services/ledger.service.js';
 import { PayoutService } from './services/payout.service.js';
 import { PaymentService } from './services/payment.service.js';
@@ -26,10 +27,11 @@ const paymentRepo = new PaymentRepository(prisma);
 const ledgerRepo = new LedgerRepository(prisma);
 const refundRepo = new RefundRepository(prisma);
 const payoutRepo = new PayoutRepository(prisma);
+const outboxRepo = new OutboxRepository(prisma);
 
 const ledgerService = new LedgerService(ledgerRepo);
-const payoutService = new PayoutService(prisma, payoutRepo, ledgerService);
-const paymentService = new PaymentService(prisma, paymentRepo, refundRepo, ledgerService);
+const payoutService = new PayoutService(payoutRepo, ledgerService);
+const paymentService = new PaymentService(paymentRepo, refundRepo, ledgerService, outboxRepo);
 const paymentController = new PaymentController(paymentService, payoutService);
 
 // Start Outbox Worker & Consumer

@@ -1,4 +1,4 @@
-import { PrismaClient, Ride, RideStatus, RidePaymentStatus } from '@prisma/client';
+import { Ride, RideStatus, RidePaymentStatus } from '@prisma/client';
 import { RideRepository } from '../repositories/ride.repository.js';
 import { RatingRepository } from '../repositories/rating.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
@@ -9,7 +9,6 @@ import { EventTopics } from '@urbanfleet/contracts';
 
 export class RideService {
   constructor(
-    private prisma: PrismaClient,
     private rideRepo: RideRepository,
     private ratingRepo: RatingRepository,
     private outboxRepo: OutboxRepository,
@@ -26,25 +25,23 @@ export class RideService {
     const fare = this.fareService.calculateFareEstimate(input.pickup, input.destination);
     const otp = this.otpService.generateRideOtp();
 
-    return this.prisma.ride.create({
-      data: {
-        riderId: input.riderId,
-        pickupLat: input.pickup.lat,
-        pickupLng: input.pickup.lng,
-        pickupAddress: input.pickup.address,
-        destinationLat: input.destination.lat,
-        destinationLng: input.destination.lng,
-        destinationAddress: input.destination.address,
-        distanceKm: fare.distanceKm,
-        durationMinutes: fare.durationMinutes,
-        baseFarePaise: fare.baseFarePaise,
-        surgeMultiplier: fare.surgeMultiplier,
-        totalFarePaise: fare.totalFarePaise,
-        vehicleCategory: input.vehicleCategory || 'SEDAN',
-        otp,
-        status: 'SEARCHING',
-        rideSequence: 1
-      }
+    return this.rideRepo.create({
+      riderId: input.riderId,
+      pickupLat: input.pickup.lat,
+      pickupLng: input.pickup.lng,
+      pickupAddress: input.pickup.address,
+      destinationLat: input.destination.lat,
+      destinationLng: input.destination.lng,
+      destinationAddress: input.destination.address,
+      distanceKm: fare.distanceKm,
+      durationMinutes: fare.durationMinutes,
+      baseFarePaise: fare.baseFarePaise,
+      surgeMultiplier: fare.surgeMultiplier,
+      totalFarePaise: fare.totalFarePaise,
+      vehicleCategory: input.vehicleCategory || 'SEDAN',
+      otp,
+      status: 'SEARCHING',
+      rideSequence: 1
     });
   }
 
@@ -62,8 +59,22 @@ export class RideService {
     return this.rideRepo.findActiveRideByDriverId(driverId);
   }
 
+  async getRiderHistory(riderId: string): Promise<Ride[]> {
+    return this.rideRepo.findHistoryByRiderId(riderId);
+  }
+
+  async getDriverHistory(driverId: string): Promise<Ride[]> {
+    return this.rideRepo.findHistoryByDriverId(driverId);
+  }
+
+  async getActiveRideForUser(userId: string, isDriver: boolean): Promise<Ride | null> {
+    return isDriver
+      ? this.rideRepo.findActiveRideByDriverId(userId)
+      : this.rideRepo.findActiveRideByRiderId(userId);
+  }
+
   async acceptRide(rideId: string, driverId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
       if (ride.status !== 'REQUESTED' && ride.status !== 'SEARCHING') {
@@ -71,15 +82,12 @@ export class RideService {
       }
 
       const nextSequence = ride.rideSequence + 1;
-      const updated = await tx.ride.update({
-        where: { id: rideId },
-        data: {
-          driverId,
-          status: 'ACCEPTED',
-          acceptedAt: new Date(),
-          rideSequence: nextSequence
-        }
-      });
+      const updated = await this.rideRepo.update(rideId, {
+        driverId,
+        status: 'ACCEPTED',
+        acceptedAt: new Date(),
+        rideSequence: nextSequence
+      }, tx);
 
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
@@ -96,9 +104,9 @@ export class RideService {
   }
 
   async driverArrived(rideId: string, driverId: string) {
-    return this.prisma.ride.update({
-      where: { id: rideId },
-      data: { status: 'ARRIVED', arrivedAt: new Date() }
+    return this.rideRepo.update(rideId, {
+      status: 'ARRIVED',
+      arrivedAt: new Date()
     });
   }
 
@@ -107,9 +115,8 @@ export class RideService {
   }
 
   async arriveAtDestination(input: { rideId: string; driverId: string }) {
-    return this.prisma.ride.update({
-      where: { id: input.rideId },
-      data: { status: 'ARRIVED_AT_DESTINATION' }
+    return this.rideRepo.update(input.rideId, {
+      status: 'ARRIVED_AT_DESTINATION'
     });
   }
 
@@ -123,18 +130,15 @@ export class RideService {
       throw new AppError('Invalid ride verification OTP', 400);
     }
 
-    return this.prisma.ride.update({
-      where: { id: rideId },
-      data: {
-        status: 'IN_PROGRESS',
-        startedAt: new Date(),
-        otp: this.otpService.invalidateRideOtp()
-      }
+    return this.rideRepo.update(rideId, {
+      status: 'IN_PROGRESS',
+      startedAt: new Date(),
+      otp: this.otpService.invalidateRideOtp()
     });
   }
 
   async completeRide(rideId: string, driverId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
       if (ride.status !== 'IN_PROGRESS') {
@@ -142,14 +146,11 @@ export class RideService {
       }
 
       const nextSequence = ride.rideSequence + 1;
-      const completed = await tx.ride.update({
-        where: { id: rideId },
-        data: {
-          status: 'COMPLETED',
-          completedAt: new Date(),
-          rideSequence: nextSequence
-        }
-      });
+      const completed = await this.rideRepo.update(rideId, {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+        rideSequence: nextSequence
+      }, tx);
 
       // Atomically stage Outbox event for Kafka in SAME transaction
       await this.outboxRepo.stageEvent(tx, {
@@ -177,7 +178,7 @@ export class RideService {
   }
 
   async cancelRide(rideId: string, userId: string, reason?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
       if (['COMPLETED', 'CANCELLED'].includes(ride.status)) {
@@ -185,16 +186,13 @@ export class RideService {
       }
 
       const nextSequence = ride.rideSequence + 1;
-      const cancelled = await tx.ride.update({
-        where: { id: rideId },
-        data: {
-          status: 'CANCELLED',
-          cancelledBy: userId === ride.riderId ? 'RIDER' : 'DRIVER',
-          cancellationReason: reason,
-          cancelledAt: new Date(),
-          rideSequence: nextSequence
-        }
-      });
+      const cancelled = await this.rideRepo.update(rideId, {
+        status: 'CANCELLED',
+        cancelledBy: userId === ride.riderId ? 'RIDER' : 'DRIVER',
+        cancellationReason: reason,
+        cancelledAt: new Date(),
+        rideSequence: nextSequence
+      }, tx);
 
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
@@ -218,14 +216,11 @@ export class RideService {
   }
 
   async updateRideStatus(rideId: string, status: RideStatus) {
-    return this.prisma.ride.update({ where: { id: rideId }, data: { status } });
+    return this.rideRepo.update(rideId, { status });
   }
 
   async updatePaymentStatus(rideId: string, paymentStatus: RidePaymentStatus) {
-    return this.prisma.ride.update({
-      where: { id: rideId },
-      data: { paymentStatus }
-    });
+    return this.rideRepo.update(rideId, { paymentStatus });
   }
 
   async submitRating(rideId: string, fromId: string, score: number, feedback?: string) {

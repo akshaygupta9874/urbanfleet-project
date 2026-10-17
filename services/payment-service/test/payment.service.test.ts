@@ -9,18 +9,9 @@ describe('Payment Service Order Creation & Verification', () => {
   };
   const mockRefundRepo: any = { create: vi.fn() };
   const mockLedgerService: any = { recordPaymentCapture: vi.fn().mockResolvedValue('tx-1') };
-  const mockPrisma: any = {
-    $transaction: vi.fn(async (cb) => cb(mockPrisma)),
-    payment: {
-      findUnique: vi.fn(),
-      update: vi.fn()
-    },
-    outboxEvent: {
-      create: vi.fn().mockResolvedValue({})
-    }
-  };
+  const mockOutboxRepo: any = { stageEvent: vi.fn().mockResolvedValue({}) };
 
-  const paymentService = new PaymentService(mockPrisma, mockPaymentRepo, mockRefundRepo, mockLedgerService);
+  const paymentService = new PaymentService(mockPaymentRepo, mockRefundRepo, mockLedgerService, mockOutboxRepo);
 
   it('should idempotently create a payment order for a ride', async () => {
     mockPaymentRepo.findByRideId.mockResolvedValue(null);

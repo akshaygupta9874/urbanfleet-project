@@ -251,6 +251,10 @@ class PayoutRepository {
             total,
         };
     }
+
+    async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+        return prisma.$transaction(fn);
+    }
 }
 
 export const payoutRepository = new PayoutRepository();

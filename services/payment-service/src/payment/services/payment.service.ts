@@ -51,10 +51,10 @@ import {
   VerifyCheckoutInput,
 } from "../types/payment.dto.js";
 
-import { prisma } from "../../db/client.js";
 import { formatRide, rideClient } from "../../clients/ride.client.js";
 import { RidePaymentStatus, RideStatus } from "../types/payment.types.js";
 export { RidePaymentStatus, RideStatus };
+import { UserRole } from "@prisma/client";
 import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from "../../sockets/emitters/rider.emitter.js";
 
@@ -229,10 +229,7 @@ class PaymentService {
     }
 
     // Pre-check ride details before calling the external gateway
-    const checkRows = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT * FROM rides WHERE id = $1::uuid`,
-      rideIdStr
-    );
+    const checkRows = await paymentRepository.queryRideRaw(rideIdStr);
     const latestRide = (checkRows && checkRows.length > 0) ? formatRide(checkRows[0]) : ride;
 
     if (!latestRide.driver) {
@@ -282,11 +279,8 @@ class PaymentService {
     try {
       let reservation: { payment: IPayment; alreadyExists: boolean };
       try {
-        reservation = await prisma.$transaction(async (tx) => {
-          const rows = await tx.$queryRawUnsafe<any[]>(
-            `SELECT * FROM rides WHERE id = $1::uuid FOR UPDATE`,
-            rideIdStr
-          );
+        reservation = await paymentRepository.transaction(async (tx) => {
+          const rows = await paymentRepository.queryRideRaw(rideIdStr, true, tx);
           if (!rows || rows.length === 0) {
             throw new AppError("Ride not found.", 404, "RIDE_NOT_FOUND");
           }
@@ -722,7 +716,7 @@ class PaymentService {
 
     const transactionId = randomUUID();
 
-    const captureResult = await prisma.$transaction(async (tx) => {
+    const captureResult = await paymentRepository.transaction(async (tx) => {
       // 1) claim the capture (compare-and-swap). Nothing has been written before this point.
       const claimed =
         await paymentRepository.transitionStatus(
@@ -752,10 +746,7 @@ class PaymentService {
       );
 
       // 3) ride
-      const rideModel = typeof (prisma.ride.findUnique as any)?.mock !== "undefined" ? prisma.ride : (tx as any).ride;
-      const dbRide = await rideModel.findUnique({
-        where: { id: payment.ride.toString() },
-      });
+      const dbRide = await paymentRepository.findRideById(payment.ride.toString(), tx);
 
       if (!dbRide) {
         throw new AppError(
@@ -765,12 +756,13 @@ class PaymentService {
         );
       }
 
-      const updatedRideRecord = await rideModel.update({
-        where: { id: payment.ride.toString() },
-        data: {
+      const updatedRideRecord = await paymentRepository.updateRide(
+        payment.ride.toString(),
+        {
           paymentStatus: RidePaymentStatus.CAPTURED,
         },
-      });
+        tx
+      );
 
       return { claimed, updatedRideRecord };
     });
@@ -843,7 +835,7 @@ class PaymentService {
       return;
     }
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await paymentRepository.transaction(async (tx) => {
       const updatedPayment =
         await paymentRepository.recordFailedAttempt(
           payment._id.toString(),
@@ -860,12 +852,7 @@ class PaymentService {
         return null; // captured meanwhile, or this failure was already recorded
       }
 
-      const rideModel =
-        typeof (prisma.ride.updateMany as any)?.mock !== "undefined"
-          ? prisma.ride
-          : (tx as any).ride;
-
-      await rideModel.updateMany({
+      await paymentRepository.updateRideMany({
         where: {
           id: payment.ride.toString(),
           paymentStatus: RidePaymentStatus.PENDING,
@@ -873,7 +860,7 @@ class PaymentService {
         data: {
           paymentStatus: RidePaymentStatus.FAILED,
         },
-      });
+      }, tx);
 
       return updatedPayment;
     });
@@ -930,6 +917,32 @@ class PaymentService {
     input: InitiateRefundInput
   ): Promise<InitiateRefundResult> {
     return refundService.initiateRefund(input);
+  }
+
+  async loadRequester(userId: string): Promise<{ isAdmin: boolean }> {
+    const user = await paymentRepository.findUserById(userId);
+    if (!user) {
+      throw new AppError("User not found", 404, "USER_NOT_FOUND");
+    }
+    return {
+      isAdmin: Array.isArray(user.roles) && user.roles.includes(UserRole.ADMIN),
+    };
+  }
+
+  async getPaymentById(paymentId: string): Promise<IPayment | null> {
+    return paymentRepository.findById(paymentId);
+  }
+
+  async getPaymentsByRide(rideId: string): Promise<IPayment[]> {
+    return paymentRepository.findByRide(rideId);
+  }
+
+  async listPaymentsPaginated(
+    filter: any,
+    page = 1,
+    limit = 20
+  ): Promise<{ items: IPayment[]; total: number }> {
+    return paymentRepository.listPaginated(filter, page, limit);
   }
 }
 

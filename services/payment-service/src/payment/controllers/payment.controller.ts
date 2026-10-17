@@ -6,12 +6,9 @@ import {
 } from "../../utils/AppError.js";
 import asyncHandler from "../../middlewares/asyncHandler.js";
 import { paymentService } from "../services/payment.service.js";
-import { paymentRepository } from "../repositories/payment.repository.js";
 import { PaymentStatus } from "../types/payment.types.js";
 import { IPayment } from "../types/payment.models.js";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import { prisma } from "../../db/client.js";
-import { UserRole } from "@prisma/client";
 
 /**
  * One payment per (ride, rider): the key is derived, never taken from the client.
@@ -36,30 +33,11 @@ function unauthenticated(): AppError {
   );
 }
 
-/** One user lookup per request (the old code repeated it in every handler). */
+/** One user lookup per request (handled via service). */
 async function loadRequester(
   userId: string
 ): Promise<{ isAdmin: boolean }> {
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { roles: true },
-  });
-
-  if (!user) {
-
-    throw new AppError(
-      "User not found",
-      404,
-      "USER_NOT_FOUND"
-    );
-
-  }
-
-  return {
-    isAdmin: user.roles.includes(UserRole.ADMIN),
-  };
-
+  return paymentService.loadRequester(userId);
 }
 
 function isParticipant(
@@ -193,7 +171,7 @@ export const getPayment =
     }
 
     const payment =
-      await paymentRepository.findById(
+      await paymentService.getPaymentById(
         req.params.paymentId
       );
 
@@ -247,7 +225,7 @@ export const getPaymentsByRide =
     }
 
     const payments =
-      await paymentRepository.findByRide(
+      await paymentService.getPaymentsByRide(
         req.params.rideId
       );
 
@@ -315,7 +293,7 @@ export const listPayments =
         };
 
     const { items, total } =
-      await paymentRepository.listPaginated(
+      await paymentService.listPaymentsPaginated(
         filter,
         page,
         limit

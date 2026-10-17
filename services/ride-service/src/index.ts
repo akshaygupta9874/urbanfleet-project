@@ -46,8 +46,8 @@ const otpService = new OtpService();
 const driverPresenceService = new DriverPresenceService(redis);
 const geoService = new GeoService(redis, driverPresenceService);
 const dispatchService = new DispatchService(geoService);
-const rideService = new RideService(prisma, rideRepo, ratingRepo, outboxRepo, fareService, otpService);
-const rideController = new RideController(rideService, fareService, rideRepo);
+const rideService = new RideService(rideRepo, ratingRepo, outboxRepo, fareService, otpService);
+const rideController = new RideController(rideService, fareService);
 
 // Native WebSocket Server
 initRideWebSocketServer(

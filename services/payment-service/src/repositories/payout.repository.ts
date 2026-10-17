@@ -11,7 +11,12 @@ export class PayoutRepository {
     return this.prisma.payout.findMany({ where: { driverId }, orderBy: { createdAt: 'desc' } });
   }
 
-  async update(id: string, data: any): Promise<Payout> {
-    return this.prisma.payout.update({ where: { id }, data });
+  async update(id: string, data: any, tx?: any): Promise<Payout> {
+    const client = tx || this.prisma;
+    return client.payout.update({ where: { id }, data });
+  }
+
+  async executeTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(fn);
   }
 }

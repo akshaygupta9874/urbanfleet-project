@@ -42,4 +42,21 @@ export class RideRepository {
       take: 20
     });
   }
+
+  async create(data: any): Promise<Ride> {
+    return this.prisma.ride.create({ data });
+  }
+
+  async update(id: string, data: any, tx?: any): Promise<Ride> {
+    const client = tx || this.prisma;
+    return client.ride.update({ where: { id }, data });
+  }
+
+  async findActiveRideByRiderId(riderId: string): Promise<Ride | null> {
+    return this.findActiveRide(riderId);
+  }
+
+  async executeTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(fn);
+  }
 }
