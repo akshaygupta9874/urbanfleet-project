@@ -1,0 +1,476 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. Enums
+// ==========================================
+
+enum Role {
+  RIDER
+  DRIVER
+  ADMIN
+}
+
+enum UserRole {
+  RIDER
+  DRIVER
+  ADMIN
+}
+
+enum VerificationStatus {
+  PENDING
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+  APPROVED
+  SUSPENDED
+}
+
+enum RideStatus {
+  REQUESTED
+  SEARCHING
+  OFFERED
+  ACCEPTED
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVING
+  ARRIVED
+  IN_PROGRESS
+  STARTED
+  ARRIVED_AT_DESTINATION
+  COMPLETED
+  CANCELLED
+}
+
+enum RidePaymentStatus {
+  PENDING
+  PAID
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+enum PayoutStatus {
+  PENDING
+  SUBMITTED
+  PROCESSED
+  FAILED
+  REVERSED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum LedgerAccount {
+  RIDER
+  PLATFORM
+  DRIVER
+  BANK
+  RIDER_WALLET
+  DRIVER_WALLET
+  PLATFORM_COMMISSION
+  GATEWAY_CLEARING
+  TAX_COLLECTED
+}
+
+enum LedgerEntryType {
+  DEBIT
+  CREDIT
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  DISPATCHED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+// ==========================================
+// 2. Auth Service Models
+// ==========================================
+
+model User {
+  id                         String        @id @default(uuid()) @db.Uuid
+  email                      String        @unique @db.VarChar(255)
+  passwordHash               String        @map("password_hash") @db.VarChar(255)
+  fullName                   String        @map("full_name") @db.VarChar(100)
+  phone                      String?       @unique @db.VarChar(20)
+  role                       Role          @default(RIDER)
+  roles                      UserRole[]    @default([RIDER])
+  isEmailVerified            Boolean       @default(false) @map("is_email_verified")
+  twoFactorEnabled           Boolean       @default(false) @map("two_factor_enabled")
+  twoFactorSecret            String?       @map("two_factor_secret") @db.VarChar(255)
+  twoFactorPendingSecret     String?       @map("two_factor_pending_secret") @db.VarChar(255)
+  twoFactorSetupRequestedAt  DateTime?     @map("two_factor_setup_requested_at")
+  twoFactorRecoveryCodes     String?       @map("two_factor_recovery_codes") @db.Text
+  avatarUrl                  String?       @map("avatar_url") @db.VarChar(500)
+  status                     String        @default("ACTIVE") @db.VarChar(20)
+
+  createdAt                  DateTime      @default(now()) @map("created_at")
+  updatedAt                  DateTime      @updatedAt @map("updated_at")
+
+  sessions                   Session[]
+  auditLogs                  AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String    @unique @map("refresh_token") @db.VarChar(500)
+  userAgent    String?   @map("user_agent") @db.VarChar(255)
+  ipAddress    String?   @map("ip_address") @db.VarChar(45)
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   @db.VarChar(100)
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+// ==========================================
+// 3. Driver Service Models
+// ==========================================
+
+model DriverProfile {
+  id                 String             @id @default(uuid()) @db.Uuid
+  userId             String             @unique @map("user_id") @db.Uuid
+  licenseNumber      String             @unique @map("license_number") @db.VarChar(50)
+  verificationStatus VerificationStatus @default(PENDING) @map("verification_status")
+  isAvailable        Boolean            @default(false) @map("is_available")
+  rating             Decimal            @default(5.0) @db.Decimal(3, 2)
+  totalTrips         Int                @default(0) @map("total_trips")
+  totalEarningsPaise BigInt             @default(0) @map("total_earnings_paise")
+  profilePhoto       Json?              @map("profile_photo")
+  isVerified         Boolean            @default(false) @map("is_verified")
+
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  vehicles           Vehicle[]
+  documents          Document[]
+
+  @@map("driver_profiles")
+}
+
+model Vehicle {
+  id              String        @id @default(uuid()) @db.Uuid
+  driverProfileId String        @map("driver_profile_id") @db.Uuid
+  driverProfile   DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Cascade)
+  make            String        @db.VarChar(50)
+  model           String        @db.VarChar(50)
+  year            Int
+  plateNumber     String        @unique @map("plate_number") @db.VarChar(50)
+  color           String        @db.VarChar(30)
+  category        String        @default("SEDAN") @db.VarChar(20)
+  isActive        Boolean       @default(true) @map("is_active")
+  images          Json?
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([driverProfileId])
+  @@map("vehicles")
+}
+
+model Document {
+  id              String             @id @default(uuid()) @db.Uuid
+  driverProfileId String             @map("driver_profile_id") @db.Uuid
+  driverProfile   DriverProfile      @relation(fields: [driverProfileId], references: [id], onDelete: Cascade)
+  type            String             @db.VarChar(50)
+  documentUrl     String             @map("document_url") @db.VarChar(500)
+  status          VerificationStatus @default(PENDING)
+  expiresAt       DateTime?          @map("expires_at")
+  rejectionReason String?            @map("rejection_reason")
+  number          String?            @db.VarChar(100)
+  frontImage      String?            @map("front_image") @db.VarChar(500)
+  backImage       String?            @map("back_image") @db.VarChar(500)
+  isVerified      Boolean            @default(false) @map("is_verified")
+
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@index([driverProfileId])
+  @@map("documents")
+}
+
+// ==========================================
+// 4. Ride Service Models
+// ==========================================
+
+model Ride {
+  id                 String            @id @default(uuid()) @db.Uuid
+  riderId            String            @map("rider_id") @db.Uuid
+  driverId           String?           @map("driver_id") @db.Uuid
+  vehicleCategory    String            @default("SEDAN") @map("vehicle_category") @db.VarChar(20)
+
+  status             RideStatus        @default(SEARCHING)
+  paymentStatus      RidePaymentStatus @default(PENDING) @map("payment_status")
+  rideSequence       Int               @default(1) @map("ride_sequence")
+
+  pickupLat          Decimal           @default(0.0) @map("pickup_lat") @db.Decimal(10, 7)
+  pickupLng          Decimal           @default(0.0) @map("pickup_lng") @db.Decimal(10, 7)
+  pickupAddress      String            @default("") @map("pickup_address") @db.VarChar(255)
+
+  destinationLat     Decimal           @default(0.0) @map("destination_lat") @db.Decimal(10, 7)
+  destinationLng     Decimal           @default(0.0) @map("destination_lng") @db.Decimal(10, 7)
+  destinationAddress String            @default("") @map("destination_address") @db.VarChar(255)
+
+  distanceKm         Decimal           @default(0.0) @map("distance_km") @db.Decimal(6, 2)
+  durationMinutes    Int               @default(0) @map("duration_minutes")
+
+  baseFarePaise      Int               @default(0) @map("base_fare_paise")
+  surgeMultiplier    Decimal           @default(1.0) @map("surge_multiplier") @db.Decimal(3, 2)
+  totalFarePaise     Int               @default(0) @map("total_fare_paise")
+
+  otp                String?           @db.VarChar(6)
+  cancelledBy        String?           @map("cancelled_by") @db.VarChar(20)
+  cancellationReason String?           @map("cancellation_reason")
+
+  acceptedAt         DateTime?         @map("accepted_at")
+  arrivedAt          DateTime?         @map("arrived_at")
+  startedAt          DateTime?         @map("started_at")
+  completedAt        DateTime?         @map("completed_at")
+  cancelledAt        DateTime?         @map("cancelled_at")
+
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  ratings            Rating[]
+
+  @@index([riderId])
+  @@index([driverId])
+  @@index([status])
+  @@map("rides")
+}
+
+model Rating {
+  id        String   @id @default(uuid()) @db.Uuid
+  rideId    String   @map("ride_id") @db.Uuid
+  ride      Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  fromId    String   @map("from_id") @db.Uuid
+  toId      String   @map("to_id") @db.Uuid
+  score     Int
+  feedback  String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([rideId, fromId])
+  @@index([toId])
+  @@map("ratings")
+}
+
+// ==========================================
+// 5. Payment Service Models
+// ==========================================
+
+model Payment {
+  id                         String        @id @default(uuid()) @db.Uuid
+  rideId                     String        @unique @map("ride_id") @db.Uuid
+  riderId                    String        @map("rider_id") @db.Uuid
+  driverId                   String?       @map("driver_id") @db.Uuid
+
+  paymentSequence            Int           @default(1) @map("payment_sequence")
+  gateway                    String        @default("RAZORPAY") @db.VarChar(50)
+  gatewayOrderId             String?       @map("gateway_order_id") @db.VarChar(255)
+  gatewayPaymentId           String?       @unique @map("gateway_payment_id") @db.VarChar(255)
+  amountPaise                Int           @map("amount_paise")
+  currency                   String        @default("INR") @db.VarChar(3)
+  status                     PaymentStatus @default(PENDING)
+  method                     String?       @db.VarChar(50)
+  fareBreakdown              Json?         @map("fare_breakdown")
+  idempotencyKey             String?       @unique @map("idempotency_key") @db.VarChar(255)
+  attemptNumber              Int           @default(1) @map("attempt_number")
+  failureReason              String?       @map("failure_reason")
+  failureCode                String?       @map("failure_code")
+  lastFailedGatewayPaymentId String?       @map("last_failed_gateway_payment_id") @db.VarChar(255)
+  refundedAmountPaise        Int           @default(0) @map("refunded_amount_paise")
+  ledgerTransactionId        String?       @map("ledger_transaction_id") @db.VarChar(255)
+  metadata                   Json?
+  capturedAt                 DateTime?     @map("captured_at")
+  refundedAt                 DateTime?     @map("refunded_at")
+
+  createdAt                  DateTime      @default(now()) @map("created_at")
+  updatedAt                  DateTime      @updatedAt @map("updated_at")
+
+  payouts                    Payout[]
+  refunds                    Json?         @default("[]")
+  refundRecords              Refund[]
+
+  @@map("payments")
+}
+
+model Refund {
+  id                  String       @id @default(uuid()) @db.Uuid
+  paymentId           String       @map("payment_id") @db.Uuid
+  payment             Payment      @relation(fields: [paymentId], references: [id])
+  amountPaise         Int          @map("amount_paise")
+  reason              String?
+  gatewayRefundId     String?      @unique @map("gateway_refund_id") @db.VarChar(255)
+  ledgerTransactionId String       @map("ledger_transaction_id") @db.Uuid
+  status              RefundStatus @default(PENDING)
+  createdAt           DateTime     @default(now()) @map("created_at")
+
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+model Payout {
+  id                          String       @id @default(uuid()) @db.Uuid
+  driverId                    String       @map("driver_id") @db.Uuid
+  paymentId                   String?      @map("payment_id") @db.Uuid
+  payment                     Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  rideId                      String       @map("ride_id") @db.Uuid
+
+  amountPaise                 Int          @map("amount_paise")
+  currency                    String       @default("INR") @db.VarChar(3)
+  status                      PayoutStatus @default(PENDING)
+  mode                        String       @default("IMPS") @db.VarChar(20)
+  gatewayPayoutId             String?      @unique @map("gateway_payout_id") @db.VarChar(255)
+  utr                         String?      @db.VarChar(255)
+  ledgerTransactionId         String?      @map("ledger_transaction_id") @db.VarChar(255)
+  reversalLedgerTransactionId String?      @map("reversal_ledger_transaction_id") @db.VarChar(255)
+  failureReason               String?      @map("failure_reason")
+  metadata                    Json?
+
+  processedAt                 DateTime?    @map("processed_at")
+  failedAt                    DateTime?    @map("failed_at")
+  reversedAt                  DateTime?    @map("reversed_at")
+
+  createdAt                   DateTime     @default(now()) @map("created_at")
+  updatedAt                   DateTime     @updatedAt @map("updated_at")
+
+  @@index([driverId])
+  @@index([rideId])
+  @@map("payouts")
+}
+
+model LedgerEntry {
+  id             String          @id @default(uuid()) @db.Uuid
+  transactionId  String          @map("transaction_id") @db.Uuid
+  account        LedgerAccount
+  entryType      LedgerEntryType @map("entry_type")
+  amountPaise    BigInt          @map("amount_paise")
+  currency       String          @default("INR") @db.VarChar(3)
+
+  ownerId        String?         @map("owner_id") @db.VarChar(255)
+  referenceType  String          @map("reference_type") @db.VarChar(50)
+  referenceId    String?         @map("reference_id") @db.VarChar(255)
+  idempotencyKey String?         @map("idempotency_key") @db.VarChar(255)
+  legIndex       Int?            @map("leg_index")
+  description    String?
+  metadata       Json?
+
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@unique([idempotencyKey, legIndex])
+  @@index([transactionId])
+  @@index([account, ownerId])
+  @@map("ledger_entries")
+}
+
+// ==========================================
+// 6. Notification Service Models
+// ==========================================
+
+model NotificationRecord {
+  id               String              @id @default(uuid()) @db.Uuid
+  recipient        String              @db.VarChar(255)
+  channel          NotificationChannel @default(EMAIL)
+  template         String              @db.VarChar(100)
+  idempotencyKey   String              @unique @map("idempotency_key") @db.VarChar(255)
+  payload          Json
+  status           NotificationStatus  @default(PENDING)
+  retryCount       Int                 @default(0) @map("retry_count")
+  lastError        String?             @map("last_error")
+  gatewayMessageId String?             @map("gateway_message_id") @db.VarChar(255)
+
+  dispatchedAt     DateTime?           @map("dispatched_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("notification_records")
+}
+
+// ==========================================
+// 7. Common / Outbox / Event Models
+// ==========================================
+
+model OutboxEvent {
+  id                String       @id @default(uuid()) @db.Uuid
+  topic             String       @db.VarChar(100)
+  partitionKey      String       @map("partition_key") @db.VarChar(100)
+  eventType         String       @map("event_type") @db.VarChar(100)
+  aggregateType     String       @map("aggregate_type") @db.VarChar(50)
+  aggregateId       String       @map("aggregate_id") @db.VarChar(100)
+  aggregateSequence Int          @default(1) @map("aggregate_sequence")
+  payload           Json
+  status            OutboxStatus @default(PENDING)
+  retryCount        Int          @default(0) @map("retry_count")
+  lastError         String?      @map("last_error")
+  lockedAt          DateTime?    @map("locked_at")
+  lockedBy          String?      @map("locked_by") @db.VarChar(100)
+  leaseExpiresAt    DateTime?    @map("lease_expires_at")
+  publishedAt       DateTime?    @map("published_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@index([status, leaseExpiresAt, createdAt])
+  @@index([partitionKey, aggregateSequence])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @map("event_id") @db.Uuid
+  consumerGroup String   @map("consumer_group") @db.VarChar(100)
+  processedAt   DateTime @default(now()) @map("processed_at")
+
+  @@id([eventId, consumerGroup])
+  @@map("processed_events")
+}
