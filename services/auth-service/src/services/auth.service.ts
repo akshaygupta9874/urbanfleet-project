@@ -6,6 +6,7 @@ import { signAccessToken, signRefreshToken } from '../crypto/keys.js';
 import { ConflictError, UnauthorizedError, NotFoundError } from '@urbanfleet/common';
 import { publishUserRegistered } from '../events/auth.publisher.js';
 import { Role } from '@prisma/client';
+import { cacheTokens, revokeCachedTokens } from '../redis/token-cache.js';
 
 export class AuthService {
   constructor(
@@ -70,6 +71,9 @@ export class AuthService {
       userAgent: input.userAgent
     });
 
+    // Cache tokens in Redis for fast access
+    await cacheTokens(user.id, session.id, accessToken, refreshToken);
+
     // Record audit log
     await this.auditRepo.record({
       userId: user.id,
@@ -133,6 +137,9 @@ export class AuthService {
     });
     const refreshToken = signRefreshToken({ userId: user.id, sessionId: session.id });
 
+    // Cache tokens in Redis for fast access
+    await cacheTokens(user.id, session.id, accessToken, refreshToken);
+
     await this.auditRepo.record({
       userId: user.id,
       action: 'USER_LOGIN',
@@ -156,6 +163,7 @@ export class AuthService {
     const session = await this.sessionRepo.findByToken(refreshToken);
     if (session) {
       await this.sessionRepo.delete(session.id);
+      await revokeCachedTokens(session.userId, session.id);
     }
     return { success: true };
   }
@@ -189,6 +197,9 @@ export class AuthService {
     });
     await this.sessionRepo.delete(session.id);
 
+    // Cache updated tokens in Redis for fast access
+    await cacheTokens(user.id, session.id, accessToken, newRefreshToken);
+
     return {
       accessToken,
       refreshToken: newRefreshToken,
@@ -206,8 +217,9 @@ export class AuthService {
     const passwordHash = await this.hashPassword(newPass);
     await this.userRepo.update(userId, { passwordHash });
 
-    // Revoke all existing sessions
+    // Revoke all existing sessions and cached tokens
     await this.sessionRepo.deleteByUserId(userId);
+    await revokeCachedTokens(userId);
     return { success: true };
   }
 

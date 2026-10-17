@@ -29,7 +29,18 @@ export class AuthController {
       // 2. Generate and set CSRF cookie
       const csrfToken = await generateCSRFToken(result.user.id, res);
 
-      res.status(201).json({ success: true, data: { ...result, csrfToken } });
+      res.status(201).json({
+        success: true,
+        data: {
+          user: result.user,
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+          csrfToken,
+        },
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      });
     } catch (err) { next(err); }
   };
 
@@ -53,7 +64,18 @@ export class AuthController {
       // 2. Generate and set CSRF cookie
       const csrfToken = await generateCSRFToken(result.user!.id, res);
 
-      res.status(200).json({ success: true, data: { ...result, csrfToken } });
+      res.status(200).json({
+        success: true,
+        data: {
+          user: result.user,
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+          csrfToken,
+        },
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      });
     } catch (err) { next(err); }
   };
 
@@ -73,7 +95,18 @@ export class AuthController {
       // Rotate CSRF token cookie
       const csrfToken = await refreshCSRFToken(result.user.id, res);
 
-      res.status(200).json({ success: true, data: { ...result, csrfToken } });
+      res.status(200).json({
+        success: true,
+        data: {
+          user: result.user,
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+          csrfToken,
+        },
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      });
     } catch (err) { next(err); }
   };
 
