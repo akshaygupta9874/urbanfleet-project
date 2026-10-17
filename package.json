@@ -16,7 +16,17 @@
     "postinstall": "npm run prisma:generate:all",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "docker:build": "docker compose build",
+    "docker:infra": "docker compose up -d postgres redis kafka kafka-init kong",
+    "db:push:all": "npm run prisma:push --workspaces --if-present",
+    "db:migrate:all": "npm run prisma:migrate --workspaces --if-present",
+    "keys:generate": "node scripts/generate-keys.js",
+    "dev:auth": "npm run dev --workspace=@urbanfleet/auth-service",
+    "dev:driver": "npm run dev --workspace=@urbanfleet/driver-service",
+    "dev:ride": "npm run dev --workspace=@urbanfleet/ride-service",
+    "dev:payment": "npm run dev --workspace=@urbanfleet/payment-service",
+    "dev:notification": "npm run dev --workspace=@urbanfleet/notification-service"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

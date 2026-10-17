@@ -16,6 +16,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/payment-service/dist ./dist
+COPY --from=builder /app/services/payment-service/src/generated ./src/generated
 COPY --from=builder /app/services/payment-service/package.json ./package.json
 COPY --from=builder /app/services/payment-service/prisma ./prisma
 

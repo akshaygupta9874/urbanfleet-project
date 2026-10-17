@@ -16,6 +16,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/driver-service/dist ./dist
+COPY --from=builder /app/services/driver-service/src/generated ./src/generated
 COPY --from=builder /app/services/driver-service/package.json ./package.json
 COPY --from=builder /app/services/driver-service/prisma ./prisma
 
