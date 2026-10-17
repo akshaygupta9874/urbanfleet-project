@@ -12,8 +12,9 @@
     "prisma:migrate": "prisma migrate deploy"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^5.22.0",
-    "@prisma/client": "^5.14.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "@prisma/config": "^7.10.1",
     "@urbanfleet/common": "*",
     "@urbanfleet/contracts": "*",
     "bcryptjs": "^2.4.3",
@@ -38,7 +39,7 @@
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.10",
     "@types/qrcode": "^1.5.5",
-    "prisma": "^5.14.0",
+    "prisma": "^7.10.1",
     "tsx": "^4.11.0",
     "typescript": "^5.4.5"
   }

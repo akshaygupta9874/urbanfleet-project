@@ -12,8 +12,9 @@
     "prisma:migrate": "prisma migrate deploy"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^5.22.0",
-    "@prisma/client": "^5.14.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "@prisma/config": "^7.10.1",
     "@urbanfleet/common": "*",
     "@urbanfleet/contracts": "*",
     "dotenv": "^16.4.5",
@@ -28,7 +29,7 @@
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^6.4.15",
     "@types/pg": "^8.11.10",
-    "prisma": "^5.14.0",
+    "prisma": "^7.10.1",
     "tsx": "^4.11.0",
     "typescript": "^5.4.5"
   }
