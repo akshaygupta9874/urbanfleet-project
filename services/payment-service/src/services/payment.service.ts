@@ -5,6 +5,7 @@ import { OutboxRepository } from '../repositories/outbox.repository.js';
 import { LedgerService } from './ledger.service.js';
 import { NotFoundError, AppError } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
+import { razorpayClient } from '../config/razorpay.config.js';
 import crypto from 'crypto';
 
 export class PaymentService {
@@ -19,25 +20,87 @@ export class PaymentService {
     const existing = await this.paymentRepo.findByRideId(rideId);
     if (existing) return existing;
 
-    const fakeGatewayOrderId = `order_${crypto.randomUUID().substring(0, 14)}`;
+    let gatewayOrderId: string;
+    try {
+      const order = await razorpayClient.orders.create({
+        amount: amountPaise,
+        currency: 'INR',
+        receipt: rideId,
+        payment_capture: true,
+        notes: {
+          rideId,
+          riderId,
+          ...(driverId ? { driverId } : {})
+        }
+      });
+      gatewayOrderId = order.id;
+    } catch (err: any) {
+      throw new AppError(`Gateway order creation failed: ${err.message}`, 502, 'GATEWAY_ERROR');
+    }
 
     return this.paymentRepo.create({
       rideId,
       riderId,
       driverId,
       amountPaise,
-      gatewayOrderId: fakeGatewayOrderId,
+      gatewayOrderId,
       status: 'PENDING',
       paymentSequence: 1
     });
   }
 
-  async verifyPaymentSignature(paymentId: string, gatewayPaymentId: string, signature: string) {
-    return true; // Simplified cryptographic verification
+  async verifyPaymentSignature(paymentId: string, gatewayPaymentId: string, signature: string, orderId?: string) {
+    const payment = await this.paymentRepo.findById(paymentId);
+    if (!payment) throw new NotFoundError('Payment not found');
+
+    const gatewayOrderId = orderId || payment.gatewayOrderId;
+    if (!gatewayOrderId) throw new AppError('No gateway order ID associated with payment', 400);
+
+    const secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!secret) throw new AppError('RAZORPAY_KEY_SECRET is not configured', 500);
+
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(`${gatewayOrderId}|${gatewayPaymentId}`)
+      .digest('hex');
+
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    const actualBuffer = Buffer.from(signature, 'hex');
+
+    if (
+      expectedBuffer.length !== actualBuffer.length ||
+      !crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+    ) {
+      throw new AppError('Invalid payment signature', 400, 'INVALID_SIGNATURE');
+    }
+
+    return true;
   }
 
-  async processWebhook(payload: any) {
-    return { received: true };
+  async processWebhook(rawBody: string | Buffer, signature: string) {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      throw new AppError('RAZORPAY_WEBHOOK_SECRET is not configured', 500);
+    }
+
+    const bodyStr = typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8');
+    const expectedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(bodyStr)
+      .digest('hex');
+
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    const actualBuffer = Buffer.from(signature, 'hex');
+
+    if (
+      expectedBuffer.length !== actualBuffer.length ||
+      !crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+    ) {
+      throw new AppError('Invalid webhook signature', 400, 'INVALID_SIGNATURE');
+    }
+
+    const payload = JSON.parse(bodyStr);
+    return { received: true, event: payload.event };
   }
 
   async getPaymentDetails(rideId: string) {
@@ -100,12 +163,27 @@ export class PaymentService {
       const payment = await this.paymentRepo.findById(paymentId, tx);
       if (!payment) throw new NotFoundError('Payment not found');
 
+      let gatewayRefundId: string;
+      if (payment.gatewayPaymentId) {
+        try {
+          const refundResult = await razorpayClient.payments.refund(payment.gatewayPaymentId, {
+            amount: amountPaise,
+            notes: { reason: reason || 'Ride refund' }
+          });
+          gatewayRefundId = refundResult.id;
+        } catch (err: any) {
+          throw new AppError(`Razorpay refund failed: ${err.message}`, 502, 'GATEWAY_ERROR');
+        }
+      } else {
+        throw new AppError('Payment has no gateway payment ID to refund', 400);
+      }
+
       const refundTransactionId = crypto.randomUUID();
       const refund = await this.refundRepo.create(tx, {
         paymentId,
         amountPaise,
         reason,
-        gatewayRefundId: `rfnd_${crypto.randomUUID().substring(0, 14)}`,
+        gatewayRefundId,
         ledgerTransactionId: refundTransactionId,
         status: 'PROCESSED'
       });

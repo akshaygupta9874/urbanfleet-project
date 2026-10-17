@@ -26,7 +26,8 @@ export class PaymentController {
 
   handleRazorpayWebhook = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.paymentService.processWebhook(req.body);
+      const signature = (req.headers['x-razorpay-signature'] || '') as string;
+      const result = await this.paymentService.processWebhook(req.body, signature);
       res.status(200).json({ success: true, data: result });
     } catch (err) { next(err); }
   };

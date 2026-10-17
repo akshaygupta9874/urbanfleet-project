@@ -36,12 +36,19 @@ export class DriverController {
     const files = (req.files as DriverUploadFiles) || {};
     const userId = req.user?.userId || req.body?.userId;
 
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: Driver registration requires authenticated user ID',
+      });
+    }
+
     // Case 1: Simple JSON body registration (backward compatible with tests/simple API)
     if (!req.files || Object.keys(files).length === 0) {
       if (req.body?.licenseNumber) {
         try {
           const profile = await this.driverService.createDriverProfile(
-            userId || req.body.userId,
+            userId,
             req.body.licenseNumber
           );
           return res.status(201).json({ success: true, data: profile });
@@ -171,7 +178,7 @@ export class DriverController {
       );
 
       const profile = await this.driverService.registerFullDriver({
-        userId: userId || '00000000-0000-0000-0000-000000000000',
+        userId,
         licenseNumber: documents.drivingLicense.number,
         profilePhoto: {
           url: uploadedProfilePhoto.url,

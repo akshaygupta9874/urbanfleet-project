@@ -11,10 +11,11 @@ import { OutboxRepository } from './repositories/outbox.repository.js';
 import { LedgerService } from './services/ledger.service.js';
 import { PayoutService } from './services/payout.service.js';
 import { PaymentService } from './services/payment.service.js';
-import { PaymentController } from './controllers/payment.controller.js';
-import { createPaymentRouter } from './routes/payment.routes.js';
 import { OutboxWorker } from './workers/outbox.worker.js';
 import { initPaymentConsumer } from './consumers/payment.consumer.js';
+import paymentRouter from './payment/routes/payment.routes.js';
+import webhookRouter from './payment/routes/webhook.routes.js';
+import { startPaymentReconciliationJob } from './payment/jobs/payment-reconciliation.job.js';
 
 const logger = createLogger('payment-service');
 import { prisma } from './db/client.js';
@@ -32,23 +33,30 @@ const outboxRepo = new OutboxRepository(prisma);
 const ledgerService = new LedgerService(ledgerRepo);
 const payoutService = new PayoutService(payoutRepo, ledgerService);
 const paymentService = new PaymentService(paymentRepo, refundRepo, ledgerService, outboxRepo);
-const paymentController = new PaymentController(paymentService, payoutService);
 
-// Start Outbox Worker & Consumer
+// Start Outbox Worker, Reconciliation Job & Consumer
 const outboxWorker = new OutboxWorker(prisma);
 outboxWorker.start().catch(err => logger.error('Outbox start error:', err));
+const stopReconciliation = startPaymentReconciliationJob();
 initPaymentConsumer(prisma, paymentService).catch(err => logger.error('Consumer error:', err));
 
 // Middlewares
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
+
+// Raw Webhook Endpoints (BEFORE express.json for cryptographic HMAC verification)
+app.use('/v1/webhooks', webhookRouter);
+app.use('/api/webhooks', webhookRouter);
+
 app.use(express.json());
 
-// Routes
-app.use('/api/payment', createPaymentRouter(paymentController));
+// Routes (Real Payment Subsystem & Legacy compatibility)
+app.use('/v1/payments', paymentRouter);
+app.use('/api/payment', paymentRouter);
 
 // Health check
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'payment-service' }));
+app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok', service: 'payment-service' }));
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

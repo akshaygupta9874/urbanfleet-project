@@ -1,5 +1,11 @@
 import { NotificationRepository } from '../repositories/notification.repository.js';
 import { createLogger } from '@urbanfleet/common';
+import { sendSendGridEmail } from '../config/sendgrid.config.js';
+import {
+  getOtpHtml,
+  getVerifyEmailHtml,
+  getResetPasswordHtml,
+} from '../services/email.service.js';
 
 const logger = createLogger('notification-dispatcher');
 
@@ -20,9 +26,32 @@ export class NotificationDispatcher {
         const pending = await this.notifRepo.findPending();
         for (const item of pending) {
           try {
-            // Simulated delivery with SendGrid idempotency key (X-Entity-ID)
-            logger.info(`Dispatched notification ${item.id} [${item.template}] to ${item.recipient}`);
-            await this.notifRepo.markDispatched(item.id, `msg_${item.id.substring(0, 12)}`);
+            const payload: any = item.payload || {};
+            let subject = payload.subject || 'UrbanFleet Notification';
+            let html = payload.html;
+
+            if (item.template === 'EMAIL_VERIFICATION' && payload.token) {
+              subject = 'Verify your UrbanFleet account';
+              html = getVerifyEmailHtml({ email: item.recipient, token: payload.token });
+            } else if (item.template === 'OTP' && payload.otp) {
+              subject = `${payload.otp} is your UrbanFleet verification code`;
+              html = getOtpHtml({ email: item.recipient, otp: payload.otp });
+            } else if (item.template === 'PASSWORD_RESET' && payload.token) {
+              subject = 'Reset your UrbanFleet password';
+              html = getResetPasswordHtml({ email: item.recipient, token: payload.token });
+            } else if (!html) {
+              html = `<p>${payload.message || 'You have a new update on your UrbanFleet account.'}</p>`;
+            }
+
+            const response = await sendSendGridEmail({
+              to: item.recipient,
+              subject,
+              html,
+            });
+
+            const messageId = response.headers?.get?.('x-message-id') || `sg_${item.id}`;
+            logger.info(`Dispatched notification ${item.id} [${item.template}] to ${item.recipient} via SendGrid (${messageId})`);
+            await this.notifRepo.markDispatched(item.id, messageId);
           } catch (err: any) {
             logger.error(`Failed to dispatch notification ${item.id}:`, err);
             await this.notifRepo.recordFailure(item.id, err.message);

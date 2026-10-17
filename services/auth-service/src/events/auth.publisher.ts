@@ -25,7 +25,7 @@ export async function initAuthPublisher(): Promise<void> {
 
 export async function publishUserRegistered(payload: UserRegisteredPayload): Promise<void> {
   if (!producer) {
-    logger.warn('Kafka producer not connected. Staging simulated event publication.');
+    logger.warn('Kafka producer not connected. Event publication skipped.');
     return;
   }
 

@@ -55,3 +55,12 @@ export function getPublicKey(): string {
   if (!publicKey) initAsymmetricKeys();
   return publicKey;
 }
+
+export function verifyToken(token: string): any {
+  if (!publicKey) initAsymmetricKeys();
+  return jwt.verify(token, publicKey, {
+    algorithms: ['RS256'],
+    issuer: 'urbanfleet-auth',
+    audience: 'urbanfleet-api'
+  });
+}

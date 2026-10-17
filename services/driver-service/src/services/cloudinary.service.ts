@@ -27,14 +27,6 @@ export class CloudinaryService {
       throw new Error('Invalid file provided for upload: file buffer is empty.');
     }
 
-    if (!isCloudinaryConfigured) {
-      const mockId = `mock_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      return {
-        publicId: `${folder}/${mockId}`,
-        url: `https://res.cloudinary.com/urbanfleet-mock/image/upload/v1/${folder}/${mockId}.jpg`,
-      };
-    }
-
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
@@ -70,14 +62,6 @@ export class CloudinaryService {
     folder: string,
     filename?: string
   ): Promise<CloudinaryUploadResult> {
-    if (!isCloudinaryConfigured) {
-      const mockId = filename || `mock_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      return {
-        publicId: `${folder}/${mockId}`,
-        url: `https://res.cloudinary.com/urbanfleet-mock/image/upload/v1/${folder}/${mockId}.jpg`,
-      };
-    }
-
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
@@ -106,9 +90,6 @@ export class CloudinaryService {
    * Delete a single image from Cloudinary by public ID
    */
   async deleteImage(publicId: string): Promise<void> {
-    if (!isCloudinaryConfigured || publicId.includes('mock_')) {
-      return;
-    }
     await cloudinary.uploader.destroy(publicId);
   }
 
