@@ -6,11 +6,20 @@ import {
   updateStatusSchema,
   uploadDocumentSchema,
 } from '../validation/driver.validation.js';
+import { uploadDriverDocuments, uploadSingleImage } from '../middlewares/driver-upload.middleware.js';
 
 export function createDriverRouter(controller: DriverController): Router {
   const router = Router();
 
-  router.post('/register', validateRequest({ body: createProfileSchema }), controller.registerDriver);
+  // Driver Registration (supports both multipart form with Cloudinary image uploads and direct JSON)
+  router.post('/register', uploadDriverDocuments, controller.registerDriver);
+
+  // Standalone Cloudinary Media Upload & Management
+  router.post('/upload', uploadSingleImage('image'), controller.uploadImage);
+  router.post('/documents/upload', uploadSingleImage('document'), controller.uploadImage);
+  router.delete('/images', controller.deleteImage);
+
+  // Profile & Vehicle Management
   router.get('/profile', controller.getDriverProfile);
   router.put('/profile', validateRequest({ body: createProfileSchema }), controller.updateDriverProfile);
   router.put('/vehicle', controller.updateVehicle);
@@ -22,3 +31,5 @@ export function createDriverRouter(controller: DriverController): Router {
 
   return router;
 }
+
+export default createDriverRouter;

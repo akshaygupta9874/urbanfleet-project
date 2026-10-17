@@ -17,6 +17,7 @@
     "@prisma/config": "^7.10.1",
     "@urbanfleet/common": "*",
     "@urbanfleet/contracts": "*",
+    "cloudinary": "^2.11.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

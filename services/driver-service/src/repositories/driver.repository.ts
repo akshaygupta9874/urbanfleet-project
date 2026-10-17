@@ -24,7 +24,7 @@ export class DriverRepository {
     return this.prisma.driverProfile.create({ data });
   }
 
-  async update(id: string, data: Partial<DriverProfile>): Promise<DriverProfile> {
+  async update(id: string, data: any): Promise<DriverProfile> {
     return this.prisma.driverProfile.update({ where: { id }, data });
   }
 
@@ -40,4 +40,64 @@ export class DriverRepository {
   async updateVehicle(id: string, vehicleData: any): Promise<Vehicle> {
     return this.prisma.vehicle.update({ where: { id }, data: vehicleData });
   }
+
+  async createFullProfile(data: {
+    userId: string;
+    licenseNumber: string;
+    profilePhoto?: any;
+    vehicle: {
+      type: string;
+      brand: string;
+      model: string;
+      color: string;
+      registrationNumber: string;
+      registrationYear: number;
+      images?: any;
+    };
+    documents: Array<{
+      type: string;
+      number: string;
+      expiryDate?: Date;
+      frontImage: string;
+      backImage?: string;
+    }>;
+  }): Promise<DriverProfile & { vehicles: Vehicle[]; documents: any[] }> {
+    return this.prisma.driverProfile.create({
+      data: {
+        userId: data.userId,
+        licenseNumber: data.licenseNumber,
+        profilePhoto: data.profilePhoto,
+        isVerified: false,
+        verificationStatus: 'PENDING',
+        vehicles: {
+          create: {
+            category: data.vehicle.type || 'SEDAN',
+            make: data.vehicle.brand,
+            model: data.vehicle.model,
+            color: data.vehicle.color,
+            plateNumber: data.vehicle.registrationNumber,
+            year: data.vehicle.registrationYear,
+            images: data.vehicle.images,
+          },
+        },
+        documents: {
+          create: data.documents.map((doc) => ({
+            type: doc.type,
+            number: doc.number,
+            documentUrl: doc.frontImage,
+            frontImage: doc.frontImage,
+            backImage: doc.backImage,
+            expiresAt: doc.expiryDate,
+            status: 'PENDING',
+            isVerified: false,
+          })),
+        },
+      },
+      include: {
+        vehicles: true,
+        documents: true,
+      },
+    });
+  }
 }
+

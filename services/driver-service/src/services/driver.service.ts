@@ -49,4 +49,33 @@ export class DriverService {
       rating: Number(profile.rating)
     };
   }
+
+  async registerFullDriver(data: {
+    userId: string;
+    licenseNumber: string;
+    profilePhoto?: any;
+    vehicle: {
+      type: string;
+      brand: string;
+      model: string;
+      color: string;
+      registrationNumber: string;
+      registrationYear: number;
+      images?: any;
+    };
+    documents: Array<{
+      type: string;
+      number: string;
+      expiryDate?: Date;
+      frontImage: string;
+      backImage?: string;
+    }>;
+  }) {
+    const existing = await this.driverRepo.findByUserId(data.userId);
+    if (existing) {
+      throw new ConflictError('Driver application already exists for this account');
+    }
+    return this.driverRepo.createFullProfile(data);
+  }
 }
+

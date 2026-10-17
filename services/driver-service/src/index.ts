@@ -8,6 +8,7 @@ import { DocumentRepository } from './repositories/document.repository.js';
 import { DriverService } from './services/driver.service.js';
 import { DocumentService } from './services/document.service.js';
 import { DriverController } from './controllers/driver.controller.js';
+import { cloudinaryService } from './services/cloudinary.service.js';
 import { createDriverRouter } from './routes/driver.routes.js';
 import { initDriverConsumer } from './consumers/driver.consumer.js';
 
@@ -30,7 +31,7 @@ const driverRepo = new DriverRepository(prisma);
 const docRepo = new DocumentRepository(prisma);
 const driverService = new DriverService(driverRepo);
 const docService = new DocumentService(docRepo);
-const driverController = new DriverController(driverService, docService);
+const driverController = new DriverController(driverService, docService, cloudinaryService);
 
 // Routes
 app.use('/api/driver', createDriverRouter(driverController));

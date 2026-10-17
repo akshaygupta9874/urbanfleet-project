@@ -22,6 +22,8 @@ model DriverProfile {
   rating             Decimal            @default(5.0) @db.Decimal(3, 2)
   totalTrips         Int                @default(0) @map("total_trips")
   totalEarningsPaise BigInt             @default(0) @map("total_earnings_paise")
+  profilePhoto       Json?              @map("profile_photo")
+  isVerified         Boolean            @default(false) @map("is_verified")
 
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
@@ -39,10 +41,11 @@ model Vehicle {
   make            String        @db.VarChar(50)
   model           String        @db.VarChar(50)
   year            Int
-  plateNumber     String        @unique @map("plate_number") @db.VarChar(20)
+  plateNumber     String        @unique @map("plate_number") @db.VarChar(50)
   color           String        @db.VarChar(30)
   category        String        @default("SEDAN") @db.VarChar(20)
   isActive        Boolean       @default(true) @map("is_active")
+  images          Json?         // { front, back, left, right, interior }
 
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
@@ -60,6 +63,10 @@ model Document {
   status          VerificationStatus @default(PENDING)
   expiresAt       DateTime?          @map("expires_at")
   rejectionReason String?            @map("rejection_reason")
+  number          String?            @db.VarChar(100)
+  frontImage      String?            @map("front_image") @db.VarChar(500)
+  backImage       String?            @map("back_image") @db.VarChar(500)
+  isVerified      Boolean            @default(false) @map("is_verified")
 
   createdAt       DateTime           @default(now()) @map("created_at")
   updatedAt       DateTime           @updatedAt @map("updated_at")
