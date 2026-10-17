@@ -12,12 +12,16 @@ export interface IRide {
 
 export function formatRide(ride: any): any {
   if (!ride) return null;
+  const riderId = ride.riderId ?? ride.rider_id ?? (typeof ride.rider === "object" ? (ride.rider?.id || ride.rider?._id) : ride.rider);
+  const driverId = ride.driverId ?? ride.driver_id ?? (typeof ride.driver === "object" ? (ride.driver?.id || ride.driver?._id) : ride.driver);
   return {
     ...ride,
     id: ride.id || ride._id,
     _id: ride.id || ride._id,
-    riderId: ride.riderId ?? ride.rider_id ?? (typeof ride.rider === "object" ? (ride.rider?.id || ride.rider?._id) : ride.rider),
-    driverId: ride.driverId ?? ride.driver_id ?? (typeof ride.driver === "object" ? (ride.driver?.id || ride.driver?._id) : ride.driver),
+    riderId: riderId ? String(riderId) : undefined,
+    driverId: driverId ? String(driverId) : null,
+    rider: riderId ? String(riderId) : undefined,
+    driver: driverId ? String(driverId) : null,
   };
 }
 
@@ -32,11 +36,23 @@ export class RideClient {
       return (prisma as any).ride.findUnique({ where: { id } });
     }
 
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (process.env.INTERNAL_SERVICE_KEY) {
+      headers['x-internal-service-key'] = process.env.INTERNAL_SERVICE_KEY;
+    }
+
     try {
-      const res = await fetch(`${this.baseUrl}/api/rides/${id}`, {
-        headers: { Accept: 'application/json' },
+      let res = await fetch(`${this.baseUrl}/api/rides/${id}`, {
+        headers,
         signal: AbortSignal.timeout(5000),
       });
+
+      if (res.status === 404) {
+        res = await fetch(`${this.baseUrl}/api/ride/${id}`, {
+          headers,
+          signal: AbortSignal.timeout(5000),
+        });
+      }
 
       if (res.status === 404) return null;
       if (!res.ok) {
@@ -64,13 +80,27 @@ export class RideClient {
       return (prisma as any).ride.updateMany({ where, data: { paymentStatus } });
     }
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.INTERNAL_SERVICE_KEY) {
+      headers['x-internal-service-key'] = process.env.INTERNAL_SERVICE_KEY;
+    }
+
     try {
-      const res = await fetch(`${this.baseUrl}/api/rides/${id}/payment-status`, {
+      let res = await fetch(`${this.baseUrl}/api/rides/${id}/payment-status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ paymentStatus, currentStatus }),
         signal: AbortSignal.timeout(5000),
       });
+
+      if (res.status === 404) {
+        res = await fetch(`${this.baseUrl}/api/ride/${id}/payment-status`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ paymentStatus, currentStatus }),
+          signal: AbortSignal.timeout(5000),
+        });
+      }
 
       if (!res.ok) {
         throw new Error(`Ride Service returned HTTP ${res.status}`);

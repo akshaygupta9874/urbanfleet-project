@@ -252,6 +252,22 @@ class PayoutRepository {
         };
     }
 
+    async findByDriver(driverId: string): Promise<IPayout[]> {
+        const rows = await prisma.payout.findMany({
+            where: { driverId: driverId.toString() },
+            orderBy: { createdAt: "desc" },
+        });
+        return rows.map(formatPayout);
+    }
+
+    async findPending(): Promise<IPayout[]> {
+        const rows = await prisma.payout.findMany({
+            where: { status: "PENDING" },
+            orderBy: { createdAt: "desc" },
+        });
+        return rows.map(formatPayout);
+    }
+
     async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
         return prisma.$transaction(fn);
     }

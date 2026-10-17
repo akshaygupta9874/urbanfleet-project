@@ -16,12 +16,16 @@ import { initPaymentConsumer } from './consumers/payment.consumer.js';
 import paymentRouter from './payment/routes/payment.routes.js';
 import webhookRouter from './payment/routes/webhook.routes.js';
 import { startPaymentReconciliationJob } from './payment/jobs/payment-reconciliation.job.js';
+import { connectRedis, disconnectRedis, redisClient } from './redis/client.js';
 
 const logger = createLogger('payment-service');
 import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.PORT || 4005;
+
+// Connect Redis & Initialize Outbox & Consumers
+connectRedis().catch(err => logger.error('Redis connect error on startup:', err));
 
 // Repositories & Services
 const paymentRepo = new PaymentRepository(prisma);
@@ -53,9 +57,40 @@ app.use(express.json());
 // Routes (Real Payment Subsystem & Legacy compatibility)
 app.use('/v1/payments', paymentRouter);
 app.use('/api/payment', paymentRouter);
+app.use('/api/payments', paymentRouter);
 
-// Health check
-app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'payment-service' }));
+// Health check with active dependency validation
+app.get('/health', async (req, res) => {
+  let dbStatus = 'DOWN';
+  let redisStatus = 'DOWN';
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'UP';
+  } catch (err) {
+    dbStatus = 'DOWN';
+  }
+
+  try {
+    if (redisClient.isOpen) {
+      await redisClient.ping();
+      redisStatus = 'UP';
+    }
+  } catch (err) {
+    redisStatus = 'DOWN';
+  }
+
+  const isHealthy = dbStatus === 'UP' && (redisStatus === 'UP' || process.env.NODE_ENV !== 'production');
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'UP' : 'DOWN',
+    service: 'payment-service',
+    dependencies: {
+      database: dbStatus,
+      redis: redisStatus,
+    },
+  });
+});
+
 app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok', service: 'payment-service' }));
 
 // Global Error Handler
@@ -71,6 +106,29 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Internal server error' });
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   logger.info(`Payment Service running internally on port ${port}`);
 });
+
+// Graceful shutdown
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`Received ${signal}. Shutting down payment-service gracefully...`);
+  server.close(async () => {
+    try {
+      if (typeof stopReconciliation === 'function') {
+        stopReconciliation();
+      }
+      await outboxWorker.stop();
+      await disconnectRedis();
+      await prisma.$disconnect();
+      logger.info('Payment service shutdown complete.');
+      process.exit(0);
+    } catch (err) {
+      logger.error('Error during payment service shutdown:', err);
+      process.exit(1);
+    }
+  });
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

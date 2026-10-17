@@ -43,6 +43,8 @@ export interface IPayment {
   ride: string;
   rider: string;
   driver: string;
+  riderId?: string;
+  driverId?: string;
 
   gateway: PaymentGateway;
   gatewayOrderId: string;

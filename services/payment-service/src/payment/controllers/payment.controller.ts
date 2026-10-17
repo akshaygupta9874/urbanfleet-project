@@ -5,6 +5,8 @@ import {
 } from "../../utils/AppError.js";
 import asyncHandler from "../../middlewares/asyncHandler.js";
 import { paymentService } from "../services/payment.service.js";
+import { payoutService } from "../services/payout.service.js";
+import { payoutRepository } from "../repositories/payout.repository.js";
 import { PaymentStatus } from "../types/payment.types.js";
 import { IPayment } from "../types/payment.models.js";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
@@ -43,9 +45,11 @@ function isParticipant(
   payment: IPayment,
   userId: string
 ): boolean {
+  const riderId = (payment.riderId ?? payment.rider)?.toString();
+  const driverId = (payment.driverId ?? payment.driver)?.toString();
   return (
-    payment.rider.toString() === userId ||
-    payment.driver.toString() === userId
+    riderId === userId ||
+    driverId === userId
   );
 }
 
@@ -349,4 +353,84 @@ export const refundPayment =
 
     });
 
+  });
+
+/** Get driver's ledger balance and available earnings */
+export const getDriverBalance =
+  asyncHandler(async (
+    req: AuthenticatedRequest,
+    res: Response
+  ) => {
+    const driverId = req.driverId || req.userId;
+    if (!driverId) {
+      throw unauthenticated();
+    }
+
+    const balance = await payoutService.getDriverBalance(driverId);
+    res.status(200).json({
+      success: true,
+      data: balance,
+    });
+  });
+
+/** Request a payout from driver's available earnings */
+export const requestPayout =
+  asyncHandler(async (
+    req: AuthenticatedRequest,
+    res: Response
+  ) => {
+    const driverId = req.driverId || req.userId;
+    if (!driverId) {
+      throw unauthenticated();
+    }
+
+    const { amountPaise, rideId, paymentId } = req.body;
+    if (!amountPaise || amountPaise <= 0) {
+      throw new AppError("Valid amount in paise is required.", 400, "INVALID_AMOUNT");
+    }
+
+    const balance = await payoutService.getDriverBalance(driverId);
+    if (balance.availablePaise < amountPaise) {
+      throw new AppError(
+        `Insufficient available balance (${balance.availablePaise} paise available).`,
+        400,
+        "INSUFFICIENT_FUNDS"
+      );
+    }
+
+    const payout = await payoutService.createPayout({
+      driverId,
+      rideId: rideId || "MANUAL_PAYOUT",
+      paymentId: paymentId || "MANUAL_PAYOUT",
+      amountPaise,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: payout,
+    });
+  });
+
+/** List payouts for the authenticated driver or all for admin */
+export const listPayouts =
+  asyncHandler(async (
+    req: AuthenticatedRequest,
+    res: Response
+  ) => {
+    const userId = req.userId;
+    if (!userId) {
+      throw unauthenticated();
+    }
+
+    const { isAdmin } = await loadRequester(userId);
+    const driverId = req.driverId || userId;
+
+    const payouts = isAdmin && !req.query.driverId
+      ? await payoutRepository.findPending()
+      : await payoutRepository.findByDriver(String(req.query.driverId || driverId));
+
+    res.status(200).json({
+      success: true,
+      data: payouts,
+    });
   });

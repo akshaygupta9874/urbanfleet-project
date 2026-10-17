@@ -17,10 +17,29 @@ import {
     getPaymentsByRide,
     listPayments,
     refundPayment,
+    getDriverBalance,
+    requestPayout,
+    listPayouts,
 } from "../controllers/payment.controller.js";
 
 const router = Router();
 router.use(authMiddleware);
+
+// Driver payout management (must stay ABOVE "/:paymentId")
+router.get(
+    "/payouts/balance",
+    getDriverBalance
+);
+
+router.post(
+    "/payouts/request",
+    requestPayout
+);
+
+router.get(
+    "/payouts",
+    listPayouts
+);
 
 router.post(
     "/orders",

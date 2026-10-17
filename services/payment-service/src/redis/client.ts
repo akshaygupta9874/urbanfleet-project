@@ -15,12 +15,20 @@ redisClient.on("error", (err) => {
 
 export const paymentRedisKey = (key: string) => `payment:${key}`;
 
+export function isRedisConnected(): boolean {
+  return redisClient.isOpen;
+}
+
 export async function connectRedis(): Promise<void> {
   if (!redisClient.isOpen) {
     try {
       await redisClient.connect();
-    } catch (e) {
-      // non-fatal in mocked tests
+      logger.info("Connected to Redis for payment locks & caching.");
+    } catch (e: any) {
+      logger.warn("Redis connection failed. Distributed locks will fail open or retry.", { error: e.message });
+      if (process.env.NODE_ENV === "production") {
+        throw e;
+      }
     }
   }
 }
@@ -29,8 +37,9 @@ export async function disconnectRedis(): Promise<void> {
   if (redisClient.isOpen) {
     try {
       await redisClient.disconnect();
-    } catch (e) {
-      // non-fatal
+      logger.info("Redis connection disconnected.");
+    } catch (e: any) {
+      logger.warn("Error disconnecting Redis:", { error: e.message });
     }
   }
 }

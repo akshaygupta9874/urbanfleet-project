@@ -383,11 +383,33 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
 
       await worker.processPendingEvents();
 
-      // Producer should have been called with KafkaEnvelope JSON
-      expect(mockProducer.send).toHaveBeenCalledTimes(1);
+      expect(mockProducer.send).toHaveBeenCalledWith({
+        topic: 'ride.events',
+        messages: [
+          {
+            key: 'ride-999',
+            value: JSON.stringify({
+              id: 'failed-msg-id',
+              version: 1,
+              eventType: 'RIDE_COMPLETED',
+              producer: 'ride-service',
+              timestamp: '2026-10-18T00:00:00.000Z',
+              partitionKey: 'ride-999',
+              aggregateType: 'RIDE',
+              aggregateId: 'ride-999',
+              aggregateSequence: 5,
+              payload: { rideId: 'ride-999', farePaise: 45000 },
+            }),
+          },
+        ],
+      });
 
-      // Verify the query setting status to FAILED on 5th retry was triggered
       expect(mockExecuteRaw).toHaveBeenCalledTimes(1);
+      const [, status, retryCount, lastError, eventId] = mockExecuteRaw.mock.calls[0];
+      expect(status).toBe('FAILED');
+      expect(retryCount).toBe(5);
+      expect(lastError).toBe('Broker unreachable');
+      expect(eventId).toBe('failed-msg-id');
     });
 
     it('publishes message and marks PUBLISHED when producer succeeds', async () => {

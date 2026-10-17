@@ -61,7 +61,9 @@ initRideWebSocketServer(
 );
 
 // HTTP Routes
-app.use('/api/ride', createRideRouter(rideController));
+const rideRouter = createRideRouter(rideController);
+app.use('/api/ride', rideRouter);
+app.use('/api/rides', rideRouter);
 
 // Health check with active dependency validation
 app.get('/health', async (req, res) => {

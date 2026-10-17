@@ -191,8 +191,9 @@ class PaymentService {
     const ride = formatRide(rawRide);
 
     // Ownership first: never reveal the state of somebody else's ride.
+    const rideRiderId = (ride.riderId ?? ride.rider)?.toString();
     if (
-      ride.rider.toString() !== riderIdStr
+      !rideRiderId || rideRiderId !== riderIdStr
     ) {
       throw new AppError(
         "Unauthorized.",
@@ -232,7 +233,8 @@ class PaymentService {
     const checkRows = await paymentRepository.queryRideRaw(rideIdStr);
     const latestRide = (checkRows && checkRows.length > 0) ? formatRide(checkRows[0]) : ride;
 
-    if (!latestRide.driver) {
+    const latestDriverId = (latestRide.driverId ?? latestRide.driver)?.toString();
+    if (!latestDriverId) {
       throw new AppError(
         "Driver not assigned.",
         400,
@@ -306,9 +308,10 @@ class PaymentService {
             return { payment: existingForRide[0]!, alreadyExists: true };
           }
 
-          const lockedFare =
-            lockedRide.fareBreakdown || lockedRide.fare?.breakdown;
-          if (!lockedRide.driver || !lockedFare) {
+          const lockedFare = lockedRide.fareBreakdown || lockedRide.fare?.breakdown;
+          const lockedDriverId = (lockedRide.driverId ?? lockedRide.driver)?.toString();
+          const lockedRiderId = (lockedRide.riderId ?? lockedRide.rider)?.toString();
+          if (!lockedDriverId || !lockedFare) {
             throw new AppError(
               "Ride payment details are incomplete.",
               409,
@@ -320,8 +323,8 @@ class PaymentService {
           const payment = await paymentRepository.create(
             {
               ride: lockedRide.id as any,
-              rider: lockedRide.rider as any,
-              driver: lockedRide.driver as any,
+              rider: lockedRiderId as any,
+              driver: lockedDriverId as any,
               gateway: PaymentGateway.RAZORPAY,
               amountPaise: lockedFare.totalPaise,
               currency: CURRENCY.INR,
@@ -366,8 +369,8 @@ class PaymentService {
           payment_capture: true,
           notes: {
             ride: rideIdStr,
-            rider: reservation.payment.rider.toString(),
-            driver: reservation.payment.driver.toString(),
+            rider: (reservation.payment.riderId ?? reservation.payment.rider)?.toString() || '',
+            driver: (reservation.payment.driverId ?? reservation.payment.driver)?.toString() || '',
           },
         });
       } catch {
@@ -572,7 +575,7 @@ class PaymentService {
 
     if (
       input.requesterId &&
-      payment.rider.toString() !== input.requesterId.toString()
+      (payment.riderId ?? payment.rider)?.toString() !== input.requesterId.toString()
     ) {
       throw new AppError(
         "Not authorized to verify this payment.",
@@ -780,21 +783,39 @@ class PaymentService {
         amountPaise: payment.amountPaise,
       });
 
+      // Sync payment status with authoritative ride-service
+      try {
+        await rideClient.updatePaymentStatus(payment.ride.toString(), RidePaymentStatus.CAPTURED);
+      } catch (err: any) {
+        paymentLog.warn("payment.ride_service_sync_failed", {
+          paymentId: payment._id.toString(),
+          rideId: payment.ride.toString(),
+          error: err.message,
+        });
+      }
+
       // Notifications are best-effort: the money is already safely recorded.
       try {
-        emitPaymentCaptured(
-          updatedRide.driver.toString(),
-          {
-            ride: updatedRide
-          }
-        );
+        const driverId = (updatedRide.driverId ?? updatedRide.driver)?.toString();
+        const riderId = (updatedRide.riderId ?? updatedRide.rider)?.toString();
 
-        emitPaymentCapturedToRider(
-          updatedRide.rider.toString(),
-          {
-            ride: updatedRide,
-          }
-        );
+        if (driverId) {
+          emitPaymentCaptured(
+            driverId,
+            {
+              ride: updatedRide
+            }
+          );
+        }
+
+        if (riderId) {
+          emitPaymentCapturedToRider(
+            riderId,
+            {
+              ride: updatedRide,
+            }
+          );
+        }
       } catch (err) {
         paymentLog.error("payment.notify_failed", {
           paymentId: payment._id.toString(),
@@ -867,6 +888,20 @@ class PaymentService {
 
     if (!result) {
       return;
+    }
+
+    try {
+      await rideClient.updatePaymentStatus(
+        payment.ride.toString(),
+        RidePaymentStatus.FAILED,
+        RidePaymentStatus.PENDING
+      );
+    } catch (err: any) {
+      paymentLog.warn("payment.ride_service_failed_sync_error", {
+        paymentId: payment._id.toString(),
+        rideId: payment.ride.toString(),
+        error: err.message,
+      });
     }
 
     paymentLog.info("payment.attempt_failed", {
