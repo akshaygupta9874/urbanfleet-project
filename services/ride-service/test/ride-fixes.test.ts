@@ -3,7 +3,7 @@ import { requestRideSchema, normalizeLocation, paymentStatusSchema } from '../sr
 import { OtpService } from '../src/services/otp.service.js';
 import { FareService } from '../src/services/fare.service.js';
 import { RideService, canCompleteRide } from '../src/services/ride.service.js';
-import { AppError, ConflictError, NotFoundError } from '@urbanfleet/common';
+import { AppError, ConflictError } from '@urbanfleet/common';
 import { OutboxWorker } from '../src/workers/outbox.worker.js';
 import { registerDispatcher } from '../src/websocket/handlers/dispatcher.js';
 import { DriverEvents, RiderEvents } from '../src/websocket/event.constants.js';

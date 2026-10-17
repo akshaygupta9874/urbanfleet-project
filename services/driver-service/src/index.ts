@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { PrismaClient } from './db/client.js';
 import { createLogger, AppError } from '@urbanfleet/common';
 import { DriverRepository } from './repositories/driver.repository.js';
 import { DocumentRepository } from './repositories/document.repository.js';

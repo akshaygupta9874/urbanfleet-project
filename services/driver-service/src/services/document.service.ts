@@ -1,4 +1,4 @@
-import { DocumentRepository, CreateDocumentInput } from '../repositories/document.repository.js';
+import { DocumentRepository } from '../repositories/document.repository.js';
 import { DriverRepository } from '../repositories/driver.repository.js';
 import { Document } from '../db/client.js';
 import { NotFoundError, BadRequestError } from '@urbanfleet/common';

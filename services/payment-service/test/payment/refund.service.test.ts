@@ -84,7 +84,6 @@ import {
 } from "../../src/payment/types/payment.types.js";
 
 import {
-  fakeSession,
   makePayment,
   oid,
 } from "../helpers/helpers.js";

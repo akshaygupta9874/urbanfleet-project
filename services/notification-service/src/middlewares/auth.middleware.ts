@@ -2,7 +2,6 @@ import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { AppError } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
-import { notificationRedisClient } from '../redis/client.js';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;

@@ -2,7 +2,6 @@ import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { AppError } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
-import { authRedisClient, authRedisKey } from '../redis/client.js';
 import { prisma } from '../db/client.js';
 import { getPublicKey } from '../crypto/keys.js';
 import { validateSessionInRedis, getCachedUser, cacheUser } from '../redis/token-cache.js';

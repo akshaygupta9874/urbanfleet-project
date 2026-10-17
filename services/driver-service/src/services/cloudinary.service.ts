@@ -1,5 +1,5 @@
 import { UploadApiResponse, UploadApiErrorResponse } from 'cloudinary';
-import cloudinary, { isCloudinaryConfigured } from '../config/cloudinary.config.js';
+import cloudinary from '../config/cloudinary.config.js';
 
 export interface CloudinaryUploadResult {
   publicId: string;

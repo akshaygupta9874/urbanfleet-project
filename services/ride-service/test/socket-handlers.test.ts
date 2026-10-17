@@ -16,8 +16,7 @@ import {
   emitRideCancelled as emitRiderRideCancelled,
   emitNoDriversAvailable,
 } from '../src/websocket/emitters/rider.emitter.js';
-import { ServerEvents, DriverEvents, RiderEvents } from '../src/websocket/event.constants.js';
-import { sendSocketError } from '../src/websocket/utils/send-error.js';
+import { ServerEvents } from '../src/websocket/event.constants.js';
 import { registerDispatcher } from '../src/websocket/handlers/dispatcher.js';
 import { AuthenticatedSocket } from '../src/websocket/types.js';
 

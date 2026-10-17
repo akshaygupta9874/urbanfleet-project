@@ -1,5 +1,5 @@
 import { LedgerRepository } from '../repositories/ledger.repository.js';
-import { validateLedgerBalance, LedgerEntryType } from '@urbanfleet/common';
+import { validateLedgerBalance } from '@urbanfleet/common';
 import crypto from 'crypto';
 
 export class LedgerService {

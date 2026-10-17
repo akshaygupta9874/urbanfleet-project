@@ -1,4 +1,4 @@
-import { PrismaClient, Ride, RideStatus } from '../db/client.js';
+import { PrismaClient, Ride } from '../db/client.js';
 
 export class RideRepository {
   constructor(private prisma: PrismaClient) {}

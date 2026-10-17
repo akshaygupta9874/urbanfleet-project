@@ -2,7 +2,6 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
-import { PrismaClient } from './db/client.js';
 import { createLogger, AppError } from '@urbanfleet/common';
 import { prisma } from './db/client.js';
 import { rideRedisClient } from './redis/client.js';

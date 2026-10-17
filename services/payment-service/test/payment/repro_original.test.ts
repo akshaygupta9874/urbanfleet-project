@@ -52,7 +52,6 @@ import { prisma } from "../../src/db/client.js";
 
 import {
     PaymentStatus,
-    LedgerAccount,
 } from "../../src/payment/types/payment.types.js";
 
 import { allocateRefund } from "../../src/payment/utils/refund-allocation.js";

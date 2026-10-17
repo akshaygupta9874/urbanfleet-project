@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DocumentService, VerificationStatus } from '../src/services/document.service.js';
-import { BadRequestError, NotFoundError } from '@urbanfleet/common';
+import { BadRequestError } from '@urbanfleet/common';
 
 describe('DocumentService Enterprise Domain Suite', () => {
   let mockDocRepo: any;

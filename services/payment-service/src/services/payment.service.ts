@@ -1,4 +1,3 @@
-import { Payment, PaymentStatus } from '../db/client.js';
 import { PaymentRepository } from '../repositories/payment.repository.js';
 import { RefundRepository } from '../repositories/refund.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';

@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { DriverController } from '../controllers/driver.controller.js';
 import { validateRequest } from '@urbanfleet/common';
 import {
-  createProfileSchema,
   updateProfileSchema,
   updateStatusSchema,
   uploadDocumentSchema,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { asyncHandler, normalizeError } from '../src/middlewares/async-handler.middleware.js';
+import { asyncHandler } from '../src/middlewares/async-handler.middleware.js';
 
 describe('Robust AsyncHandler Middleware Suite', () => {
   it('successfully executes async route handler without error', async () => {

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { formatRide, RideClient } from '../../src/clients/ride.client.js';
-import { isRedisConnected } from '../../src/redis/client.js';
 import { PayoutService } from '../../src/payment/services/payout.service.js';
 import { payoutRepository } from '../../src/payment/repositories/payout.repository.js';
 import { ledgerService } from '../../src/payment/services/ledger.service.js';

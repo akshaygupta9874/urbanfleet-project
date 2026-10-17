@@ -7,7 +7,6 @@ import {
   registerSchema,
   loginSchema,
   verifyOtpSchema,
-  refreshTokenSchema,
   verifyTokenParamSchema,
   verify2FASchema,
   disable2FASchema,

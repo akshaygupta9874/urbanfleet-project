@@ -2,7 +2,6 @@ import express, { NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { PrismaClient } from './db/client.js';
 import { createLogger, AppError } from '@urbanfleet/common';
 import { initAsymmetricKeys } from './crypto/keys.js';
 import { initAuthPublisher } from './events/auth.publisher.js';

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { AuthenticatedRequest, AppError } from '@urbanfleet/common';
 import { DriverService } from '../services/driver.service.js';
 import { DocumentService } from '../services/document.service.js';

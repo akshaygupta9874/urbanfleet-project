@@ -1,7 +1,7 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
 import { createLogger } from '@urbanfleet/common';
-import { EventTopics, KafkaEnvelope, RideCompletedPayload, RideCancelledPayload } from '@urbanfleet/contracts';
+import { EventTopics } from '@urbanfleet/contracts';
 import { PaymentService } from '../services/payment.service.js';
 import crypto from 'crypto';
 

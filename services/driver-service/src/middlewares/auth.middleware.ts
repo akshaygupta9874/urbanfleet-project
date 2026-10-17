@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { AppError } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
-import { driverRedisClient, driverRedisKey } from '../redis/client.js';
+import { driverRedisClient } from '../redis/client.js';
 import { authClient } from '../clients/auth.client.js';
 import { prisma } from '../db/client.js';
 

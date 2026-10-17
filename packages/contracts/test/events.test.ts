@@ -2,9 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   KafkaEnvelopeSchema,
   EventTopics,
-  RideCompletedPayloadSchema,
-  UserRegisteredPayloadSchema,
-  PaymentCapturedPayloadSchema
+  RideCompletedPayloadSchema
 } from '../src/index.js';
 import crypto from 'crypto';
 

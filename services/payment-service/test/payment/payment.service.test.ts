@@ -107,7 +107,6 @@ import {
 
 import {
   capturedEntity,
-  fakeSession,
   makePayment,
   oid,
   retryingSession,
