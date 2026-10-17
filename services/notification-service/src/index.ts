@@ -8,7 +8,7 @@ import { NotificationDispatcher } from './workers/notification.dispatcher.js';
 import { initNotificationConsumer } from './consumers/notification.consumer.js';
 
 const logger = createLogger('notification-service');
-const prisma = new PrismaClient();
+import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.PORT || 4003;

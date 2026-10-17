@@ -12,7 +12,7 @@ import { createDriverRouter } from './routes/driver.routes.js';
 import { initDriverConsumer } from './consumers/driver.consumer.js';
 
 const logger = createLogger('driver-service');
-const prisma = new PrismaClient();
+import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.PORT || 4002;

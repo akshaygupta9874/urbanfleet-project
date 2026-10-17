@@ -16,7 +16,7 @@ import { OutboxWorker } from './workers/outbox.worker.js';
 import { initPaymentConsumer } from './consumers/payment.consumer.js';
 
 const logger = createLogger('payment-service');
-const prisma = new PrismaClient();
+import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.PORT || 4005;

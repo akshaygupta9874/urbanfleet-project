@@ -3,7 +3,9 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import { PrismaClient } from '@prisma/client';
-import { createLogger, createNamespacedRedisClient, AppError } from '@urbanfleet/common';
+import { createLogger, AppError } from '@urbanfleet/common';
+import { prisma } from './db/client.js';
+import { rideRedisClient } from './redis/client.js';
 import { RideRepository } from './repositories/ride.repository.js';
 import { RatingRepository } from './repositories/rating.repository.js';
 import { OutboxRepository } from './repositories/outbox.repository.js';
@@ -18,8 +20,7 @@ import { OutboxWorker } from './workers/outbox.worker.js';
 import { initRideWebSocketServer } from './websocket/ride-socket.server.js';
 
 const logger = createLogger('ride-service');
-const prisma = new PrismaClient();
-const redis = createNamespacedRedisClient({ keyPrefix: 'ride' });
+const redis = rideRedisClient;
 const app = express();
 const server = http.createServer(app);
 

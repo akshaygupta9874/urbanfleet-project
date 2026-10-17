@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -19,7 +19,7 @@ import { createAuthRouter } from './routes/auth.routes.js';
 import { createAdminRouter } from './routes/admin.routes.js';
 
 const logger = createLogger('auth-service');
-const prisma = new PrismaClient();
+import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.PORT || 4001;
@@ -55,7 +55,7 @@ app.use('/api/admin', createAdminRouter(adminController));
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'auth-service' }));
 
 // 5. Global Error Handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: any, req: express.Request, res: express.Response, next: NextFunction) => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       success: false,

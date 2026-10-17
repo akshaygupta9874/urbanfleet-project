@@ -28,7 +28,7 @@ export class AppError extends Error {
     this.name = new.target.name;
     this.statusCode = statusCode;
     this.code = code;
-    this.isOperational = options.isOperational ?? true;
+    this.isOperational = options.isOperational ?? statusCode < 500;
     this.cause = options.cause;
 
     Object.setPrototypeOf(this, new.target.prototype);
@@ -158,9 +158,13 @@ export class TooManyRequestsError extends AppError {
 
   constructor(
     message = 'Too many requests',
-    retryAfterSeconds?: number,
+    retryAfterSeconds?: number | string,
     code = 'RATE_LIMIT_EXCEEDED',
   ) {
+    if (typeof retryAfterSeconds === 'string') {
+      code = retryAfterSeconds;
+      retryAfterSeconds = undefined;
+    }
     super(message, 429, code);
 
     if (

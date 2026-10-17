@@ -6,11 +6,14 @@ const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 
 export const redisClient = createClient({
   url: redisUrl,
+  name: "payment-service",
 });
 
 redisClient.on("error", (err) => {
   logger.error("Redis Client Error", { error: err.message });
 });
+
+export const paymentRedisKey = (key: string) => `payment:${key}`;
 
 export async function connectRedis(): Promise<void> {
   if (!redisClient.isOpen) {
