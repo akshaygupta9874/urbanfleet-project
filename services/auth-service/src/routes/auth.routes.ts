@@ -22,6 +22,9 @@ export function createAuthRouter(controller: AuthController): Router {
   if (controller.getUserById) {
     router.get('/users/:id', controller.getUserById);
   }
+  if (controller.refreshCSRF) {
+    router.post('/refresh-csrf', controller.refreshCSRF);
+  }
 
   return router;
 }

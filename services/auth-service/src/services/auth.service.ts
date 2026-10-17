@@ -178,7 +178,22 @@ export class AuthService {
       sessionId: session.id
     });
 
-    return { accessToken };
+    const newRefreshToken = signRefreshToken({ userId: user.id, sessionId: session.id });
+
+    await this.sessionRepo.create({
+      userId: user.id,
+      refreshToken: newRefreshToken,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      ipAddress: session.ipAddress || undefined,
+      userAgent: session.userAgent || undefined
+    });
+    await this.sessionRepo.delete(session.id);
+
+    return {
+      accessToken,
+      refreshToken: newRefreshToken,
+      user: { id: user.id, email: user.email, role: user.role }
+    };
   }
 
   async changePassword(userId: string, oldPass: string, newPass: string) {

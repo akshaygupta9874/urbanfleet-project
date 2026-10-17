@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service.js';
 import { UserService } from '../services/user.service.js';
 import { TwoFactorService } from '../services/two-factor.service.js';
+import { getCookieOptions, getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
+import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from '../middlewares/csrf.middleware.js';
+import { UnauthorizedError } from '@urbanfleet/common';
 
 export class AuthController {
   constructor(
@@ -17,7 +20,16 @@ export class AuthController {
         ipAddress: req.ip,
         userAgent: req.headers['user-agent']
       });
-      res.status(201).json({ success: true, data: result });
+
+      // 1. Set httpOnly refresh cookie (XSS mitigation)
+      if (result.refreshToken) {
+        res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+      }
+
+      // 2. Generate and set CSRF cookie
+      const csrfToken = await generateCSRFToken(result.user.id, res);
+
+      res.status(201).json({ success: true, data: { ...result, csrfToken } });
     } catch (err) { next(err); }
   };
 
@@ -28,22 +40,59 @@ export class AuthController {
         ipAddress: req.ip,
         userAgent: req.headers['user-agent']
       });
-      res.status(200).json({ success: true, data: result });
+
+      if (result.requires2FA) {
+        return res.status(200).json({ success: true, data: result });
+      }
+
+      // 1. Set httpOnly refresh cookie (XSS mitigation)
+      if (result.refreshToken) {
+        res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+      }
+
+      // 2. Generate and set CSRF cookie
+      const csrfToken = await generateCSRFToken(result.user!.id, res);
+
+      res.status(200).json({ success: true, data: { ...result, csrfToken } });
     } catch (err) { next(err); }
   };
 
   refreshToken = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { refreshToken } = req.body;
-      const result = await this.authService.refreshAccessToken(refreshToken);
-      res.status(200).json({ success: true, data: result });
+      const token = req.cookies?.refreshToken || req.body?.refreshToken;
+      if (!token) {
+        throw new UnauthorizedError('Please provide refresh token');
+      }
+      const result = await this.authService.refreshAccessToken(token);
+
+      // Rotate httpOnly refresh token cookie
+      if (result.refreshToken) {
+        res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+      }
+
+      // Rotate CSRF token cookie
+      const csrfToken = await refreshCSRFToken(result.user.id, res);
+
+      res.status(200).json({ success: true, data: { ...result, csrfToken } });
     } catch (err) { next(err); }
   };
 
   logout = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { refreshToken } = req.body;
-      await this.authService.logout(refreshToken);
+      const token = req.cookies?.refreshToken || req.body?.refreshToken;
+      if (token) {
+        await this.authService.logout(token);
+      }
+
+      const userId = (req as any).user?.userId || req.body?.userId;
+      if (userId) {
+        await revokeCSRFToken(userId, res);
+      }
+
+      // Clear cookies with matching path & domain
+      res.clearCookie('refreshToken', clearCookieOptions());
+      res.clearCookie('csrfToken', getCsrfCookieOptions());
+
       res.status(200).json({ success: true, message: 'Logged out successfully' });
     } catch (err) { next(err); }
   };
@@ -139,7 +188,25 @@ export class AuthController {
       const { userId, token } = req.body;
       const isValid = await this.twoFactorService.verifyToken(userId, token);
       if (!isValid) return res.status(401).json({ success: false, message: 'Invalid 2FA code' });
-      res.status(200).json({ success: true, message: '2FA authentication successful' });
+
+      // Generate CSRF cookie for authenticated 2FA session
+      const csrfToken = await generateCSRFToken(userId, res);
+      res.status(200).json({ success: true, message: '2FA authentication successful', data: { csrfToken } });
+    } catch (err) { next(err); }
+  };
+
+  refreshCSRF = async (req: any, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.userId || req.body?.userId;
+      if (!userId) {
+        return res.status(401).json({ success: false, message: 'User not authenticated' });
+      }
+      const csrfToken = await refreshCSRFToken(userId, res);
+      res.status(200).json({
+        success: true,
+        message: 'CSRF Token Refreshed',
+        data: { csrfToken }
+      });
     } catch (err) { next(err); }
   };
 }
