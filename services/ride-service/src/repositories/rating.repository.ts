@@ -12,4 +12,15 @@ export class RatingRepository {
   }): Promise<Rating> {
     return this.prisma.rating.create({ data });
   }
+
+  async findByRideAndFrom(rideId: string, fromId: string): Promise<Rating | null> {
+    return this.prisma.rating.findUnique({
+      where: {
+        rideId_fromId: {
+          rideId,
+          fromId,
+        },
+      },
+    });
+  }
 }

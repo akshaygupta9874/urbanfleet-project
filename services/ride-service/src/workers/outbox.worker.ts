@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Kafka, Producer } from 'kafkajs';
 import { createLogger } from '@urbanfleet/common';
+import { KafkaEnvelope } from '@urbanfleet/contracts';
 
 const logger = createLogger('ride-outbox-worker');
 const workerId = `worker-${process.pid}-${Math.random().toString(36).substring(7)}`;
@@ -15,7 +16,11 @@ export class OutboxWorker {
     const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
     const kafka = new Kafka({ clientId: 'ride-outbox-publisher', brokers });
     this.producer = kafka.producer();
-    await this.producer.connect();
+    try {
+      await this.producer.connect();
+    } catch (err) {
+      logger.warn('Kafka producer connection failed on startup. Outbox worker will attempt reconnect during run loop.');
+    }
     this.isRunning = true;
     logger.info(`Ride Outbox Worker [${workerId}] started.`);
 
@@ -33,14 +38,31 @@ export class OutboxWorker {
     }
   }
 
-  private async processPendingEvents() {
-    // Sequential aggregate claim with lease recovery
-    const candidateEvents = await this.prisma.$queryRaw<Array<{ id: string; topic: string; partition_key: string; payload: any }>>`
-      WITH eligible_events AS (
+  async processPendingEvents() {
+    // Sequential aggregate claim with partition locking and lease recovery
+    const candidateEvents = await this.prisma.$queryRaw<Array<{
+      id: string;
+      topic: string;
+      partition_key: string;
+      event_type: string;
+      aggregate_type: string;
+      aggregate_id: string;
+      aggregate_sequence: number;
+      payload: any;
+      created_at: Date;
+      retry_count: number;
+    }>>`
+      WITH active_partitions AS (
+        SELECT DISTINCT partition_key
+        FROM outbox_events
+        WHERE status = 'PROCESSING' AND lease_expires_at >= NOW()
+      ),
+      eligible_events AS (
         SELECT DISTINCT ON (partition_key) id
         FROM outbox_events
-        WHERE status = 'PENDING'
-           OR (status = 'PROCESSING' AND lease_expires_at < NOW())
+        WHERE (status = 'PENDING' OR (status = 'PROCESSING' AND lease_expires_at < NOW()))
+          AND partition_key NOT IN (SELECT partition_key FROM active_partitions)
+          AND retry_count < 5
         ORDER BY partition_key, aggregate_sequence ASC
         LIMIT 25
       )
@@ -50,16 +72,33 @@ export class OutboxWorker {
           locked_by = ${workerId},
           lease_expires_at = NOW() + INTERVAL '30 seconds'
       WHERE id IN (SELECT id FROM eligible_events)
-      RETURNING id, topic, partition_key, payload;
+      RETURNING id, topic, partition_key, event_type, aggregate_type, aggregate_id, aggregate_sequence, payload, created_at, retry_count;
     `;
 
     if (!candidateEvents || candidateEvents.length === 0) return;
 
     for (const event of candidateEvents) {
       try {
-        await this.producer!.send({
+        if (!this.producer) {
+          throw new Error('Kafka producer is not connected');
+        }
+
+        const envelope: KafkaEnvelope<any> = {
+          id: event.id,
+          version: 1,
+          eventType: event.event_type,
+          producer: 'ride-service',
+          timestamp: event.created_at ? new Date(event.created_at).toISOString() : new Date().toISOString(),
+          partitionKey: event.partition_key,
+          aggregateType: event.aggregate_type,
+          aggregateId: event.aggregate_id,
+          aggregateSequence: Number(event.aggregate_sequence),
+          payload: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload,
+        };
+
+        await this.producer.send({
           topic: event.topic,
-          messages: [{ key: event.partition_key, value: JSON.stringify(event.payload) }]
+          messages: [{ key: event.partition_key, value: JSON.stringify(envelope) }]
         });
 
         await this.prisma.$executeRaw`
@@ -67,19 +106,36 @@ export class OutboxWorker {
           SET status = 'PUBLISHED', published_at = NOW()
           WHERE id = ${event.id}::uuid;
         `;
-        logger.info(`Outbox published event ${event.id} to ${event.topic}`);
+        logger.info(`Outbox published event ${event.id} [${event.event_type}] to ${event.topic}`);
       } catch (publishErr: any) {
         logger.error(`Failed to publish event ${event.id}:`, publishErr);
+        const nextRetry = (event.retry_count || 0) + 1;
+        const newStatus = nextRetry >= 5 ? 'FAILED' : 'PENDING';
+
         await this.prisma.$executeRaw`
           UPDATE outbox_events
-          SET status = 'PENDING', retry_count = retry_count + 1, last_error = ${publishErr.message}
+          SET status = ${newStatus}::"OutboxStatus",
+              retry_count = ${nextRetry},
+              last_error = ${publishErr.message || 'Unknown publication failure'}
           WHERE id = ${event.id}::uuid;
         `;
       }
     }
   }
 
-  stop() {
+  async stop() {
     this.isRunning = false;
+    if (this.producer) {
+      try {
+        await this.producer.disconnect();
+      } catch (err) {
+        logger.error('Error disconnecting Outbox Kafka producer:', err);
+      }
+    }
+    logger.info(`Ride Outbox Worker [${workerId}] stopped.`);
+  }
+
+  isHealthy(): boolean {
+    return this.isRunning;
   }
 }

@@ -36,21 +36,36 @@ export function registerDispatcher(socket: AuthenticatedSocket): void {
       }
 
       const { event, data } = result.data;
+      const userRoles = socket.user?.role || [];
+      const isDriver = userRoles.includes('DRIVER');
+      const isRider = userRoles.includes('RIDER') || userRoles.includes('ADMIN');
 
       // Handle driver events
       if (Object.values(DriverEvents).includes(event as DriverEvent)) {
+        if (!isDriver) {
+          sendSocketError(socket, 'Forbidden: Driver role required for this event.', 'FORBIDDEN');
+          return;
+        }
         await handleDriverEvent(socket, event as DriverEvent, data);
         return;
       }
 
       // Handle rider events
       if (Object.values(RiderEvents).includes(event as RiderEvent)) {
+        if (!isRider) {
+          sendSocketError(socket, 'Forbidden: Rider role required for this event.', 'FORBIDDEN');
+          return;
+        }
         await handleRiderEvent(socket, event as RiderEvent, data);
         return;
       }
 
       // Legacy fallback mapping for direct telemetry types
       if (event === 'location_update' || event === 'UPDATE_LOCATION') {
+        if (!isDriver) {
+          sendSocketError(socket, 'Forbidden: Driver role required for this event.');
+          return;
+        }
         await handleDriverEvent(socket, DriverEvents.UPDATE_LOCATION, data);
         return;
       }

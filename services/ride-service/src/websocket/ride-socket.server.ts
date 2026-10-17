@@ -38,6 +38,7 @@ export function initRideWebSocketServer(
     geoService,
     presenceService: presence,
     rideService,
+    dispatchService,
   });
 
   if (rideService || dispatchService) {
@@ -113,11 +114,15 @@ export function initRideWebSocketServer(
       socketRegistry.unregister(authenticatedSocket);
 
       if (user.role.includes('DRIVER') && user.driverId) {
-        try {
-          await presence.setDriverOffline(user.driverId);
-          logger.info(`Driver ${user.driverId} marked OFFLINE on socket disconnect.`);
-        } catch (err) {
-          logger.error(`Failed to cleanup presence on disconnect for driver ${user.driverId}:`, err);
+        if (!socketRegistry.isDriverOnline(user.driverId)) {
+          try {
+            await presence.setDriverOffline(user.driverId);
+            logger.info(`Driver ${user.driverId} marked OFFLINE on socket disconnect.`);
+          } catch (err) {
+            logger.error(`Failed to cleanup presence on disconnect for driver ${user.driverId}:`, err);
+          }
+        } else {
+          logger.info(`Driver ${user.driverId} still has active socket connection(s); keeping presence online.`);
         }
       }
     });

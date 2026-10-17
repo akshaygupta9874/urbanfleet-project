@@ -64,14 +64,26 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
             }
           } else if (envelope.eventType === 'RIDE_COMPLETED') {
             const payload = envelope.payload as RideCompletedPayload;
-            await tx.driverProfile.update({
-              where: { id: payload.driverId },
-              data: {
-                totalTrips: { increment: 1 },
-                totalEarningsPaise: { increment: BigInt(payload.totalFarePaise) }
+            const profile = await tx.driverProfile.findFirst({
+              where: {
+                OR: [
+                  { id: payload.driverId },
+                  { userId: payload.driverId }
+                ]
               }
             });
-            logger.info(`Incremented trips and earnings for driver ${payload.driverId}`);
+            if (profile) {
+              await tx.driverProfile.update({
+                where: { id: profile.id },
+                data: {
+                  totalTrips: { increment: 1 },
+                  totalEarningsPaise: { increment: BigInt(payload.totalFarePaise) }
+                }
+              });
+              logger.info(`Incremented trips and earnings for driver profile ${profile.id}`);
+            } else {
+              logger.warn(`Could not find driver profile for driverId ${payload.driverId} on RIDE_COMPLETED event`);
+            }
           }
         });
       }

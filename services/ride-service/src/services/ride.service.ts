@@ -18,36 +18,85 @@ export class RideService {
 
   async createRide(input: {
     riderId: string;
-    pickup: { lat: number; lng: number; address: string };
-    destination: { lat: number; lng: number; address: string };
+    pickup: any;
+    destination: any;
     vehicleCategory?: string;
   }) {
-    const fare = this.fareService.calculateFareEstimate(input.pickup, input.destination);
+    const pickup = this.fareService.normalizeCoords(input.pickup);
+    const destination = this.fareService.normalizeCoords(input.destination);
+    const pickupAddress = input.pickup?.address || 'Pickup Location';
+    const destinationAddress = input.destination?.address || 'Destination Location';
+
+    const fare = this.fareService.calculateFareEstimate(pickup, destination, input.vehicleCategory);
     const otp = this.otpService.generateRideOtp();
 
-    return this.rideRepo.create({
-      riderId: input.riderId,
-      pickupLat: input.pickup.lat,
-      pickupLng: input.pickup.lng,
-      pickupAddress: input.pickup.address,
-      destinationLat: input.destination.lat,
-      destinationLng: input.destination.lng,
-      destinationAddress: input.destination.address,
-      distanceKm: fare.distanceKm,
-      durationMinutes: fare.durationMinutes,
-      baseFarePaise: fare.baseFarePaise,
-      surgeMultiplier: fare.surgeMultiplier,
-      totalFarePaise: fare.totalFarePaise,
-      vehicleCategory: input.vehicleCategory || 'SEDAN',
-      otp,
-      status: 'SEARCHING',
-      rideSequence: 1
+    return this.rideRepo.executeTransaction(async (tx) => {
+      const created = await this.rideRepo.create({
+        riderId: input.riderId,
+        pickupLat: pickup.lat,
+        pickupLng: pickup.lng,
+        pickupAddress,
+        destinationLat: destination.lat,
+        destinationLng: destination.lng,
+        destinationAddress,
+        distanceKm: fare.distanceKm,
+        durationMinutes: fare.durationMinutes,
+        baseFarePaise: fare.baseFarePaise,
+        surgeMultiplier: fare.surgeMultiplier,
+        totalFarePaise: fare.totalFarePaise,
+        vehicleCategory: input.vehicleCategory || 'SEDAN',
+        otp,
+        status: 'SEARCHING',
+        rideSequence: 1
+      });
+
+      await this.outboxRepo.stageEvent(tx, {
+        topic: EventTopics.RIDE_EVENTS,
+        partitionKey: created.id,
+        eventType: 'RIDE_REQUESTED',
+        aggregateType: 'RIDE',
+        aggregateId: created.id,
+        aggregateSequence: 1,
+        payload: {
+          rideId: created.id,
+          riderId: created.riderId,
+          pickupLat: Number(created.pickupLat),
+          pickupLng: Number(created.pickupLng),
+          destinationLat: Number(created.destinationLat),
+          destinationLng: Number(created.destinationLng),
+          totalFarePaise: created.totalFarePaise,
+          vehicleCategory: created.vehicleCategory,
+          createdAt: created.createdAt
+        }
+      });
+
+      return created;
     });
   }
 
-  async getRideById(id: string) {
+  async getRideById(id: string, requestingUserId?: string, userRole?: string | string[]) {
     const ride = await this.rideRepo.findById(id);
     if (!ride) throw new NotFoundError('Ride not found');
+
+    if (requestingUserId) {
+      const roles = Array.isArray(userRole) ? userRole : [userRole || 'RIDER'];
+      const isAdmin = roles.includes('ADMIN');
+      const isRider = ride.riderId === requestingUserId;
+      const isDriver = ride.driverId === requestingUserId;
+
+      if (!isAdmin && !isRider && !isDriver) {
+        throw new AppError('Forbidden: You are not authorized to view this ride', 403, 'FORBIDDEN');
+      }
+
+      // Redact OTP if driver is viewing active ride
+      if (isDriver && !isRider && !isAdmin && !['COMPLETED', 'CANCELLED'].includes(ride.status)) {
+        return {
+          ...ride,
+          otp: null
+        };
+      }
+    }
+
     return ride;
   }
 
@@ -75,10 +124,25 @@ export class RideService {
 
   async acceptRide(rideId: string, driverId: string) {
     return this.rideRepo.executeTransaction(async (tx) => {
+      // 1. Enforce single active ride per driver
+      const existingActive = await tx.ride.findFirst({
+        where: {
+          driverId,
+          status: { in: ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'ARRIVED', 'IN_PROGRESS', 'STARTED', 'ARRIVED_AT_DESTINATION'] }
+        }
+      });
+      if (existingActive && existingActive.id !== rideId) {
+        throw new ConflictError('Driver already has an active ride in progress');
+      }
+
+      // 2. Concurrency-safe ride state check
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
       if (ride.status !== 'REQUESTED' && ride.status !== 'SEARCHING') {
         throw new ConflictError('Ride is no longer available for acceptance');
+      }
+      if (ride.driverId && ride.driverId !== driverId) {
+        throw new ConflictError('Ride has already been accepted by another driver');
       }
 
       const nextSequence = ride.rideSequence + 1;
@@ -104,9 +168,37 @@ export class RideService {
   }
 
   async driverArrived(rideId: string, driverId: string) {
-    return this.rideRepo.update(rideId, {
-      status: 'ARRIVED',
-      arrivedAt: new Date()
+    return this.rideRepo.executeTransaction(async (tx) => {
+      const ride = await tx.ride.findUnique({ where: { id: rideId } });
+      if (!ride) throw new NotFoundError('Ride not found');
+
+      if (ride.driverId && ride.driverId !== driverId) {
+        throw new AppError('Unauthorized: Only assigned driver can update arrival status', 403, 'FORBIDDEN');
+      }
+
+      const validPreviousStatuses = ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING'];
+      if (!validPreviousStatuses.includes(ride.status)) {
+        throw new ConflictError(`Cannot mark arrived from status ${ride.status}`);
+      }
+
+      const nextSequence = ride.rideSequence + 1;
+      const updated = await this.rideRepo.update(rideId, {
+        status: 'ARRIVED',
+        arrivedAt: new Date(),
+        rideSequence: nextSequence
+      }, tx);
+
+      await this.outboxRepo.stageEvent(tx, {
+        topic: EventTopics.RIDE_EVENTS,
+        partitionKey: ride.id,
+        eventType: 'RIDE_DRIVER_ARRIVED',
+        aggregateType: 'RIDE',
+        aggregateId: ride.id,
+        aggregateSequence: nextSequence,
+        payload: { rideId: ride.id, driverId, arrivedAt: updated.arrivedAt }
+      });
+
+      return updated;
     });
   }
 
@@ -115,8 +207,35 @@ export class RideService {
   }
 
   async arriveAtDestination(input: { rideId: string; driverId: string }) {
-    return this.rideRepo.update(input.rideId, {
-      status: 'ARRIVED_AT_DESTINATION'
+    return this.rideRepo.executeTransaction(async (tx) => {
+      const ride = await tx.ride.findUnique({ where: { id: input.rideId } });
+      if (!ride) throw new NotFoundError('Ride not found');
+
+      if (ride.driverId && ride.driverId !== input.driverId) {
+        throw new AppError('Unauthorized: Only assigned driver can arrive at destination', 403, 'FORBIDDEN');
+      }
+
+      if (ride.status !== 'IN_PROGRESS' && ride.status !== 'STARTED') {
+        throw new ConflictError(`Cannot arrive at destination from status ${ride.status}`);
+      }
+
+      const nextSequence = ride.rideSequence + 1;
+      const updated = await this.rideRepo.update(input.rideId, {
+        status: 'ARRIVED_AT_DESTINATION',
+        rideSequence: nextSequence
+      }, tx);
+
+      await this.outboxRepo.stageEvent(tx, {
+        topic: EventTopics.RIDE_EVENTS,
+        partitionKey: ride.id,
+        eventType: 'RIDE_ARRIVED_AT_DESTINATION',
+        aggregateType: 'RIDE',
+        aggregateId: ride.id,
+        aggregateSequence: nextSequence,
+        payload: { rideId: ride.id, driverId: input.driverId, arrivedAtDestination: new Date() }
+      });
+
+      return updated;
     });
   }
 
@@ -125,15 +244,41 @@ export class RideService {
   }
 
   async startRide(rideId: string, driverId: string, otp: string) {
-    const ride = await this.getRideById(rideId);
-    if (!this.otpService.verifyRideOtp(ride.otp, otp)) {
-      throw new AppError('Invalid ride verification OTP', 400);
-    }
+    return this.rideRepo.executeTransaction(async (tx) => {
+      const ride = await tx.ride.findUnique({ where: { id: rideId } });
+      if (!ride) throw new NotFoundError('Ride not found');
 
-    return this.rideRepo.update(rideId, {
-      status: 'IN_PROGRESS',
-      startedAt: new Date(),
-      otp: this.otpService.invalidateRideOtp()
+      if (ride.driverId && ride.driverId !== driverId) {
+        throw new AppError('Unauthorized: Only assigned driver can start this ride', 403, 'FORBIDDEN');
+      }
+
+      if (ride.status !== 'ARRIVED') {
+        throw new ConflictError(`Cannot start ride from status ${ride.status}. Driver must mark arrived first.`);
+      }
+
+      if (!this.otpService.verifyRideOtp(ride.otp, otp)) {
+        throw new AppError('Invalid ride verification OTP', 400);
+      }
+
+      const nextSequence = ride.rideSequence + 1;
+      const updated = await this.rideRepo.update(rideId, {
+        status: 'IN_PROGRESS',
+        startedAt: new Date(),
+        otp: this.otpService.invalidateRideOtp(),
+        rideSequence: nextSequence
+      }, tx);
+
+      await this.outboxRepo.stageEvent(tx, {
+        topic: EventTopics.RIDE_EVENTS,
+        partitionKey: ride.id,
+        eventType: 'RIDE_STARTED',
+        aggregateType: 'RIDE',
+        aggregateId: ride.id,
+        aggregateSequence: nextSequence,
+        payload: { rideId: ride.id, driverId, startedAt: updated.startedAt }
+      });
+
+      return updated;
     });
   }
 
@@ -141,8 +286,14 @@ export class RideService {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
-      if (ride.status !== 'IN_PROGRESS') {
-        throw new ConflictError('Cannot complete a ride that is not in progress');
+
+      if (ride.driverId && ride.driverId !== driverId) {
+        throw new AppError('Unauthorized: Only assigned driver can complete this ride', 403, 'FORBIDDEN');
+      }
+
+      const validCompleteStatuses = ['IN_PROGRESS', 'STARTED', 'ARRIVED_AT_DESTINATION'];
+      if (!validCompleteStatuses.includes(ride.status)) {
+        throw new ConflictError(`Cannot complete a ride in status ${ride.status}`);
       }
 
       const nextSequence = ride.rideSequence + 1;
@@ -181,14 +332,32 @@ export class RideService {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
+
+      const isRider = userId === ride.riderId;
+      const isDriver = userId === ride.driverId;
+
+      if (!isRider && !isDriver) {
+        throw new AppError('Unauthorized: Only rider or assigned driver can cancel this ride', 403, 'FORBIDDEN');
+      }
+
       if (['COMPLETED', 'CANCELLED'].includes(ride.status)) {
         throw new ConflictError('Ride cannot be cancelled');
+      }
+
+      const cancelledBy = isRider ? 'RIDER' : 'DRIVER';
+
+      // Cancellation fee calculation (applied to rider cancellations after 2 minutes)
+      let cancellationFeePaise = 0;
+      if (isRider && (ride.acceptedAt || ride.status !== 'SEARCHING')) {
+        const referenceTime = ride.acceptedAt || ride.createdAt;
+        const rideAgeMinutes = (Date.now() - new Date(referenceTime).getTime()) / 60000;
+        cancellationFeePaise = this.fareService.calculateCancellationFee(rideAgeMinutes);
       }
 
       const nextSequence = ride.rideSequence + 1;
       const cancelled = await this.rideRepo.update(rideId, {
         status: 'CANCELLED',
-        cancelledBy: userId === ride.riderId ? 'RIDER' : 'DRIVER',
+        cancelledBy,
         cancellationReason: reason,
         cancelledAt: new Date(),
         rideSequence: nextSequence
@@ -207,11 +376,15 @@ export class RideService {
           driverId: ride.driverId || undefined,
           cancelledBy: cancelled.cancelledBy,
           cancellationReason: reason,
+          cancellationFeePaise,
           cancelledAt: cancelled.cancelledAt
         }
       });
 
-      return cancelled;
+      return {
+        ...cancelled,
+        cancellationFeePaise
+      };
     });
   }
 
@@ -224,15 +397,33 @@ export class RideService {
   }
 
   async submitRating(rideId: string, fromId: string, score: number, feedback?: string) {
-    const ride = await this.getRideById(rideId);
-    const toId = fromId === ride.riderId ? ride.driverId! : ride.riderId;
+    const ride = await this.rideRepo.findById(rideId);
+    if (!ride) throw new NotFoundError('Ride not found');
+
+    if (ride.status !== 'COMPLETED') {
+      throw new ConflictError('Only completed rides can be rated');
+    }
+
+    const isRider = fromId === ride.riderId;
+    const isDriver = fromId === ride.driverId;
+
+    if (!isRider && !isDriver) {
+      throw new AppError('Forbidden: You can only rate rides you participated in', 403, 'FORBIDDEN');
+    }
+
+    const existingRating = await this.ratingRepo.findByRideAndFrom(rideId, fromId);
+    if (existingRating) {
+      throw new ConflictError('You have already submitted a rating for this ride');
+    }
+
+    const toId = isRider ? ride.driverId! : ride.riderId;
     return this.ratingRepo.create({ rideId, fromId, toId, score, feedback });
   }
 }
 
 export function canCompleteRide(ride: { status: string; paymentStatus?: string }): boolean {
   return (
-    (ride.status === 'ARRIVED_AT_DESTINATION' || ride.status === 'IN_PROGRESS') &&
+    ride.status === 'ARRIVED_AT_DESTINATION' &&
     (ride.paymentStatus === 'CAPTURED' || ride.paymentStatus === 'PAID')
   );
 }

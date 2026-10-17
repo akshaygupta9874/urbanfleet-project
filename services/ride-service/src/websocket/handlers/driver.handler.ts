@@ -12,11 +12,13 @@ import { emitDriverLocation, emitRideAccepted, emitDriverArrived, emitRideStarte
 import type { GeoService } from '../../services/geo.service.js';
 import type { DriverPresenceService } from '../../services/driver-presence.service.js';
 import type { RideService } from '../../services/ride.service.js';
+import type { DispatchService } from '../../services/dispatch.service.js';
 
 export interface DriverHandlerDeps {
   geoService: GeoService;
   presenceService: DriverPresenceService;
   rideService?: RideService;
+  dispatchService?: DispatchService;
 }
 
 let globalDeps: DriverHandlerDeps | undefined = undefined;
@@ -281,6 +283,18 @@ async function handleRejectRide(
     sendSocketError(socket, 'Invalid ride payload.');
     return;
   }
+
+  const driverId = socket.user.driverId || socket.user.userId;
+  if (deps?.dispatchService) {
+    let ride: any = null;
+    if (deps.rideService) {
+      try {
+        ride = await deps.rideService.getRideById(result.data.rideId);
+      } catch {}
+    }
+    await deps.dispatchService.handleDriverResponse(result.data.rideId, driverId, false, ride);
+  }
+
   // Acknowledge rejection
   socket.send(JSON.stringify({ event: 'server:ride-rejected', data: { rideId: result.data.rideId } }));
 }

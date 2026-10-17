@@ -47,7 +47,7 @@ const driverPresenceService = new DriverPresenceService(redis);
 const geoService = new GeoService(redis, driverPresenceService);
 const dispatchService = new DispatchService(geoService);
 const rideService = new RideService(rideRepo, ratingRepo, outboxRepo, fareService, otpService);
-const rideController = new RideController(rideService, fareService);
+const rideController = new RideController(rideService, fareService, dispatchService);
 
 // Native WebSocket Server
 initRideWebSocketServer(
@@ -63,8 +63,41 @@ initRideWebSocketServer(
 // HTTP Routes
 app.use('/api/ride', createRideRouter(rideController));
 
-// Health check
-app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'ride-service' }));
+// Health check with active dependency validation
+app.get('/health', async (req, res) => {
+  let dbStatus = 'DOWN';
+  let redisStatus = 'DOWN';
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'UP';
+  } catch (err) {
+    dbStatus = 'DOWN';
+  }
+
+  try {
+    if (redis.isOpen) {
+      await redis.ping();
+      redisStatus = 'UP';
+    }
+  } catch (err) {
+    redisStatus = 'DOWN';
+  }
+
+  const isHealthy = dbStatus === 'UP' && redisStatus === 'UP';
+  const statusCode = isHealthy ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: isHealthy ? 'UP' : 'DEGRADED',
+    service: 'ride-service',
+    timestamp: new Date().toISOString(),
+    dependencies: {
+      database: dbStatus,
+      redis: redisStatus,
+      outbox: outboxWorker.isHealthy() ? 'UP' : 'DOWN'
+    }
+  });
+});
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -82,3 +115,28 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 server.listen(port, () => {
   logger.info(`Ride Service running internally on port ${port}`);
 });
+
+// Graceful shutdown handling
+const shutdown = async (signal: string) => {
+  logger.info(`Received ${signal}. Initiating graceful shutdown...`);
+  await outboxWorker.stop();
+  server.close(async () => {
+    logger.info('HTTP & WebSocket servers closed.');
+    try {
+      if (redis.isOpen) await redis.quit();
+      await prisma.$disconnect();
+      logger.info('Database and Redis connections closed cleanly.');
+    } catch (err) {
+      logger.error('Error during shutdown cleanup:', err);
+    }
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    logger.error('Forcefully terminating process due to shutdown timeout.');
+    process.exit(1);
+  }, 10000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

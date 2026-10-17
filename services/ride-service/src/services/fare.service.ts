@@ -6,7 +6,8 @@ const SURGE_CHARGE_PAISE = 400; // ₹4
 const VEHICLE_MULTIPLIERS: Record<string, number> = {
   bike: 0.7,
   auto: 0.9,
-  car: 1.2
+  car: 1.2,
+  sedan: 1.2,
 };
 
 export interface IFareBreakdown {
@@ -20,7 +21,20 @@ export interface IFareBreakdown {
 }
 
 export class FareService {
-  computeDistanceAndDuration(pickup: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
+  normalizeCoords(point: any): { lat: number; lng: number } {
+    if (!point) return { lat: 0, lng: 0 };
+    const lat = point.lat ?? point.latitude ?? point.coordinates?.lat ?? point.coordinates?.latitude ?? 0;
+    const lng = point.lng ?? point.longitude ?? point.coordinates?.lng ?? point.coordinates?.longitude ?? 0;
+    return { lat: Number(lat), lng: Number(lng) };
+  }
+
+  computeDistanceAndDuration(
+    pickupInput: { lat: number; lng: number } | any,
+    destinationInput: { lat: number; lng: number } | any
+  ) {
+    const pickup = this.normalizeCoords(pickupInput);
+    const destination = this.normalizeCoords(destinationInput);
+
     const R = 6371; // Earth radius in km
     const dLat = ((destination.lat - pickup.lat) * Math.PI) / 180;
     const dLng = ((destination.lng - pickup.lng) * Math.PI) / 180;
@@ -38,26 +52,37 @@ export class FareService {
   }
 
   calculateDynamicSurge(demandFactor = 1.0): number {
-    return Math.min(3.0, Math.max(1.0, demandFactor));
+    return Math.min(3.0, Math.max(1.0, Math.round(demandFactor * 100) / 100));
   }
 
   calculateCancellationFee(rideAgeMinutes: number): number {
     return rideAgeMinutes > 2 ? 5000 : 0; // 50 INR in paise if >2 mins
   }
 
-  calculateFareEstimate(pickup: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
+  calculateFareEstimate(
+    pickup: any,
+    destination: any,
+    vehicleType = 'car',
+    demandFactor = 1.0
+  ) {
     const { distanceKm, durationMinutes } = this.computeDistanceAndDuration(pickup, destination);
+    const multiplier = VEHICLE_MULTIPLIERS[vehicleType.toLowerCase()] ?? 1.2;
     const baseFarePaise = 5000; // 50 INR base
-    const perKmPaise = 1500;   // 15 INR/km
-    const surgeMultiplier = this.calculateDynamicSurge();
+    const perKmPaise = Math.round(1500 * multiplier); // 15 INR/km adjusted for vehicle category
+    const surgeMultiplier = this.calculateDynamicSurge(demandFactor);
     const calculatedFare = Math.round((baseFarePaise + distanceKm * perKmPaise) * surgeMultiplier);
+
+    const platformCommissionPaise = Math.round(calculatedFare * (PLATFORM_COMMISSION_PERCENT / 100));
+    const driverEarningPaise = calculatedFare - platformCommissionPaise;
 
     return {
       distanceKm,
       durationMinutes,
       baseFarePaise,
       surgeMultiplier,
-      totalFarePaise: calculatedFare
+      totalFarePaise: calculatedFare,
+      platformCommissionPaise,
+      driverEarningPaise,
     };
   }
 

@@ -48,13 +48,16 @@ export const authMiddleware = asyncHandler(
           issuer: 'urbanfleet-auth',
           audience: 'urbanfleet-api',
         }) as AuthPayload;
+      } else if (process.env.NODE_ENV === 'production') {
+        throw new AppError('Server misconfiguration: Missing JWT public key in production', 500, 'INTERNAL_ERROR');
       } else {
         const secret = process.env.JWT_ACCESS_SECRET || 'test-access-secret-only';
         decodedData = jwt.verify(token, secret) as AuthPayload;
       }
     } catch (error: any) {
+      if (error instanceof AppError) throw error;
       const secret = process.env.JWT_ACCESS_SECRET;
-      if (secret) {
+      if (secret && process.env.NODE_ENV !== 'production') {
         try {
           decodedData = jwt.verify(token, secret) as AuthPayload;
         } catch (_) {
@@ -65,6 +68,11 @@ export const authMiddleware = asyncHandler(
       }
     }
 
+    // Token Type Defense (reject refresh tokens used as bearer)
+    if ((decodedData as any).tokenType && (decodedData as any).tokenType !== 'ACCESS') {
+      throw new AppError('Invalid token type. Access token required.', 401, 'INVALID_TOKEN_TYPE');
+    }
+
     const userId = decodedData.userId || decodedData.id;
     const sessionId = decodedData.sessionId;
 
@@ -72,12 +80,13 @@ export const authMiddleware = asyncHandler(
       throw new AppError('Your session is invalid. Please sign in again.', 401, 'INVALID_SESSION');
     }
 
-    // 3. Validate Session (Concurrent Redis checks)
+    // 3. Validate Session (Proper sequential Redis lookup)
     if (sessionId && rideRedisClient.isOpen) {
       try {
-        const [storedSession] = await Promise.all([
-          rideRedisClient.get(`auth:session:${sessionId}`) || rideRedisClient.get(`session:${sessionId}`),
-        ]);
+        let storedSession = await rideRedisClient.get(`auth:session:${sessionId}`);
+        if (!storedSession) {
+          storedSession = await rideRedisClient.get(`session:${sessionId}`);
+        }
 
         if (storedSession) {
           const parsed = JSON.parse(storedSession);

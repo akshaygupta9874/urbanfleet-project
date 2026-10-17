@@ -1,7 +1,7 @@
 import { AuthenticatedSocket } from '../types.js';
 import { RiderEvents, ServerEvents } from '../event.constants.js';
 import { sendSocketError } from '../utils/send-error.js';
-import { emitRideCancelled } from '../emitters/driver.emitter.js';
+import { emitRideCancelled, emitToDriver } from '../emitters/driver.emitter.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 
@@ -94,8 +94,26 @@ async function handleRequestRide(
 
 async function handleRiderLocationUpdate(
   socket: AuthenticatedSocket,
-  data: any
+  data: any,
+  deps = globalRiderDeps
 ) {
+  const riderId = socket.user.userId;
+  const { rideId, location } = data || {};
+
+  if (rideId && location && deps?.rideService) {
+    try {
+      const ride = await deps.rideService.getRideById(rideId);
+      if (ride && ride.driverId) {
+        emitToDriver(ride.driverId, 'server:rider-location', {
+          rideId,
+          riderId,
+          location,
+          timestamp: Date.now()
+        });
+      }
+    } catch {}
+  }
+
   // Acknowledge telemetry
   socket.send(
     JSON.stringify({
