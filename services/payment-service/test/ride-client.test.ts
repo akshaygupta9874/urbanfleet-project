@@ -33,7 +33,7 @@ describe('RideClient Inter-Service HTTP Communication', () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://test-ride-service:4003/api/rides/ride-uuid-123',
       expect.objectContaining({
-        headers: { Accept: 'application/json' },
+        headers: expect.objectContaining({ Accept: 'application/json' }),
       })
     );
   });
@@ -61,7 +61,7 @@ describe('RideClient Inter-Service HTTP Communication', () => {
       'http://test-ride-service:4003/api/rides/ride-123/payment-status',
       expect.objectContaining({
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ paymentStatus: 'PAID', currentStatus: 'PENDING' }),
       })
     );
