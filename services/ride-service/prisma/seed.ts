@@ -1,4 +1,4 @@
-import { PrismaClient, RideStatus, RidePaymentStatus } from '@prisma/client';
+import { PrismaClient, RideStatus, RidePaymentStatus } from '../src/db/client.js';
 
 const prisma = new PrismaClient();
 const DEMO_RIDER_ID = '11111111-1111-1111-1111-111111111111';

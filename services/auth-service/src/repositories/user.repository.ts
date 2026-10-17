@@ -1,4 +1,4 @@
-import { PrismaClient, User, Role } from '@prisma/client';
+import { PrismaClient, User, Role } from '../db/client.js';
 
 export class UserRepository {
   constructor(private prisma: PrismaClient) {}

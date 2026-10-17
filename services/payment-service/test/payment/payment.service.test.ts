@@ -73,10 +73,29 @@ import { ledgerService } from "../../src/payment/services/ledger.service.js";
 import { razorpayClient } from "../../src/config/razorpay.config.js";
 
 import { prisma } from "../../src/db/client.js";
-import {
-  RidePaymentStatus,
-  RideStatus,
-} from "@prisma/client";
+
+const RideStatus = {
+  REQUESTED: 'REQUESTED',
+  SEARCHING: 'SEARCHING',
+  OFFERED: 'OFFERED',
+  ACCEPTED: 'ACCEPTED',
+  DRIVER_ASSIGNED: 'DRIVER_ASSIGNED',
+  DRIVER_ARRIVING: 'DRIVER_ARRIVING',
+  ARRIVED: 'ARRIVED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  STARTED: 'STARTED',
+  ARRIVED_AT_DESTINATION: 'ARRIVED_AT_DESTINATION',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+const RidePaymentStatus = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  CAPTURED: 'CAPTURED',
+  FAILED: 'FAILED',
+  REFUNDED: 'REFUNDED',
+} as const;
 
 import { NonRetryablePaymentError } from "../../src/payment/errors/payment.errors.js";
 import { PaymentStatus } from "../../src/payment/types/payment.types.js";

@@ -8,8 +8,7 @@ import { requireAdmin } from "../../src/payment/middlewares/require-admin.middle
 import * as controller from "../../src/payment/controllers/payment.controller.js";
 import { paymentService } from "../../src/payment/services/payment.service.js";
 import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
-import { UserRole } from "@prisma/client";
-import { prisma } from "../../src/db/client.js";
+import { prisma, UserRole } from "../../src/db/client.js";
 import { PaymentStatus, RefundStatus } from "../../src/payment/types/payment.types.js";
 import { makePayment, oid } from "../helpers/helpers.js";
 

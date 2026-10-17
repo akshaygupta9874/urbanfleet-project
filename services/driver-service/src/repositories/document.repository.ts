@@ -1,4 +1,4 @@
-import { PrismaClient, Document, VerificationStatus, Prisma } from '@prisma/client';
+import { PrismaClient, Document, VerificationStatus, Prisma } from '../db/client.js';
 
 export interface CreateDocumentInput {
   driverProfileId: string;

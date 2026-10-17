@@ -1,4 +1,4 @@
-import { PrismaClient, LedgerEntry } from '@prisma/client';
+import { PrismaClient, LedgerEntry } from '../db/client.js';
 
 export class LedgerRepository {
   constructor(private prisma: PrismaClient) {}

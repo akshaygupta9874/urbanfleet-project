@@ -2,8 +2,7 @@ import { NextFunction, Request, Response } from "express";
 
 import { AppError } from "../../utils/AppError.js";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import { prisma } from "../../db/client.js";
-import { UserRole } from "@prisma/client";
+import { prisma, UserRole } from "../../db/client.js";
 
 /**
  * Lets only administrators through. Mount it AFTER authMiddleware.

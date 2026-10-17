@@ -11,6 +11,7 @@ yarn-error.log*
 coverage/
 .turbo
 .prisma
+**/src/generated/
 
 # Zero RSA Keys in Git!
 certs/

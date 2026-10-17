@@ -1,4 +1,4 @@
-import { PrismaClient, Payment } from '@prisma/client';
+import { PrismaClient, Payment } from '../db/client.js';
 
 export class PaymentRepository {
   constructor(private prisma: PrismaClient) {}

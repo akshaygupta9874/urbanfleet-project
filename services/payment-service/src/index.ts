@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from './db/client.js';
 import { createLogger, AppError } from '@urbanfleet/common';
 import { PaymentRepository } from './repositories/payment.repository.js';
 import { LedgerRepository } from './repositories/ledger.repository.js';

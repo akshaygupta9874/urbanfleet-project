@@ -1,4 +1,4 @@
-import { PrismaClient, Rating } from '@prisma/client';
+import { PrismaClient, Rating } from '../db/client.js';
 
 export class RatingRepository {
   constructor(private prisma: PrismaClient) {}

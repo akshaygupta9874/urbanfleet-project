@@ -1,4 +1,4 @@
-import { Ride, RideStatus, RidePaymentStatus } from '@prisma/client';
+import { Ride, RideStatus, RidePaymentStatus } from '../db/client.js';
 import { RideRepository } from '../repositories/ride.repository.js';
 import { RatingRepository } from '../repositories/rating.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';

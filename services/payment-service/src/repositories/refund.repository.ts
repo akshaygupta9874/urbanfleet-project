@@ -1,4 +1,4 @@
-import { PrismaClient, Refund } from '@prisma/client';
+import { PrismaClient, Refund } from '../db/client.js';
 
 export class RefundRepository {
   constructor(private prisma: PrismaClient) {}

@@ -13,6 +13,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "test": "vitest run",
     "prisma:generate:all": "npm run prisma:generate --workspaces --if-present",
+    "postinstall": "npm run prisma:generate:all",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f"

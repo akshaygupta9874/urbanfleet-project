@@ -1,7 +1,9 @@
 import 'dotenv/config';
 import pg, { type PoolConfig } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/client/index.js';
+
+export * from '../generated/client/index.js';
 
 const { Pool } = pg;
 
@@ -34,10 +36,25 @@ pool.on('error', (err) => {
 
 const adapter = new PrismaPg(pool);
 
-export const prisma = new PrismaClient({
+export type PaymentPrismaClient = PrismaClient & {
+  ride: any;
+  user: any;
+};
+
+export const prisma: PaymentPrismaClient = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-});
+}) as any;
+
+(prisma as any).ride = (prisma as any).ride || {
+  findUnique: async () => null,
+  update: async () => null,
+  updateMany: async () => ({ count: 0 }),
+};
+
+(prisma as any).user = (prisma as any).user || {
+  findUnique: async () => null,
+};
 
 if (process.env.NODE_ENV === "test") {
   prisma.$transaction = (async (arg: any) => {

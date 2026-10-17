@@ -1,4 +1,4 @@
-import { PrismaClient, Session } from '@prisma/client';
+import { PrismaClient, Session } from '../db/client.js';
 
 export class SessionRepository {
   constructor(private prisma: PrismaClient) {}

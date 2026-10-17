@@ -1,4 +1,4 @@
-import { PrismaClient, PaymentStatus, LedgerAccount, LedgerEntryType } from '@prisma/client';
+import { PrismaClient, PaymentStatus, LedgerAccount, LedgerEntryType } from '../src/db/client.js';
 import crypto from 'crypto';
 
 const prisma = new PrismaClient();

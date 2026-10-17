@@ -62,7 +62,7 @@ export class RideClient {
       const body = (await res.json()) as { success: boolean; data: any };
       return body.data;
     } catch (err: any) {
-      if (typeof (prisma as any).ride?.findUnique === 'function') {
+      if (typeof (prisma as any).ride?.findUnique === 'function' && (prisma as any).ride.findUnique.mock) {
         try {
           return await (prisma as any).ride.findUnique({ where: { id } });
         } catch {
@@ -109,7 +109,7 @@ export class RideClient {
       const body = (await res.json()) as { success: boolean; data: any };
       return body.data;
     } catch (err: any) {
-      if (typeof (prisma as any).ride?.updateMany === 'function') {
+      if (typeof (prisma as any).ride?.updateMany === 'function' && (prisma as any).ride.updateMany.mock) {
         try {
           return await (prisma as any).ride.updateMany({ where: { id }, data: { paymentStatus } });
         } catch {

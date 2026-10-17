@@ -1,4 +1,4 @@
-import { PrismaClient, VerificationStatus } from '@prisma/client';
+import { PrismaClient, VerificationStatus } from '../src/db/client.js';
 
 const prisma = new PrismaClient();
 const DEMO_DRIVER_USER_ID = '22222222-2222-2222-2222-222222222222';

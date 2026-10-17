@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../db/client.js';
 import { Kafka, Producer } from 'kafkajs';
 import { createLogger } from '@urbanfleet/common';
 

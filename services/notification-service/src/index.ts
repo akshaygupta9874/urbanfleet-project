@@ -1,6 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from './db/client.js';
 import { createLogger } from '@urbanfleet/common';
 import { NotificationRepository } from './repositories/notification.repository.js';
 import { NotificationService } from './services/notification.service.js';

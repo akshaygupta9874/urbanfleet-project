@@ -1,4 +1,4 @@
-import { PrismaClient, AuditLog } from '@prisma/client';
+import { PrismaClient, AuditLog } from '../db/client.js';
 
 export class AuditRepository {
   constructor(private prisma: PrismaClient) {}

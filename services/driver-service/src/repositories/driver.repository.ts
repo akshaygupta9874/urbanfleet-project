@@ -1,4 +1,4 @@
-import { PrismaClient, DriverProfile, Vehicle } from '@prisma/client';
+import { PrismaClient, DriverProfile, Vehicle } from '../db/client.js';
 
 export class DriverRepository {
   constructor(private prisma: PrismaClient) {}

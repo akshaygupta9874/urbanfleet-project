@@ -5,7 +5,7 @@ import { SessionRepository } from '../repositories/session.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
 import { ConflictError, UnauthorizedError, NotFoundError, createLogger } from '@urbanfleet/common';
-import { Role } from '@prisma/client';
+import { Role } from '../db/client.js';
 import { cacheTokens, revokeCachedTokens } from '../redis/token-cache.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';

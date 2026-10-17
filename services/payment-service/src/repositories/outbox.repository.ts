@@ -1,4 +1,4 @@
-﻿import { PrismaClient, OutboxEvent } from '@prisma/client';
+import { PrismaClient, OutboxEvent } from '../db/client.js';
 
 export class OutboxRepository {
   constructor(private prisma: PrismaClient) {}

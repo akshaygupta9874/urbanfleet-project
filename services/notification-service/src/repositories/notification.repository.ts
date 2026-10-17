@@ -1,4 +1,4 @@
-import { PrismaClient, NotificationRecord } from '@prisma/client';
+import { PrismaClient, NotificationRecord } from '../db/client.js';
 
 export class NotificationRepository {
   constructor(private prisma: PrismaClient) {}

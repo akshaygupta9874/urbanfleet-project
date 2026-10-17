@@ -1,5 +1,5 @@
 import { Kafka, Consumer } from 'kafkajs';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../db/client.js';
 import { createLogger } from '@urbanfleet/common';
 import { EventTopics, KafkaEnvelope, RideCompletedPayload, UserRegisteredPayload } from '@urbanfleet/contracts';
 
