@@ -1,8 +1,3 @@
-import { Request, Response, NextFunction } from "express";
-
-const asyncHandler = (fn: any) => (req: Request, res: Response, next: NextFunction) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-
+import { asyncHandler, AsyncRequestHandler, AsyncHandlerOptions } from '@urbanfleet/common';
+export { asyncHandler, AsyncRequestHandler, AsyncHandlerOptions };
 export default asyncHandler;
-export { asyncHandler };
