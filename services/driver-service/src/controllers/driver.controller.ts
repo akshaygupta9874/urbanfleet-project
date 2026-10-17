@@ -315,6 +315,16 @@ export class DriverController {
   });
 
   verifyDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const role = req.role || req.user?.role || req.user?.roles;
+    const isVerifier = Array.isArray(role)
+      ? role.includes('ADMIN') || role.includes('VERIFIER')
+      : role === 'ADMIN' || role === 'VERIFIER';
+    const isInternal = req.headers['x-internal-service-key'] === (process.env.INTERNAL_SERVICE_KEY || 'urbanfleet_internal_secret');
+
+    if (!isVerifier && !isInternal) {
+      throw new AppError('Forbidden: Only administrators or verifiers can verify documents', 403, 'FORBIDDEN');
+    }
+
     const { status, rejectionReason } = req.body;
     const doc = await this.documentService.verifyDocument(req.params.id, status, rejectionReason);
     res.status(200).json({ success: true, data: doc });
@@ -346,12 +356,26 @@ export class DriverController {
 
   getDriverById = asyncHandler(async (req: Request, res: Response) => {
     const profile = await this.driverService.getDriverById(req.params.id);
-    res.status(200).json({ success: true, data: profile });
+    const authReq = req as AuthenticatedRequest;
+    const callerId = authReq.userId || authReq.user?.userId || authReq.user?.id;
+    const callerRole = authReq.role || authReq.user?.role || authReq.user?.roles;
+    const isInternal = req.headers['x-internal-service-key'] === (process.env.INTERNAL_SERVICE_KEY || 'urbanfleet_internal_secret');
+    const isPrivileged = isInternal || callerRole === 'ADMIN' || (callerId && profile.userId === callerId);
+
+    const data = isPrivileged ? profile : this.driverService.sanitizePublicProfile(profile);
+    res.status(200).json({ success: true, data });
   });
 
   getDriverByUserId = asyncHandler(async (req: Request, res: Response) => {
     const profile = await this.driverService.getDriverByUserId(req.params.userId);
-    res.status(200).json({ success: true, data: profile });
+    const authReq = req as AuthenticatedRequest;
+    const callerId = authReq.userId || authReq.user?.userId || authReq.user?.id;
+    const callerRole = authReq.role || authReq.user?.role || authReq.user?.roles;
+    const isInternal = req.headers['x-internal-service-key'] === (process.env.INTERNAL_SERVICE_KEY || 'urbanfleet_internal_secret');
+    const isPrivileged = isInternal || callerRole === 'ADMIN' || (callerId && profile.userId === callerId);
+
+    const data = isPrivileged ? profile : this.driverService.sanitizePublicProfile(profile);
+    res.status(200).json({ success: true, data });
   });
 }
 export default DriverController;

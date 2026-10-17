@@ -27,14 +27,14 @@ export function getAuthProducer(): Producer | null {
   return producer;
 }
 
-export async function publishUserRegistered(payload: UserRegisteredPayload): Promise<void> {
+export async function publishUserRegistered(payload: UserRegisteredPayload, eventId?: string): Promise<void> {
   if (!producer) {
     logger.warn('Kafka producer not connected. Event publication skipped.');
     return;
   }
 
   const envelope: KafkaEnvelope<UserRegisteredPayload> = {
-    id: crypto.randomUUID(),
+    id: eventId || crypto.randomUUID(),
     version: 1,
     eventType: 'USER_REGISTERED',
     producer: 'auth-service',

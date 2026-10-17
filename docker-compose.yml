@@ -96,6 +96,7 @@ services:
       - driver-service
       - ride-service
       - payment-service
+      - notification-service
 
   # ========================================================
   # 3. CORE MICROSERVICES (Zero Public Ports Exposed)
@@ -112,6 +113,7 @@ services:
       DATABASE_URL: "postgresql://auth_user:${AUTH_DB_PASSWORD:-auth_pass_local}@postgres:5432/urbanfleet_auth?schema=public"
       REDIS_URL: "redis://redis:6379"
       KAFKA_BROKERS: "kafka:29092"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-urbanfleet_internal_secret}
       JWT_PRIVATE_KEY_BASE64: ${JWT_PRIVATE_KEY_BASE64}
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64}
     networks:
@@ -134,6 +136,8 @@ services:
       DATABASE_URL: "postgresql://driver_user:${DRIVER_DB_PASSWORD:-driver_pass_local}@postgres:5432/urbanfleet_driver?schema=public"
       REDIS_URL: "redis://redis:6379"
       KAFKA_BROKERS: "kafka:29092"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-urbanfleet_internal_secret}
+      AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64}
     networks:
       - urbanfleet_internal
@@ -155,6 +159,8 @@ services:
       DATABASE_URL: "postgresql://ride_user:${RIDE_DB_PASSWORD:-ride_pass_local}@postgres:5432/urbanfleet_ride?schema=public"
       REDIS_URL: "redis://redis:6379"
       KAFKA_BROKERS: "kafka:29092"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-urbanfleet_internal_secret}
+      DRIVER_SERVICE_URL: "http://driver-service:4002"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64}
     networks:
       - urbanfleet_internal
@@ -178,6 +184,8 @@ services:
       DATABASE_URL: "postgresql://payment_user:${PAYMENT_DB_PASSWORD:-payment_pass_local}@postgres:5432/urbanfleet_payment?schema=public"
       REDIS_URL: "redis://redis:6379"
       KAFKA_BROKERS: "kafka:29092"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-urbanfleet_internal_secret}
+      RIDE_SERVICE_URL: "http://ride-service:4004"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
@@ -199,7 +207,11 @@ services:
     environment:
       PORT: 4003
       DATABASE_URL: "postgresql://notification_user:${NOTIFICATION_DB_PASSWORD:-notif_pass_local}@postgres:5432/urbanfleet_notification?schema=public"
+      REDIS_URL: "redis://redis:6379"
       KAFKA_BROKERS: "kafka:29092"
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-urbanfleet_internal_secret}
+      AUTH_SERVICE_URL: "http://auth-service:4001"
+      JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY}
     networks:
       - urbanfleet_internal

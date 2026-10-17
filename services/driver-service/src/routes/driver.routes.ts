@@ -3,6 +3,7 @@ import { DriverController } from '../controllers/driver.controller.js';
 import { validateRequest } from '@urbanfleet/common';
 import {
   createProfileSchema,
+  updateProfileSchema,
   updateStatusSchema,
   uploadDocumentSchema,
 } from '../validation/driver.validation.js';
@@ -22,7 +23,7 @@ export function createDriverRouter(controller: DriverController): Router {
 
   // Profile & Vehicle Management
   router.get('/profile', authMiddleware, controller.getDriverProfile);
-  router.put('/profile', authMiddleware, validateRequest({ body: createProfileSchema }), controller.updateDriverProfile);
+  router.put('/profile', authMiddleware, validateRequest({ body: updateProfileSchema }), controller.updateDriverProfile);
   router.put('/vehicle', authMiddleware, controller.updateVehicle);
   router.post('/documents', authMiddleware, validateRequest({ body: uploadDocumentSchema }), controller.uploadDocument);
   router.get('/documents', authMiddleware, controller.getDriverDocuments);

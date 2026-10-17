@@ -14,8 +14,12 @@ export class AuthClient {
 
   async getUserById(userId: string): Promise<AuthUser | null> {
     try {
+      const internalKey = process.env.INTERNAL_SERVICE_KEY || 'urbanfleet_internal_secret';
       const res = await fetch(`${this.baseUrl}/api/auth/users/${userId}`, {
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          'x-internal-service-key': internalKey,
+        },
         signal: AbortSignal.timeout(5000),
       });
 

@@ -57,8 +57,13 @@ const authController = new AuthController(authService, userService, twoFactorSer
 const adminController = new AdminController(adminService);
 
 // 4. Mounting Routes
-app.use('/api/auth', createAuthRouter(authController));
-app.use('/api/admin', createAdminRouter(adminController));
+const authRouter = createAuthRouter(authController);
+const adminRouter = createAdminRouter(adminController);
+
+app.use('/api/auth', authRouter);
+app.use('/v1/auth', authRouter);
+app.use('/api/admin', adminRouter);
+app.use('/v1/admin', adminRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'auth-service' }));

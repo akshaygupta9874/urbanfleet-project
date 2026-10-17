@@ -195,3 +195,56 @@ export const sendResetPasswordEmail = async (params: ResetPasswordEmailParams) =
     html: getResetPasswordHtml(params),
   });
 };
+
+export interface RideReceiptEmailParams {
+  email?: string;
+  rideId: string;
+  paymentId?: string;
+  amountPaise?: number;
+  totalFarePaise?: number;
+  pickupAddress?: string;
+  dropoffAddress?: string;
+  destinationAddress?: string;
+  driverName?: string;
+  date?: string;
+}
+
+export const getRideReceiptHtml = (params: RideReceiptEmailParams): string => {
+  const fare = ((params.totalFarePaise ?? params.amountPaise ?? 0) / 100).toFixed(2);
+  const pickup = params.pickupAddress || 'Pickup Point';
+  const dropoff = params.dropoffAddress || params.destinationAddress || 'Dropoff Point';
+  const rideDate = params.date || new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' });
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>${APP_NAME} Ride Receipt</title>
+<style>${baseStyles}</style>
+</head>
+<body>
+<table role="presentation" class="wrapper" width="100%">
+<tr>
+<td align="center" class="p-24">
+<table role="presentation" class="container">
+<tr><td class="header"><span class="brand">${APP_NAME}</span></td></tr>
+<tr><td class="p-32">
+<h1 class="title">Your Ride Receipt</h1>
+<p class="text">Thank you for riding with ${APP_NAME}. Here is the summary of your trip on ${rideDate}:</p>
+<table role="presentation" width="100%" style="margin: 20px 0; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px;">
+<tr><td style="padding: 8px 0; color: #6b7280;">Ride ID:</td><td align="right" style="font-weight: 600;">${params.rideId}</td></tr>
+${params.paymentId ? `<tr><td style="padding: 8px 0; color: #6b7280;">Payment ID:</td><td align="right" style="font-weight: 600;">${params.paymentId}</td></tr>` : ''}
+<tr><td style="padding: 8px 0; color: #6b7280;">Pickup:</td><td align="right" style="font-weight: 500;">${pickup}</td></tr>
+<tr><td style="padding: 8px 0; color: #6b7280;">Destination:</td><td align="right" style="font-weight: 500;">${dropoff}</td></tr>
+<tr style="border-top: 2px solid #e5e7eb;"><td style="padding: 12px 0 0 0; font-size: 16px; font-weight: 700;">Total Paid:</td><td align="right" style="padding: 12px 0 0 0; font-size: 18px; font-weight: 700; color: #059669;">₹${fare}</td></tr>
+</table>
+<p class="muted">Need help with this ride? Visit our support center or reply to this email.</p>
+</td></tr>
+<tr><td class="footer">© ${YEAR} ${APP_NAME}. All rights reserved.</td></tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+};

@@ -30,6 +30,15 @@ export const authMiddleware = asyncHandler(
       return next();
     }
 
+    // Allow internal service communication
+    const internalKey = request.headers['x-internal-service-key'];
+    const expectedKey = process.env.INTERNAL_SERVICE_KEY || 'urbanfleet_internal_secret';
+    if (internalKey && internalKey === expectedKey) {
+      request.userId = 'internal-service';
+      request.user = { id: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN' };
+      return next();
+    }
+
     // 1. Extract Token from Authorization header or cookie
     const token =
       request.headers.authorization?.replace(/^Bearer\s+/i, '') ||

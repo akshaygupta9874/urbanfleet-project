@@ -16,6 +16,8 @@ const port = process.env.PORT || 4003;
 app.use(helmet());
 app.use(express.json());
 
+import { createNotificationRouter } from './routes/notification.routes.js';
+
 const notifRepo = new NotificationRepository(prisma);
 const notifService = new NotificationService(notifRepo);
 
@@ -23,6 +25,11 @@ const dispatcher = new NotificationDispatcher(notifRepo);
 dispatcher.start();
 
 initNotificationConsumer(prisma, notifService).catch(err => logger.error('Consumer error:', err));
+
+// Routes
+const notifRouter = createNotificationRouter(notifRepo);
+app.use('/api/notifications', notifRouter);
+app.use('/v1/notifications', notifRouter);
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'notification-service' }));
 

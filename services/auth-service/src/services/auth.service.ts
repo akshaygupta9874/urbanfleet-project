@@ -98,6 +98,18 @@ export class AuthService {
       ipAddress: input.ipAddress
     });
 
+    // Generate authentic email verification token
+    const verifyToken = crypto.randomBytes(32).toString('hex');
+    try {
+      if (authRedisClient && authRedisClient.isOpen) {
+        await authRedisClient.set(authRedisKey(`verify:${verifyToken}`), user.id, { EX: 86400 });
+      }
+    } catch (err) {
+      // Redis optional during unit tests
+    }
+
+    const registrationEventId = crypto.randomUUID();
+
     // Durable Outbox event staging
     if (this.outboxRepo) {
       try {
@@ -108,7 +120,7 @@ export class AuthService {
           aggregateType: 'USER',
           aggregateId: user.id,
           payload: {
-            id: crypto.randomUUID(),
+            id: registrationEventId,
             version: 1,
             eventType: 'USER_REGISTERED',
             producer: 'auth-service',
@@ -123,6 +135,32 @@ export class AuthService {
               fullName: user.fullName,
               phone: user.phone || undefined,
               role: user.role as any,
+              verifyToken,
+            },
+          },
+        });
+
+        // Stage email verification requested event for notification-service
+        await this.outboxRepo.stageEvent(null, {
+          topic: EventTopics.AUTH_EVENTS,
+          partitionKey: user.id,
+          eventType: 'USER_EMAIL_VERIFICATION_REQUESTED',
+          aggregateType: 'USER',
+          aggregateId: user.id,
+          payload: {
+            id: crypto.randomUUID(),
+            version: 1,
+            eventType: 'USER_EMAIL_VERIFICATION_REQUESTED',
+            producer: 'auth-service',
+            timestamp: new Date().toISOString(),
+            partitionKey: user.id,
+            aggregateType: 'USER',
+            aggregateId: user.id,
+            aggregateSequence: 2,
+            payload: {
+              userId: user.id,
+              email: user.email,
+              verifyToken,
             },
           },
         });
@@ -131,14 +169,17 @@ export class AuthService {
       }
     }
 
-    // Emit Kafka event asynchronously
-    await publishUserRegistered({
-      userId: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      phone: user.phone || undefined,
-      role: user.role as any
-    });
+    // Emit Kafka event asynchronously using matching event ID
+    await publishUserRegistered(
+      {
+        userId: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone || undefined,
+        role: user.role as any,
+      },
+      registrationEventId
+    );
 
     return {
       user: {

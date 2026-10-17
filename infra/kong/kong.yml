@@ -10,6 +10,9 @@ services:
       - name: auth-routes
         paths:
           - /api/auth
+          - /v1/auth
+          - /api/admin
+          - /v1/admin
         strip_path: false
         protocols:
           - http
@@ -29,6 +32,9 @@ services:
       - name: driver-routes
         paths:
           - /api/driver
+          - /api/drivers
+          - /v1/driver
+          - /v1/drivers
         strip_path: false
         protocols:
           - http
@@ -43,6 +49,9 @@ services:
       - name: ride-routes
         paths:
           - /api/ride
+          - /api/rides
+          - /v1/ride
+          - /v1/rides
         strip_path: false
         protocols:
           - http
@@ -71,6 +80,26 @@ services:
       - name: payment-routes
         paths:
           - /api/payment
+          - /api/payments
+          - /v1/payment
+          - /v1/payments
+          - /api/webhooks
+          - /v1/webhooks
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+  # ========================================================
+  # 6. NOTIFICATION SERVICE (Internal Port 4003)
+  # ========================================================
+  - name: notification-service
+    url: http://notification-service:4003
+    routes:
+      - name: notification-routes
+        paths:
+          - /api/notifications
+          - /v1/notifications
         strip_path: false
         protocols:
           - http
@@ -97,6 +126,10 @@ plugins:
         - Content-Type
         - Authorization
         - X-Request-ID
+        - x-csrf-token
+        - x-xsrf-token
+        - csrf-token
+        - x-internal-service-key
       credentials: true
       max_age: 3600
 
@@ -106,3 +139,4 @@ plugins:
       header_name: X-Request-ID
       generator: uuid
       echo_downstream: true
+

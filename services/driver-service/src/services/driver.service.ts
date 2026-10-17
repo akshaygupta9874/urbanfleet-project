@@ -22,9 +22,45 @@ export class DriverService {
     return profile;
   }
 
+  sanitizePublicProfile(profile: any) {
+    if (!profile) return null;
+    const sanitizedVehicles = (profile.vehicles || []).map((v: any) => ({
+      id: v.id,
+      type: v.type,
+      brand: v.brand,
+      model: v.model,
+      color: v.color,
+      registrationYear: v.registrationYear,
+    }));
+
+    return {
+      id: profile.id,
+      _id: profile.id,
+      userId: profile.userId,
+      rating: Number(profile.rating || 5.0),
+      totalTrips: profile.totalTrips || 0,
+      isAvailable: Boolean(profile.isAvailable),
+      isOnline: Boolean(profile.isOnline),
+      verificationStatus: profile.verificationStatus,
+      profilePhoto: profile.profilePhoto,
+      vehicles: sanitizedVehicles,
+      createdAt: profile.createdAt,
+    };
+  }
+
   async updateProfile(userId: string, data: any) {
     const profile = await this.getDriverByUserId(userId);
-    return this.driverRepo.update(profile.id, data);
+    const { userId: _strippedUserId, id: _strippedId, vehicle, vehicles: _v, ...cleanData } = data || {};
+
+    if (vehicle) {
+      await this.updateVehicleInfo(userId, vehicle);
+    }
+
+    if (Object.keys(cleanData).length > 0) {
+      await this.driverRepo.update(profile.id, cleanData);
+    }
+
+    return this.getDriverByUserId(userId);
   }
 
   async updateVehicleInfo(userId: string, vehicleData: any) {

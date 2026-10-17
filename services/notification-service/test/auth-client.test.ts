@@ -34,7 +34,10 @@ describe('AuthClient Inter-Service HTTP Communication in notification-service', 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://test-auth-service:4001/api/auth/users/rider-123',
       expect.objectContaining({
-        headers: { Accept: 'application/json' },
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          'x-internal-service-key': expect.any(String),
+        }),
       })
     );
   });

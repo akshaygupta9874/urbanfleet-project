@@ -34,8 +34,11 @@ const docService = new DocumentService(docRepo, driverRepo);
 const driverController = new DriverController(driverService, docService, cloudinaryService);
 
 // Routes
-app.use('/api/driver', createDriverRouter(driverController));
-app.use('/api/drivers', createDriverRouter(driverController));
+const driverRouter = createDriverRouter(driverController);
+app.use('/api/driver', driverRouter);
+app.use('/api/drivers', driverRouter);
+app.use('/v1/driver', driverRouter);
+app.use('/v1/drivers', driverRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'driver-service' }));

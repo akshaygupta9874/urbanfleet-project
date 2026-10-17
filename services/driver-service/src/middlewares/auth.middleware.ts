@@ -51,6 +51,9 @@ export const authMiddleware = asyncHandler(
           audience: 'urbanfleet-api',
         }) as AuthPayload;
       } else {
+        if (process.env.NODE_ENV === 'production') {
+          throw new AppError('CRITICAL: Missing JWT_PUBLIC_KEY_BASE64 in production!', 500, 'AUTH_CONFIG_ERROR');
+        }
         const secret = process.env.JWT_ACCESS_SECRET || 'test-access-secret-only';
         decodedData = jwt.verify(token, secret) as AuthPayload;
       }

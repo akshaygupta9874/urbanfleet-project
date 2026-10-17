@@ -5,6 +5,7 @@ import {
   getOtpHtml,
   getVerifyEmailHtml,
   getResetPasswordHtml,
+  getRideReceiptHtml,
 } from '../services/email.service.js';
 
 const logger = createLogger('notification-dispatcher');
@@ -39,6 +40,18 @@ export class NotificationDispatcher {
             } else if (item.template === 'PASSWORD_RESET' && payload.token) {
               subject = 'Reset your UrbanFleet password';
               html = getResetPasswordHtml({ email: item.recipient, token: payload.token });
+            } else if (item.template === 'RIDE_RECEIPT') {
+              subject = `Your UrbanFleet Ride Receipt - Ride #${payload.rideId || item.id}`;
+              html = getRideReceiptHtml({
+                email: item.recipient,
+                rideId: payload.rideId || 'ride-unknown',
+                paymentId: payload.paymentId,
+                amountPaise: payload.amountPaise || payload.totalFarePaise,
+                totalFarePaise: payload.totalFarePaise || payload.amountPaise,
+                pickupAddress: payload.pickupAddress,
+                dropoffAddress: payload.dropoffAddress || payload.destinationAddress,
+                driverName: payload.driverName,
+              });
             } else if (!html) {
               html = `<p>${payload.message || 'You have a new update on your UrbanFleet account.'}</p>`;
             }

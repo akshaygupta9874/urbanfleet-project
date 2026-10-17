@@ -56,6 +56,7 @@ app.use(express.json());
 
 // Routes (Real Payment Subsystem & Legacy compatibility)
 app.use('/v1/payments', paymentRouter);
+app.use('/v1/payment', paymentRouter);
 app.use('/api/payment', paymentRouter);
 app.use('/api/payments', paymentRouter);
 
