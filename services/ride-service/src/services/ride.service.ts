@@ -58,11 +58,15 @@ export class RideService {
     return this.rideRepo.findActiveRide(riderId);
   }
 
+  async getDriverCurrentRide(driverId: string) {
+    return this.rideRepo.findActiveRideByDriverId(driverId);
+  }
+
   async acceptRide(rideId: string, driverId: string) {
     return this.prisma.$transaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
-      if (ride.status !== 'REQUESTED') {
+      if (ride.status !== 'REQUESTED' && ride.status !== 'SEARCHING') {
         throw new ConflictError('Ride is no longer available for acceptance');
       }
 
@@ -96,6 +100,21 @@ export class RideService {
       where: { id: rideId },
       data: { status: 'ARRIVED', arrivedAt: new Date() }
     });
+  }
+
+  async arriveAtPickup(input: { rideId: string; driverId: string }) {
+    return this.driverArrived(input.rideId, input.driverId);
+  }
+
+  async arriveAtDestination(input: { rideId: string; driverId: string }) {
+    return this.prisma.ride.update({
+      where: { id: input.rideId },
+      data: { status: 'ARRIVED_AT_DESTINATION' }
+    });
+  }
+
+  async cancelRideByDriver(input: { rideId: string; driverId: string; reason?: string }) {
+    return this.cancelRide(input.rideId, input.driverId, input.reason);
   }
 
   async startRide(rideId: string, driverId: string, otp: string) {

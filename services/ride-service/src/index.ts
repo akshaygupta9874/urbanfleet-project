@@ -50,7 +50,15 @@ const rideService = new RideService(prisma, rideRepo, ratingRepo, outboxRepo, fa
 const rideController = new RideController(rideService, fareService, rideRepo);
 
 // Native WebSocket Server
-initRideWebSocketServer(server, redis, geoService, undefined, driverPresenceService);
+initRideWebSocketServer(
+  server,
+  redis,
+  geoService,
+  undefined,
+  driverPresenceService,
+  rideService,
+  dispatchService
+);
 
 // HTTP Routes
 app.use('/api/ride', createRideRouter(rideController));

@@ -11,7 +11,17 @@ export class RideRepository {
     return this.prisma.ride.findFirst({
       where: {
         riderId,
-        status: { in: ['REQUESTED', 'OFFERED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
+        status: { in: ['REQUESTED', 'OFFERED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS', 'STARTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING'] }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  async findActiveRideByDriverId(driverId: string): Promise<Ride | null> {
+    return this.prisma.ride.findFirst({
+      where: {
+        driverId,
+        status: { in: ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'ARRIVED', 'IN_PROGRESS', 'STARTED'] }
       },
       orderBy: { createdAt: 'desc' }
     });

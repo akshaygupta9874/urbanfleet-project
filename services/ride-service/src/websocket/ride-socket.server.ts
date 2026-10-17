@@ -5,22 +5,47 @@ import { RedisClientType } from 'redis';
 import { createLogger } from '@urbanfleet/common';
 import { GeoService } from '../services/geo.service.js';
 import { DriverPresenceService } from '../services/driver-presence.service.js';
+import type { RideService } from '../services/ride.service.js';
+import type { DispatchService } from '../services/dispatch.service.js';
+import { AuthenticatedSocket, AuthenticatedSocketUser } from './types.js';
+import { socketRegistry } from './registry/socket.registry.js';
+import { registerSocketHandlers, configureDriverHandlers, configureRiderHandlers } from './handlers/index.js';
 
 const logger = createLogger('ride-websocket-server');
+
+let globalWss: WebSocketServer | null = null;
 
 export function initRideWebSocketServer(
   server: http.Server,
   redis: RedisClientType,
   geoService: GeoService,
   publicKeyBase64?: string,
-  presenceService?: DriverPresenceService
+  presenceService?: DriverPresenceService,
+  rideService?: RideService,
+  dispatchService?: DispatchService
 ) {
   const wss = new WebSocketServer({ noServer: true });
+  globalWss = wss;
+
   const base64Key = publicKeyBase64 || process.env.JWT_PUBLIC_KEY_BASE64;
   const publicKey = base64Key ? Buffer.from(base64Key, 'base64').toString('utf-8') : '';
 
   const presence = presenceService || new DriverPresenceService(redis, geoService);
   geoService.setPresenceService(presence);
+
+  // Configure handlers with shared services
+  configureDriverHandlers({
+    geoService,
+    presenceService: presence,
+    rideService,
+  });
+
+  if (rideService || dispatchService) {
+    configureRiderHandlers({
+      rideService,
+      dispatchService,
+    });
+  }
 
   // Intercept HTTP Upgrade request from Kong Gateway
   server.on('upgrade', (request, socket, head) => {
@@ -43,7 +68,7 @@ export function initRideWebSocketServer(
       const decoded = jwt.verify(token, publicKey, {
         algorithms: ['RS256'],
         issuer: 'urbanfleet-auth',
-        audience: 'urbanfleet-api'
+        audience: 'urbanfleet-api',
       }) as any;
 
       wss.handleUpgrade(request, socket, head, (ws) => {
@@ -55,179 +80,78 @@ export function initRideWebSocketServer(
     }
   });
 
-  wss.on('connection', (ws: WebSocket, req: http.IncomingMessage, user: any) => {
-    const driverId = user.driverId || user.userId;
-    logger.info(`WebSocket client connected: ${user.userId} (${user.role}) [driverId: ${driverId}]`);
+  wss.on('connection', (ws: WebSocket, req: http.IncomingMessage, userPayload: any) => {
+    const authenticatedSocket = ws as AuthenticatedSocket;
+    const driverId = userPayload.driverId || userPayload.userId;
+    const roles: string[] = Array.isArray(userPayload.role)
+      ? userPayload.role
+      : userPayload.role
+      ? [userPayload.role]
+      : ['RIDER'];
 
-    // Handle messages
-    ws.on('message', async (data: string) => {
-      try {
-        const payload = JSON.parse(data.toString());
-        const eventType = payload.event || payload.type;
+    const user: AuthenticatedSocketUser = {
+      userId: userPayload.userId,
+      driverId: roles.includes('DRIVER') ? driverId : undefined,
+      role: roles,
+      sessionId: userPayload.sessionId,
+    };
 
-        // 1. Keepalive ping/pong
-        if (eventType === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong' }));
-          return;
-        }
+    authenticatedSocket.user = user;
+    logger.info(
+      `WebSocket client connected: ${user.userId} (${user.role.join(', ')}) [driverId: ${user.driverId}]`
+    );
 
-        // 2. Driver Presence Events (only applicable for DRIVER role)
-        if (user.role === 'DRIVER') {
-          // A. GO ONLINE
-          if (
-            eventType === 'driver:go-online' ||
-            eventType === 'GO_ONLINE' ||
-            eventType === 'go_online'
-          ) {
-            const current = await presence.setDriverOnline(driverId);
-            ws.send(
-              JSON.stringify({
-                event: 'server:driver-status',
-                data: {
-                  status: 'ONLINE',
-                  isOnline: current.online,
-                  isAvailable: current.available,
-                  driverId,
-                  timestamp: current.lastSeen,
-                },
-              })
-            );
-            return;
-          }
+    // 1. Register in in-memory dual-indexed socket registry
+    socketRegistry.register(authenticatedSocket);
 
-          // B. SET AVAILABLE / TOGGLE AVAILABILITY
-          if (
-            eventType === 'driver:set-available' ||
-            eventType === 'SET_AVAILABLE' ||
-            eventType === 'set_available'
-          ) {
-            const requestedAvailable =
-              payload.data?.available !== undefined
-                ? Boolean(payload.data.available)
-                : payload.available !== undefined
-                ? Boolean(payload.available)
-                : true;
+    // 2. Register complete event dispatcher and handlers
+    registerSocketHandlers(authenticatedSocket);
 
-            const current = await presence.setDriverAvailable(driverId, requestedAvailable);
-            ws.send(
-              JSON.stringify({
-                event: 'server:driver-status',
-                data: {
-                  status: requestedAvailable ? 'AVAILABLE' : 'ONLINE',
-                  isOnline: current.online,
-                  isAvailable: current.available,
-                  driverId,
-                  timestamp: current.lastSeen,
-                },
-              })
-            );
-            return;
-          }
-
-          // C. SET BUSY
-          if (
-            eventType === 'driver:set-busy' ||
-            eventType === 'SET_BUSY' ||
-            eventType === 'set_busy'
-          ) {
-            const current = await presence.setDriverBusy(driverId);
-            ws.send(
-              JSON.stringify({
-                event: 'server:driver-status',
-                data: {
-                  status: 'BUSY',
-                  isOnline: current.online,
-                  isAvailable: current.available,
-                  driverId,
-                  timestamp: current.lastSeen,
-                },
-              })
-            );
-            return;
-          }
-
-          // D. GO OFFLINE
-          if (
-            eventType === 'driver:go-offline' ||
-            eventType === 'driver:set-offline' ||
-            eventType === 'GO_OFFLINE' ||
-            eventType === 'SET_OFFLINE' ||
-            eventType === 'go_offline'
-          ) {
-            await presence.setDriverOffline(driverId);
-            ws.send(
-              JSON.stringify({
-                event: 'server:driver-status',
-                data: {
-                  status: 'OFFLINE',
-                  isOnline: false,
-                  isAvailable: false,
-                  driverId,
-                  timestamp: Date.now(),
-                },
-              })
-            );
-            return;
-          }
-
-          // E. HEARTBEAT
-          if (
-            eventType === 'driver:heartbeat' ||
-            eventType === 'HEARTBEAT' ||
-            eventType === 'heartbeat'
-          ) {
-            const current = await presence.updateHeartbeat(driverId);
-            ws.send(
-              JSON.stringify({
-                event: 'server:heartbeat-ack',
-                data: {
-                  timestamp: current?.lastSeen || Date.now(),
-                  isOnline: current?.online ?? false,
-                  isAvailable: current?.available ?? false,
-                },
-              })
-            );
-            return;
-          }
-        }
-
-        // 3. Driver GPS telemetry (supports both event shapes)
-        const isLocationEvent =
-          eventType === 'driver:location-update' ||
-          eventType === 'driver:update-location' ||
-          eventType === 'UPDATE_LOCATION' ||
-          eventType === 'location_update';
-
-        if (isLocationEvent && user.role === 'DRIVER') {
-          const lat =
-            payload.data?.lat ?? payload.data?.latitude ?? payload.lat ?? payload.latitude;
-          const lon =
-            payload.data?.lng ?? payload.data?.longitude ?? payload.lng ?? payload.longitude;
-          if (lat != null && lon != null) {
-            await geoService.updateDriverLocation(driverId, Number(lat), Number(lon));
-            await presence.updateHeartbeat(driverId);
-          }
-          return;
-        }
-      } catch (e) {
-        logger.warn('Unparseable WS message received:', { raw: data.toString() });
-      }
-    });
-
-    // 4. Automatic disconnection cleanup
-    ws.on('close', async () => {
+    // 3. Socket close handling
+    authenticatedSocket.on('close', async () => {
       logger.info(`WebSocket client disconnected: ${user.userId}`);
-      if (user.role === 'DRIVER') {
+      socketRegistry.unregister(authenticatedSocket);
+
+      if (user.role.includes('DRIVER') && user.driverId) {
         try {
-          await presence.setDriverOffline(driverId);
-          logger.info(`Driver ${driverId} marked OFFLINE on socket disconnect.`);
+          await presence.setDriverOffline(user.driverId);
+          logger.info(`Driver ${user.driverId} marked OFFLINE on socket disconnect.`);
         } catch (err) {
-          logger.error(`Failed to cleanup presence on disconnect for driver ${driverId}:`, err);
+          logger.error(`Failed to cleanup presence on disconnect for driver ${user.driverId}:`, err);
         }
       }
     });
   });
 
-  logger.info('Native WebSocket Upgrade Server initialized on /ws/ride (with driver presence)');
+  logger.info('Native WebSocket Upgrade Server initialized on /ws/ride (with full socket architecture)');
   return wss;
 }
+
+export function getWebSocketServer(): WebSocketServer {
+  if (!globalWss) {
+    throw new Error('WebSocket server has not been initialized.');
+  }
+  return globalWss;
+}
+
+export { socketRegistry } from './registry/socket.registry.js';
+export {
+  emitToDriver,
+  emitNewRideRequest,
+  emitRideCancelled as emitDriverRideCancelled,
+  emitPaymentCaptured as emitDriverPaymentCaptured,
+} from './emitters/driver.emitter.js';
+export {
+  emitToRider,
+  emitRideAccepted,
+  emitDriverLocation,
+  emitDriverArrived,
+  emitRideStarted,
+  emitArrivedAtDestination,
+  emitRideCompleted,
+  emitNoDriversAvailable,
+  emitPaymentCaptured,
+  emitRideCancelled,
+} from './emitters/rider.emitter.js';
+export * from './event.constants.js';
+export * from './types.js';
