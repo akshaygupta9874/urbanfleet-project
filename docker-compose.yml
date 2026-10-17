@@ -86,7 +86,7 @@ services:
   # 2. INGRESS: KONG API GATEWAY
   # ========================================================
   kong:
-    image: kong:3.4-alpine
+    image: kong:3.9
     container_name: urbanfleet-kong
     environment:
       KONG_DATABASE: "off"
