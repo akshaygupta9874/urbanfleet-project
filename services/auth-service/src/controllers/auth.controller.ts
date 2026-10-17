@@ -95,6 +95,13 @@ export class AuthController {
     } catch (err) { next(err); }
   };
 
+  getUserById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const profile = await this.userService.getUserById(req.params.id);
+      res.status(200).json({ success: true, data: profile });
+    } catch (err) { next(err); }
+  };
+
   updateProfile = async (req: any, res: Response, next: NextFunction) => {
     try {
       const updated = await this.userService.updateUser(req.user.userId, req.body);

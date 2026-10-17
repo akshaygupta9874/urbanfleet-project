@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { createLogger } from '@urbanfleet/common';
 import { EventTopics, KafkaEnvelope, UserRegisteredPayload, PaymentCapturedPayload } from '@urbanfleet/contracts';
 import { NotificationService } from '../services/notification.service.js';
+import { authClient } from '../clients/auth.client.js';
 
 const logger = createLogger('notification-event-consumer');
 const consumerGroup = 'notification-service-group';
@@ -42,8 +43,15 @@ export async function initNotificationConsumer(
             logger.info(`Staged verification email for ${payload.email}`);
           } else if (envelope.eventType === 'PAYMENT_CAPTURED') {
             const payload = envelope.payload as PaymentCapturedPayload;
-            await notifService.sendRideReceipt('rider@urbanfleet.com', payload);
-            logger.info(`Staged ride receipt for payment ${payload.paymentId}`);
+            let recipientEmail = 'rider@urbanfleet.com';
+            try {
+              const user = await authClient.getUserById(payload.riderId);
+              if (user?.email) recipientEmail = user.email;
+            } catch (fetchErr) {
+              logger.warn(`Could not query auth-service API for user ${payload.riderId}, falling back to default.`);
+            }
+            await notifService.sendRideReceipt(recipientEmail, payload);
+            logger.info(`Staged ride receipt for payment ${payload.paymentId} to ${recipientEmail}`);
           }
         });
       }

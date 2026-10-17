@@ -61,6 +61,29 @@ export enum PayoutMode {
     UPI = "UPI",
 }
 
+export enum RideStatus {
+    REQUESTED = "REQUESTED",
+    SEARCHING = "SEARCHING",
+    OFFERED = "OFFERED",
+    ACCEPTED = "ACCEPTED",
+    DRIVER_ASSIGNED = "DRIVER_ASSIGNED",
+    DRIVER_ARRIVING = "DRIVER_ARRIVING",
+    ARRIVED = "ARRIVED",
+    IN_PROGRESS = "IN_PROGRESS",
+    STARTED = "STARTED",
+    ARRIVED_AT_DESTINATION = "ARRIVED_AT_DESTINATION",
+    COMPLETED = "COMPLETED",
+    CANCELLED = "CANCELLED",
+}
+
+export enum RidePaymentStatus {
+    PENDING = "PENDING",
+    PAID = "PAID",
+    CAPTURED = "CAPTURED",
+    FAILED = "FAILED",
+    REFUNDED = "REFUNDED",
+}
+
 /** Lifecycle of ONE refund attempt stored inside Payment.refunds[]. */
 export enum RefundStatus {
     /** Booked in our ledger, gateway has not confirmed it as processed yet. */

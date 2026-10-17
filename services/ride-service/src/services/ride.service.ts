@@ -1,4 +1,4 @@
-import { PrismaClient, Ride, RideStatus } from '@prisma/client';
+import { PrismaClient, Ride, RideStatus, RidePaymentStatus } from '@prisma/client';
 import { RideRepository } from '../repositories/ride.repository.js';
 import { RatingRepository } from '../repositories/rating.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
@@ -200,6 +200,13 @@ export class RideService {
 
   async updateRideStatus(rideId: string, status: RideStatus) {
     return this.prisma.ride.update({ where: { id: rideId }, data: { status } });
+  }
+
+  async updatePaymentStatus(rideId: string, paymentStatus: RidePaymentStatus) {
+    return this.prisma.ride.update({
+      where: { id: rideId },
+      data: { paymentStatus }
+    });
   }
 
   async submitRating(rideId: string, fromId: string, score: number, feedback?: string) {

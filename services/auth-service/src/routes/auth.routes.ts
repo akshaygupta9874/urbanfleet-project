@@ -19,6 +19,9 @@ export function createAuthRouter(controller: AuthController): Router {
   router.post('/refresh-token', validateRequest({ body: refreshTokenSchema }), controller.refreshToken);
   router.post('/logout', controller.logout);
   router.get('/me', controller.getProfile);
+  if (controller.getUserById) {
+    router.get('/users/:id', controller.getUserById);
+  }
 
   return router;
 }

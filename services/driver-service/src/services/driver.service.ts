@@ -16,6 +16,12 @@ export class DriverService {
     return profile;
   }
 
+  async getDriverById(id: string) {
+    const profile = await this.driverRepo.findById(id);
+    if (!profile) throw new NotFoundError('Driver profile not found');
+    return profile;
+  }
+
   async updateProfile(userId: string, data: any) {
     const profile = await this.getDriverByUserId(userId);
     return this.driverRepo.update(profile.id, data);

@@ -45,6 +45,9 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
         }
         res.status(200).json({ success: true, data: { id: 'usr-1', email: 'test@example.com' } });
       }),
+      getUserById: vi.fn(async (req, res) => {
+        res.status(200).json({ success: true, data: { id: req.params.id, email: 'test@example.com' } });
+      }),
     };
 
     app = express();

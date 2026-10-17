@@ -84,4 +84,12 @@ export class RideController {
       res.status(200).json({ success: true, data: ride });
     } catch (err) { next(err); }
   };
+
+  updatePaymentStatus = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { paymentStatus } = req.body;
+      const ride = await this.rideService.updatePaymentStatus(req.params.id, paymentStatus);
+      res.status(200).json({ success: true, data: ride });
+    } catch (err) { next(err); }
+  };
 }

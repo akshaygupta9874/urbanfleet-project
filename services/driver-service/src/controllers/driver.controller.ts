@@ -68,4 +68,18 @@ export class DriverController {
       res.status(200).json({ success: true, data: earnings });
     } catch (err) { next(err); }
   };
+
+  getDriverById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const profile = await this.driverService.getDriverById(req.params.id);
+      res.status(200).json({ success: true, data: profile });
+    } catch (err) { next(err); }
+  };
+
+  getDriverByUserId = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const profile = await this.driverService.getDriverByUserId(req.params.userId);
+      res.status(200).json({ success: true, data: profile });
+    } catch (err) { next(err); }
+  };
 }

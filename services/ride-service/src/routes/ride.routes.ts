@@ -21,6 +21,7 @@ export function createRideRouter(controller: RideController): Router {
   router.post('/:id/rate', validateRequest({ body: rateRideSchema }), controller.submitRating);
   router.get('/history/rider', controller.getRiderHistory);
   router.get('/history/driver', controller.getDriverHistory);
+  router.patch('/:id/payment-status', controller.updatePaymentStatus);
 
   return router;
 }

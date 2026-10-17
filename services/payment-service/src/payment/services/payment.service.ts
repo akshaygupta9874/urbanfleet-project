@@ -52,8 +52,9 @@ import {
 } from "../types/payment.dto.js";
 
 import { prisma } from "../../db/client.js";
-import { formatRide } from "../../services/ride.service.js";
-import { RidePaymentStatus, RideStatus } from "@prisma/client";
+import { formatRide, rideClient } from "../../clients/ride.client.js";
+import { RidePaymentStatus, RideStatus } from "../types/payment.types.js";
+export { RidePaymentStatus, RideStatus };
 import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from "../../sockets/emitters/rider.emitter.js";
 
@@ -177,9 +178,7 @@ class PaymentService {
     const rideIdStr = input.ride.toString();
     const riderIdStr = input.rider.toString();
 
-    const rawRide = await prisma.ride.findUnique({
-      where: { id: rideIdStr },
-    });
+    const rawRide = await rideClient.getRideById(rideIdStr);
 
     if (!rawRide) {
       throw new AppError(
@@ -480,15 +479,11 @@ class PaymentService {
       return this.toOrderResult(fresh ?? existing);
     }
 
-    await prisma.ride.updateMany({
-      where: {
-        id: existing.ride.toString(),
-        paymentStatus: RidePaymentStatus.FAILED,
-      },
-      data: {
-        paymentStatus: RidePaymentStatus.PENDING,
-      },
-    });
+    await rideClient.updatePaymentStatus(
+      existing.ride.toString(),
+      RidePaymentStatus.PENDING,
+      RidePaymentStatus.FAILED
+    );
 
     return this.toOrderResult(reopened);
   }

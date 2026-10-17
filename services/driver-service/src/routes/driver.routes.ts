@@ -17,6 +17,8 @@ export function createDriverRouter(controller: DriverController): Router {
   router.post('/documents', validateRequest({ body: uploadDocumentSchema }), controller.uploadDocument);
   router.post('/availability', validateRequest({ body: updateStatusSchema }), controller.toggleAvailability);
   router.get('/earnings', controller.getEarnings);
+  router.get('/by-user/:userId', controller.getDriverByUserId);
+  router.get('/:id', controller.getDriverById);
 
   return router;
 }
