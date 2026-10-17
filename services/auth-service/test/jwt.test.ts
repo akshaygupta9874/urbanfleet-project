@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { createAuthMiddleware } from '../src/middlewares/jwt-auth.middleware.js';
 
-describe('RS256 Asymmetric JWT Verification Middleware', () => {
+describe('RS256 Asymmetric JWT Verification Middleware in Auth Service', () => {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
     modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },

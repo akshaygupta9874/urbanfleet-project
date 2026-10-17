@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ZodType, ZodError, z } from 'zod';
+import { ZodType, ZodError } from 'zod';
 
 export interface RequestValidationSchemas {
   body?: ZodType<any>;
@@ -12,92 +12,66 @@ export function formatZodError(error: ZodError): Record<string, string[]> {
   const formatted: Record<string, string[]> = {};
   for (const issue of error.issues) {
     const path = issue.path.join('.') || 'general';
-    if (!formatted[path]) {
-      formatted[path] = [];
-    }
-    formatted[path].push(issue.message);
+    (formatted[path] ||= []).push(issue.message);
   }
   return formatted;
 }
 
 /**
- * Universal Express middleware that validates req.body, req.query, and/or req.params using Zod.
- * Strips or coerces inputs and attaches parsed values to the request.
- * Responds with HTTP 422 and structured field-level errors on validation failure.
+ * Generic Express middleware for Zod validation.
+ * Accepts either a field-mapped schema object ({ body, query, params, headers })
+ * or a single unified Zod schema.
  */
 export function validateRequest(schemas: RequestValidationSchemas | ZodType<any>) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    try {
-      // Check if a single composite Zod schema { body, query, params } was passed
-      if ('parse' in schemas && typeof (schemas as any).parse === 'function') {
-        const schema = schemas as ZodType<any>;
-        const result = schema.safeParse({
-          body: req.body,
-          query: req.query,
-          params: req.params,
-        });
+    const errors: Record<string, string[]> = {};
+    const locations = ['body', 'query', 'params', 'headers'] as const;
 
-        if (!result.success) {
-          res.status(422).json({
-            success: false,
-            code: 'VALIDATION_ERROR',
-            message: 'Request validation failed',
-            errors: formatZodError(result.error),
-          });
-          return;
-        }
+    if ('safeParse' in schemas && typeof (schemas as any).safeParse === 'function') {
+      const result = (schemas as ZodType<any>).safeParse({
+        body: req.body,
+        query: req.query,
+        params: req.params,
+        headers: req.headers,
+      });
 
-        const data = result.data as any;
-        if (data.body !== undefined) req.body = data.body;
-        if (data.query !== undefined) req.query = data.query;
-        if (data.params !== undefined) req.params = data.params;
-        return next();
-      }
-
-      const explicitSchemas = schemas as RequestValidationSchemas;
-      const errors: Record<string, string[]> = {};
-
-      if (explicitSchemas.body) {
-        const result = explicitSchemas.body.safeParse(req.body);
-        if (!result.success) {
-          Object.assign(errors, formatZodError(result.error));
-        } else {
-          req.body = result.data;
-        }
-      }
-
-      if (explicitSchemas.query) {
-        const result = explicitSchemas.query.safeParse(req.query);
-        if (!result.success) {
-          Object.assign(errors, formatZodError(result.error));
-        } else {
-          req.query = result.data;
-        }
-      }
-
-      if (explicitSchemas.params) {
-        const result = explicitSchemas.params.safeParse(req.params);
-        if (!result.success) {
-          Object.assign(errors, formatZodError(result.error));
-        } else {
-          req.params = result.data;
-        }
-      }
-
-      if (Object.keys(errors).length > 0) {
+      if (!result.success) {
         res.status(422).json({
           success: false,
           code: 'VALIDATION_ERROR',
           message: 'Request validation failed',
-          errors,
+          errors: formatZodError(result.error),
         });
         return;
       }
 
-      next();
-    } catch (err) {
-      next(err);
+      Object.assign(req, result.data);
+      return next();
     }
+
+    const map = schemas as RequestValidationSchemas;
+    for (const loc of locations) {
+      if (map[loc]) {
+        const result = map[loc]!.safeParse(req[loc]);
+        if (!result.success) {
+          Object.assign(errors, formatZodError(result.error));
+        } else {
+          req[loc] = result.data;
+        }
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      res.status(422).json({
+        success: false,
+        code: 'VALIDATION_ERROR',
+        message: 'Request validation failed',
+        errors,
+      });
+      return;
+    }
+
+    next();
   };
 }
 

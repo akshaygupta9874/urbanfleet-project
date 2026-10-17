@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { PaymentController } from '../controllers/payment.controller.js';
-import { createAuthMiddleware, requireRole } from '@urbanfleet/common';
+import { authMiddleware, requireRole } from '../middlewares/auth.middleware.js';
 
 export function createPaymentRouter(controller: PaymentController): Router {
   const router = Router();
-  const authMiddleware = createAuthMiddleware();
 
   // Public Webhook from Razorpay
   router.post('/webhook', controller.handleRazorpayWebhook);

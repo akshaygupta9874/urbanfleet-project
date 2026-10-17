@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { UnauthorizedError, ForbiddenError } from '../errors/app-error.js';
+import { UnauthorizedError, ForbiddenError } from '@urbanfleet/common';
+import { getPublicKey } from '../crypto/keys.js';
 
 export interface AuthenticatedUserPayload {
   userId: string;
@@ -19,16 +20,18 @@ export interface AuthRequestLike {
 }
 
 /**
- * Validates RS256 JWT using injected Public Key.
+ * Validates RS256 JWT using injected Public Key or auth-service runtime key.
  * Enforces algorithm pinning, issuer, and audience.
  */
 export function createAuthMiddleware(publicKeyBase64?: string) {
-  const base64Key = publicKeyBase64 || process.env.JWT_PUBLIC_KEY_BASE64;
-  if (!base64Key) {
-    throw new Error('JWT_PUBLIC_KEY_BASE64 environment variable is required for RS256 token verification');
+  let publicKeyPem: string;
+  if (publicKeyBase64) {
+    publicKeyPem = Buffer.from(publicKeyBase64, 'base64').toString('utf-8');
+  } else if (process.env.JWT_PUBLIC_KEY_BASE64) {
+    publicKeyPem = Buffer.from(process.env.JWT_PUBLIC_KEY_BASE64, 'base64').toString('utf-8');
+  } else {
+    publicKeyPem = getPublicKey();
   }
-
-  const publicKey = Buffer.from(base64Key, 'base64').toString('utf-8');
 
   return (req: AuthRequestLike, _res: any, next: (err?: any) => void) => {
     const authHeader = req.headers.authorization;
@@ -39,10 +42,10 @@ export function createAuthMiddleware(publicKeyBase64?: string) {
     const token = authHeader.substring(7);
 
     try {
-      const decoded = jwt.verify(token, publicKey, {
+      const decoded = jwt.verify(token, publicKeyPem, {
         algorithms: ['RS256'], // Explicit pinning to prevent HMAC downgrade attacks
         issuer: 'urbanfleet-auth',
-        audience: 'urbanfleet-api'
+        audience: 'urbanfleet-api',
       }) as AuthenticatedUserPayload;
 
       req.user = decoded;
