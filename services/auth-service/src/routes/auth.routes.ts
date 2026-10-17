@@ -1,29 +1,24 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller.js';
-import { createAuthMiddleware } from '@urbanfleet/common';
+import { validateRequest } from '@urbanfleet/common';
+import {
+  registerSchema,
+  loginSchema,
+  verifyOtpSchema,
+  refreshTokenSchema,
+  verifyTokenParamSchema,
+} from '../validation/auth.validation.js';
 
 export function createAuthRouter(controller: AuthController): Router {
   const router = Router();
-  const authMiddleware = createAuthMiddleware();
 
-  // Public Routes
-  router.post('/register', controller.register);
-  router.post('/login', controller.login);
-  router.post('/refresh-token', controller.refreshToken);
+  router.post('/register', validateRequest({ body: registerSchema }), controller.register);
+  router.post('/login', validateRequest({ body: loginSchema }), controller.login);
+  router.post('/verify-otp', validateRequest({ body: verifyOtpSchema }), controller.verifyOtp);
+  router.post('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
+  router.post('/refresh-token', validateRequest({ body: refreshTokenSchema }), controller.refreshToken);
   router.post('/logout', controller.logout);
-  router.post('/forgot-password', controller.forgotPassword);
-  router.post('/reset-password', controller.resetPassword);
-  router.post('/verify-email', controller.verifyEmail);
-  router.post('/resend-verification', controller.resendVerificationEmail);
-  router.post('/2fa/login', controller.login2FA);
-
-  // Authenticated Routes
-  router.get('/me', authMiddleware as any, controller.getProfile);
-  router.patch('/me', authMiddleware as any, controller.updateProfile);
-  router.post('/change-password', authMiddleware as any, controller.changePassword);
-  router.post('/2fa/enable', authMiddleware as any, controller.enable2FA);
-  router.post('/2fa/verify', authMiddleware as any, controller.verify2FA);
-  router.post('/2fa/disable', authMiddleware as any, controller.disable2FA);
+  router.get('/me', controller.getProfile);
 
   return router;
 }

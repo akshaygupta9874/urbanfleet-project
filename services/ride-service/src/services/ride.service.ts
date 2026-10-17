@@ -42,7 +42,7 @@ export class RideService {
         totalFarePaise: fare.totalFarePaise,
         vehicleCategory: input.vehicleCategory || 'SEDAN',
         otp,
-        status: 'REQUESTED',
+        status: 'SEARCHING',
         rideSequence: 1
       }
     });

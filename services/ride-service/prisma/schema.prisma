@@ -7,18 +7,30 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum UserRole {
+  RIDER
+  DRIVER
+  ADMIN
+}
+
 enum RideStatus {
   REQUESTED
+  SEARCHING
   OFFERED
   ACCEPTED
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVING
   ARRIVED
   IN_PROGRESS
+  STARTED
+  ARRIVED_AT_DESTINATION
   COMPLETED
   CANCELLED
 }
 
 enum RidePaymentStatus {
   PENDING
+  PAID
   CAPTURED
   FAILED
   REFUNDED
@@ -37,7 +49,7 @@ model Ride {
   driverId           String?           @map("driver_id") @db.Uuid
   vehicleCategory    String            @default("SEDAN") @map("vehicle_category") @db.VarChar(20)
 
-  status             RideStatus        @default(REQUESTED)
+  status             RideStatus        @default(SEARCHING)
   paymentStatus      RidePaymentStatus @default(PENDING) @map("payment_status")
   rideSequence       Int               @default(1) @map("ride_sequence") // Monotonic aggregate sequence
 
@@ -122,4 +134,11 @@ model ProcessedEvent {
 
   @@id([eventId, consumerGroup])
   @@map("processed_events")
+}
+
+model User {
+  id    String     @id @default(uuid()) @db.Uuid
+  roles UserRole[] @default([RIDER])
+
+  @@map("users")
 }

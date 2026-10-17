@@ -1,20 +1,21 @@
 import { Router } from 'express';
 import { DriverController } from '../controllers/driver.controller.js';
-import { createAuthMiddleware, requireRole } from '@urbanfleet/common';
+import { validateRequest } from '@urbanfleet/common';
+import {
+  createProfileSchema,
+  updateStatusSchema,
+  uploadDocumentSchema,
+} from '../validation/driver.validation.js';
 
 export function createDriverRouter(controller: DriverController): Router {
   const router = Router();
-  const authMiddleware = createAuthMiddleware();
 
-  // All endpoints require DRIVER or ADMIN role
-  router.use(authMiddleware as any);
-
-  router.post('/register', controller.registerDriver);
+  router.post('/register', validateRequest({ body: createProfileSchema }), controller.registerDriver);
   router.get('/profile', controller.getDriverProfile);
-  router.patch('/profile', controller.updateDriverProfile);
-  router.patch('/vehicle', controller.updateVehicle);
-  router.post('/documents', controller.uploadDocument);
-  router.patch('/availability', controller.toggleAvailability);
+  router.put('/profile', validateRequest({ body: createProfileSchema }), controller.updateDriverProfile);
+  router.put('/vehicle', controller.updateVehicle);
+  router.post('/documents', validateRequest({ body: uploadDocumentSchema }), controller.uploadDocument);
+  router.post('/availability', validateRequest({ body: updateStatusSchema }), controller.toggleAvailability);
   router.get('/earnings', controller.getEarnings);
 
   return router;

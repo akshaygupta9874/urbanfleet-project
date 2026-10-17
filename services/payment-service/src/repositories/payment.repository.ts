@@ -4,11 +4,11 @@ export class PaymentRepository {
   constructor(private prisma: PrismaClient) {}
 
   async findById(id: string): Promise<Payment | null> {
-    return this.prisma.payment.findUnique({ where: { id }, include: { refunds: true, payouts: true } });
+    return this.prisma.payment.findUnique({ where: { id }, include: { refundRecords: true, payouts: true } });
   }
 
   async findByRideId(rideId: string): Promise<Payment | null> {
-    return this.prisma.payment.findUnique({ where: { rideId }, include: { refunds: true, payouts: true } });
+    return this.prisma.payment.findUnique({ where: { rideId }, include: { refundRecords: true, payouts: true } });
   }
 
   async findByGatewayOrderId(gatewayOrderId: string): Promise<Payment | null> {

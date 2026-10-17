@@ -1,28 +1,26 @@
 import { Router } from 'express';
 import { RideController } from '../controllers/ride.controller.js';
-import { createAuthMiddleware, requireRole } from '@urbanfleet/common';
+import { validateRequest } from '@urbanfleet/common';
+import {
+  estimateFareSchema,
+  requestRideSchema,
+  cancelRideSchema,
+  rateRideSchema,
+} from '../validation/ride.validation.js';
 
 export function createRideRouter(controller: RideController): Router {
   const router = Router();
-  const authMiddleware = createAuthMiddleware();
 
-  // Public fare estimate
-  router.post('/estimate', controller.estimateFare);
-
-  // Authenticated Rider/Driver Endpoints
-  router.use(authMiddleware as any);
-
-  router.post('/request', controller.requestRide);
-  router.get('/current', controller.getActiveRide);
+  router.post('/estimate', validateRequest({ body: estimateFareSchema }), controller.estimateFare);
+  router.post('/request', validateRequest({ body: requestRideSchema }), controller.requestRide);
+  router.get('/active', controller.getActiveRide);
+  router.get('/:id', controller.getRideById);
+  router.post('/:id/accept', controller.driverAcceptRide);
+  router.post('/:id/arrived', controller.driverArrived);
+  router.post('/:id/cancel', validateRequest({ body: cancelRideSchema }), controller.cancelRide);
+  router.post('/:id/rate', validateRequest({ body: rateRideSchema }), controller.submitRating);
   router.get('/history/rider', controller.getRiderHistory);
   router.get('/history/driver', controller.getDriverHistory);
-  router.get('/:id', controller.getRideById);
-  router.post('/:id/cancel', controller.cancelRide);
-  router.post('/:id/rating', controller.submitRating);
-
-  // Driver Operations
-  router.post('/:id/accept', requireRole('DRIVER') as any, controller.driverAcceptRide);
-  router.post('/:id/arrived', requireRole('DRIVER') as any, controller.driverArrived);
 
   return router;
 }

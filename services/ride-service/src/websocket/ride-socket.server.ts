@@ -20,11 +20,15 @@ export function initRideWebSocketServer(
   // Intercept HTTP Upgrade request from Kong Gateway
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
-    if (url.pathname !== '/ws/ride') return;
+    if (url.pathname !== '/ws/ride') {
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
+      return;
+    }
 
     const token = url.searchParams.get('token');
     if (!token) {
-      socket.write('HTTP/1.1 401 Unauthorized');
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
@@ -40,7 +44,7 @@ export function initRideWebSocketServer(
         wss.emit('connection', ws, request, decoded);
       });
     } catch (err) {
-      socket.write('HTTP/1.1 401 Unauthorized');
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
     }
   });
@@ -57,10 +61,17 @@ export function initRideWebSocketServer(
           return;
         }
 
-        // Handle live driver GPS telemetry
-        if (payload.event === 'driver:location-update' && user.role === 'DRIVER') {
-          const { lat, lng } = payload.data;
-          await geoService.updateDriverLocation(user.userId, lat, lng);
+        // Handle live driver GPS telemetry (supports both event shapes)
+        const isLocationEvent =
+          payload.event === 'driver:location-update' ||
+          payload.type === 'location_update';
+
+        if (isLocationEvent && user.role === 'DRIVER') {
+          const lat = payload.data?.lat ?? payload.latitude;
+          const lon = payload.data?.lng ?? payload.longitude;
+          if (lat != null && lon != null) {
+            await geoService.updateDriverLocation(user.userId, lat, lon);
+          }
         }
       } catch (e) {
         logger.warn('Unparseable WS message received:', { raw: data.toString() });
@@ -69,9 +80,6 @@ export function initRideWebSocketServer(
 
     ws.on('close', async () => {
       logger.info(`WebSocket client disconnected: ${user.userId}`);
-      if (user.role === 'DRIVER') {
-        // Ephemeral heartbeat will expire or can be explicitly removed
-      }
     });
   });
 

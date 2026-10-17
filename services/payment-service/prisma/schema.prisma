@@ -7,6 +7,35 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum RideStatus {
+  REQUESTED
+  SEARCHING
+  OFFERED
+  ACCEPTED
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVING
+  ARRIVED
+  IN_PROGRESS
+  STARTED
+  ARRIVED_AT_DESTINATION
+  COMPLETED
+  CANCELLED
+}
+
+enum RidePaymentStatus {
+  PENDING
+  PAID
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum UserRole {
+  RIDER
+  DRIVER
+  ADMIN
+}
+
 enum PaymentStatus {
   CREATED
   PENDING
@@ -86,7 +115,8 @@ model Payment {
   updatedAt                  DateTime      @updatedAt @map("updated_at")
 
   payouts                    Payout[]
-  refunds                    Refund[]
+  refunds                    Json?         @default("[]")
+  refundRecords              Refund[]
 
   @@map("payments")
 }
@@ -191,4 +221,25 @@ model ProcessedEvent {
 
   @@id([eventId, consumerGroup])
   @@map("processed_events")
+}
+
+model Ride {
+  id            String            @id @default(uuid()) @db.Uuid
+  riderId       String            @map("rider_id") @db.Uuid
+  driverId      String?           @map("driver_id") @db.Uuid
+  status        RideStatus        @default(SEARCHING)
+  paymentStatus RidePaymentStatus @default(PENDING) @map("payment_status")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  @@map("rides")
+}
+
+model User {
+  id        String     @id @default(uuid()) @db.Uuid
+  email     String     @unique
+  roles     UserRole[] @default([RIDER])
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@map("users")
 }

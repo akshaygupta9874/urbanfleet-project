@@ -16,3 +16,4 @@ coverage/
 certs/
 *.pem
 *.key
+*.tsbuildinfo

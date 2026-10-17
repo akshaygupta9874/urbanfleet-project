@@ -47,3 +47,5 @@ export class StructuredLogger {
 }
 
 export const createLogger = (serviceName: string) => new StructuredLogger(serviceName);
+
+export const logger = createLogger('urbanfleet');

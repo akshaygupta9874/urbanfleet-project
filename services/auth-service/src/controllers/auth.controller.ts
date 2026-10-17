@@ -125,6 +125,8 @@ export class AuthController {
     } catch (err) { next(err); }
   };
 
+  verifyOtp = async (req: Request, res: Response, next: NextFunction) => this.login2FA(req, res, next);
+
   login2FA = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { userId, token } = req.body;
