@@ -14,13 +14,26 @@ describe("Ride WebSocket Gateway Integration Suite", () => {
   let publicKeyBase64: string;
   const activeSockets: WebSocket[] = [];
 
-  const mockGeoService: any = {
-    updateDriverLocation: async () => {},
+  const redisStore = new Map<string, string>();
+  const mockRedis: any = {
+    get: async (key: string) => redisStore.get(key) || null,
+    set: async (key: string, val: string) => {
+      redisStore.set(key, val);
+      return "OK";
+    },
+    del: async (key: string) => {
+      const existed = redisStore.has(key);
+      redisStore.delete(key);
+      return existed ? 1 : 0;
+    },
+    exists: async (key: string) => (redisStore.has(key) ? 1 : 0),
+    publish: async () => 1,
   };
 
-  const mockRedis: any = {
-    set: async () => "OK",
-    publish: async () => 1,
+  const mockGeoService: any = {
+    updateDriverLocation: async () => {},
+    removeDriverLocation: async () => {},
+    setPresenceService: () => {},
   };
 
   beforeAll(async () => {
@@ -74,13 +87,13 @@ describe("Ride WebSocket Gateway Integration Suite", () => {
     expect(err).toBeDefined();
   });
 
-  it("rejects connection if path is not /ws/ride", async () => {
+  it("rejects connection if path is not supported", async () => {
     const token = jwt.sign(
       { userId: "usr-1", role: "RIDER" },
       privateKey,
       { algorithm: "RS256", issuer: "urbanfleet-auth", audience: "urbanfleet-api" }
     );
-    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/wrong-path?token=${token}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/unsupported-route?token=${token}`);
     activeSockets.push(ws);
     const [err] = await once(ws, "error");
     expect(err).toBeDefined();
@@ -117,6 +130,173 @@ describe("Ride WebSocket Gateway Integration Suite", () => {
     expect(payload.type).toBe("pong");
 
     ws.close();
+  });
+
+  it("handles driver:go-online and responds with server:driver-status ONLINE", async () => {
+    const token = jwt.sign(
+      { userId: "driver-presence-1", role: "DRIVER" },
+      privateKey,
+      { algorithm: "RS256", issuer: "urbanfleet-auth", audience: "urbanfleet-api" }
+    );
+
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/ride?token=${token}`);
+    activeSockets.push(ws);
+    await once(ws, "open");
+
+    ws.send(JSON.stringify({ event: "driver:go-online", data: {} }));
+    const [msg] = await once(ws, "message");
+    const payload = JSON.parse(msg.toString());
+
+    expect(payload.event).toBe("server:driver-status");
+    expect(payload.data.status).toBe("ONLINE");
+    expect(payload.data.isOnline).toBe(true);
+    expect(payload.data.isAvailable).toBe(false);
+    expect(payload.data.driverId).toBe("driver-presence-1");
+
+    // Check Redis presence
+    const presenceData = redisStore.get("ride:driver:presence:driver-presence-1");
+    expect(presenceData).toBeDefined();
+    const presence = JSON.parse(presenceData!);
+    expect(presence.online).toBe(true);
+    expect(presence.available).toBe(false);
+
+    ws.close();
+  });
+
+  it("handles driver:set-available and updates Redis presence to AVAILABLE", async () => {
+    const token = jwt.sign(
+      { userId: "driver-avail-2", role: "DRIVER" },
+      privateKey,
+      { algorithm: "RS256", issuer: "urbanfleet-auth", audience: "urbanfleet-api" }
+    );
+
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/ride?token=${token}`);
+    activeSockets.push(ws);
+    await once(ws, "open");
+
+    // 1. Set Available: true
+    ws.send(JSON.stringify({ event: "driver:set-available", data: { available: true } }));
+    const [msg1] = await once(ws, "message");
+    const payload1 = JSON.parse(msg1.toString());
+
+    expect(payload1.event).toBe("server:driver-status");
+    expect(payload1.data.status).toBe("AVAILABLE");
+    expect(payload1.data.isOnline).toBe(true);
+    expect(payload1.data.isAvailable).toBe(true);
+
+    const presence1 = JSON.parse(redisStore.get("ride:driver:presence:driver-avail-2")!);
+    expect(presence1.online).toBe(true);
+    expect(presence1.available).toBe(true);
+
+    // 2. Set Available: false (remains ONLINE)
+    ws.send(JSON.stringify({ event: "driver:set-available", data: { available: false } }));
+    const [msg2] = await once(ws, "message");
+    const payload2 = JSON.parse(msg2.toString());
+
+    expect(payload2.event).toBe("server:driver-status");
+    expect(payload2.data.status).toBe("ONLINE");
+    expect(payload2.data.isAvailable).toBe(false);
+
+    const presence2 = JSON.parse(redisStore.get("ride:driver:presence:driver-avail-2")!);
+    expect(presence2.available).toBe(false);
+
+    ws.close();
+  });
+
+  it("handles driver:set-busy and driver:go-offline transitions", async () => {
+    const token = jwt.sign(
+      { userId: "driver-busy-3", role: "DRIVER" },
+      privateKey,
+      { algorithm: "RS256", issuer: "urbanfleet-auth", audience: "urbanfleet-api" }
+    );
+
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/ride?token=${token}`);
+    activeSockets.push(ws);
+    await once(ws, "open");
+
+    // 1. Set Busy
+    ws.send(JSON.stringify({ event: "driver:set-busy", data: {} }));
+    const [msgBusy] = await once(ws, "message");
+    const payloadBusy = JSON.parse(msgBusy.toString());
+
+    expect(payloadBusy.event).toBe("server:driver-status");
+    expect(payloadBusy.data.status).toBe("BUSY");
+    expect(payloadBusy.data.isOnline).toBe(true);
+    expect(payloadBusy.data.isAvailable).toBe(false);
+
+    // 2. Go Offline
+    ws.send(JSON.stringify({ event: "driver:go-offline", data: {} }));
+    const [msgOffline] = await once(ws, "message");
+    const payloadOffline = JSON.parse(msgOffline.toString());
+
+    expect(payloadOffline.event).toBe("server:driver-status");
+    expect(payloadOffline.data.status).toBe("OFFLINE");
+    expect(payloadOffline.data.isOnline).toBe(false);
+    expect(payloadOffline.data.isAvailable).toBe(false);
+
+    // Redis presence key should be deleted
+    expect(redisStore.has("ride:driver:presence:driver-busy-3")).toBe(false);
+
+    ws.close();
+  });
+
+  it("handles driver:heartbeat and returns heartbeat-ack", async () => {
+    const token = jwt.sign(
+      { userId: "driver-hb-4", role: "DRIVER" },
+      privateKey,
+      { algorithm: "RS256", issuer: "urbanfleet-auth", audience: "urbanfleet-api" }
+    );
+
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/ride?token=${token}`);
+    activeSockets.push(ws);
+    await once(ws, "open");
+
+    // Go online first
+    ws.send(JSON.stringify({ event: "driver:go-online", data: {} }));
+    await once(ws, "message");
+
+    // Send heartbeat
+    ws.send(JSON.stringify({ event: "driver:heartbeat", data: {} }));
+    const [msgHb] = await once(ws, "message");
+    const payloadHb = JSON.parse(msgHb.toString());
+
+    expect(payloadHb.event).toBe("server:heartbeat-ack");
+    expect(payloadHb.data.timestamp).toBeDefined();
+    expect(payloadHb.data.isOnline).toBe(true);
+
+    ws.close();
+  });
+
+  it("automatically cleans up presence when driver WebSocket disconnects", async () => {
+    let removedDriverId: string | null = null;
+    mockGeoService.removeDriverLocation = async (id: string) => {
+      removedDriverId = id;
+    };
+
+    const token = jwt.sign(
+      { userId: "driver-disconnect-5", role: "DRIVER" },
+      privateKey,
+      { algorithm: "RS256", issuer: "urbanfleet-auth", audience: "urbanfleet-api" }
+    );
+
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/ride?token=${token}`);
+    activeSockets.push(ws);
+    await once(ws, "open");
+
+    // Go online
+    ws.send(JSON.stringify({ event: "driver:go-online", data: {} }));
+    await once(ws, "message");
+    expect(redisStore.has("ride:driver:presence:driver-disconnect-5")).toBe(true);
+
+    // Close socket connection
+    ws.close();
+    await once(ws, "close");
+
+    // Allow event loop to process close handler
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(redisStore.has("ride:driver:presence:driver-disconnect-5")).toBe(false);
+    expect(removedDriverId).toBe("driver-disconnect-5");
   });
 
   it("processes driver GPS location updates over WebSocket", async () => {

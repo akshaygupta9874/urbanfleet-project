@@ -35,6 +35,7 @@ const driverController = new DriverController(driverService, docService, cloudin
 
 // Routes
 app.use('/api/driver', createDriverRouter(driverController));
+app.use('/api/drivers', createDriverRouter(driverController));
 
 // Health check endpoint
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'driver-service' }));

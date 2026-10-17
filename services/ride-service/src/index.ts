@@ -12,6 +12,7 @@ import { OutboxRepository } from './repositories/outbox.repository.js';
 import { FareService } from './services/fare.service.js';
 import { OtpService } from './services/otp.service.js';
 import { GeoService } from './services/geo.service.js';
+import { DriverPresenceService } from './services/driver-presence.service.js';
 import { DispatchService } from './services/dispatch.service.js';
 import { RideService } from './services/ride.service.js';
 import { RideController } from './controllers/ride.controller.js';
@@ -42,13 +43,14 @@ const ratingRepo = new RatingRepository(prisma);
 const outboxRepo = new OutboxRepository(prisma);
 const fareService = new FareService();
 const otpService = new OtpService();
-const geoService = new GeoService(redis);
+const driverPresenceService = new DriverPresenceService(redis);
+const geoService = new GeoService(redis, driverPresenceService);
 const dispatchService = new DispatchService(geoService);
 const rideService = new RideService(prisma, rideRepo, ratingRepo, outboxRepo, fareService, otpService);
 const rideController = new RideController(rideService, fareService, rideRepo);
 
 // Native WebSocket Server
-initRideWebSocketServer(server, redis, geoService);
+initRideWebSocketServer(server, redis, geoService, undefined, driverPresenceService);
 
 // HTTP Routes
 app.use('/api/ride', createRideRouter(rideController));

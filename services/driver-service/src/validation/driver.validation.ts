@@ -15,7 +15,8 @@ export const createProfileSchema = z.object({
 });
 
 export const updateStatusSchema = z.object({
-  isOnline: z.boolean(),
+  isAvailable: z.boolean().optional(),
+  isOnline: z.boolean().optional(),
 });
 
 export const uploadDocumentSchema = z.object({

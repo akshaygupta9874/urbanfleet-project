@@ -298,8 +298,13 @@ export class DriverController {
 
   toggleAvailability = async (req: any, res: Response, next: NextFunction) => {
     try {
-      const { isAvailable } = req.body;
-      const profile = await this.driverService.setAvailability(req.user.userId, isAvailable);
+      const isAvailable =
+        req.body?.isAvailable !== undefined
+          ? req.body.isAvailable
+          : req.body?.isOnline !== undefined
+          ? req.body.isOnline
+          : true;
+      const profile = await this.driverService.setAvailability(req.user.userId, Boolean(isAvailable));
       res.status(200).json({ success: true, data: profile });
     } catch (err) { next(err); }
   };

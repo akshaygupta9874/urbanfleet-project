@@ -1,11 +1,20 @@
 import { RedisClientType } from 'redis';
 import { createLogger } from '@urbanfleet/common';
+import type { DriverPresenceService } from './driver-presence.service.js';
 
 const logger = createLogger('geo-service');
 const GEO_KEY = 'ride:drivers:locations';
 
 export class GeoService {
-  constructor(private redis: RedisClientType) {}
+  private presenceService?: DriverPresenceService;
+
+  constructor(private redis: RedisClientType, presenceService?: DriverPresenceService) {
+    this.presenceService = presenceService;
+  }
+
+  setPresenceService(presenceService: DriverPresenceService) {
+    this.presenceService = presenceService;
+  }
 
   async updateDriverLocation(driverId: string, lat: number, lng: number) {
     // 1. Add/Update coordinate in Redis GEO
@@ -38,13 +47,18 @@ export class GeoService {
       { radius: radiusKm, unit: 'km' }
     );
 
-    // Filter out drivers whose heartbeat expired
+    // Filter out drivers whose heartbeat expired or who are not available
     const activeDrivers: string[] = [];
     for (const driverId of results) {
       const isAlive = await this.redis.exists(`driver:heartbeat:${driverId}`);
-      if (isAlive) {
+      let isAvailable = true;
+      if (this.presenceService) {
+        isAvailable = await this.presenceService.isDriverAvailable(driverId);
+      }
+
+      if (isAlive && isAvailable) {
         activeDrivers.push(driverId);
-      } else {
+      } else if (!isAlive) {
         // Asynchronously evict stale location
         await this.redis.zRem(GEO_KEY, driverId);
       }
