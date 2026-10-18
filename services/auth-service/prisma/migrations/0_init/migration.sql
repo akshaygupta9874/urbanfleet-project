@@ -2,7 +2,7 @@
 CREATE TYPE "Role" AS ENUM ('RIDER', 'DRIVER', 'ADMIN');
 
 -- CreateEnum
-CREATE TYPE "OutboxStatus" AS ENUM ('PENDING', 'PUBLISHED', 'FAILED');
+CREATE TYPE "OutboxStatus" AS ENUM ('PENDING', 'PROCESSING', 'PUBLISHED', 'FAILED');
 
 -- CreateTable
 CREATE TABLE "users" (

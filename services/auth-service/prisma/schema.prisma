@@ -15,6 +15,7 @@ enum Role {
 
 enum OutboxStatus {
   PENDING
+  PROCESSING
   PUBLISHED
   FAILED
 }

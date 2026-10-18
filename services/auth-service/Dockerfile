@@ -1,16 +1,19 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY services/auth-service/ ./services/auth-service/
 
-RUN npm install
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm install
 RUN npm run build --workspace=@urbanfleet/common
 RUN npm run build --workspace=@urbanfleet/contracts
 RUN npm run build --workspace=@urbanfleet/auth-service
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
@@ -19,6 +22,7 @@ COPY --from=builder /app/services/auth-service/dist ./dist
 COPY --from=builder /app/services/auth-service/src/generated ./src/generated
 COPY --from=builder /app/services/auth-service/package.json ./package.json
 COPY --from=builder /app/services/auth-service/prisma ./prisma
+COPY --from=builder /app/services/auth-service/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 4001
 CMD ["node", "dist/index.js"]

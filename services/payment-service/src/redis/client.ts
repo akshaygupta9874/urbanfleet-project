@@ -9,8 +9,8 @@ export const redisClient = createClient({
   name: "payment-service",
 });
 
-redisClient.on("error", (err) => {
-  logger.error("Redis Client Error", { error: err.message });
+redisClient.on("error", (err: any) => {
+  logger.error("Redis Client Error", { error: err?.message || err });
 });
 
 export const paymentRedisKey = (key: string) => `payment:${key}`;

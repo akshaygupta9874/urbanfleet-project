@@ -60,6 +60,10 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     volumes:
       - kafka_data:/var/lib/kafka/data
     networks:
@@ -73,6 +77,7 @@ services:
   kafka-init:
     image: confluentinc/cp-kafka:7.4.0
     container_name: urbanfleet-kafka-init
+    restart: "no"
     depends_on:
       kafka:
         condition: service_healthy
@@ -118,7 +123,7 @@ services:
       context: .
       dockerfile: services/auth-service/Dockerfile
     container_name: urbanfleet-auth-service
-    command: sh -c "npx prisma db push --skip-generate && node dist/index.js"
+    command: sh -c "npx prisma db push --url \"$$DATABASE_URL\" --accept-data-loss && node dist/index.js"
     expose:
       - "4001"
     environment:
@@ -139,13 +144,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   driver-service:
     build:
       context: .
       dockerfile: services/driver-service/Dockerfile
     container_name: urbanfleet-driver-service
-    command: sh -c "npx prisma db push --skip-generate && node dist/index.js"
+    command: sh -c "npx prisma db push --url \"$$DATABASE_URL\" --accept-data-loss && node dist/index.js"
     expose:
       - "4002"
     environment:
@@ -167,13 +174,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   ride-service:
     build:
       context: .
       dockerfile: services/ride-service/Dockerfile
     container_name: urbanfleet-ride-service
-    command: sh -c "npx prisma db push --skip-generate && node dist/index.js"
+    command: sh -c "npx prisma db push --url \"$$DATABASE_URL\" --accept-data-loss && node dist/index.js"
     expose:
       - "4004"
     environment:
@@ -194,13 +203,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   payment-service:
     build:
       context: .
       dockerfile: services/payment-service/Dockerfile
     container_name: urbanfleet-payment-service
-    command: sh -c "npx prisma db push --skip-generate && node dist/index.js"
+    command: sh -c "npx prisma db push --url \"$$DATABASE_URL\" --accept-data-loss && node dist/index.js"
     expose:
       - "4005"
     environment:
@@ -222,13 +233,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   notification-service:
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
     container_name: urbanfleet-notification-service
-    command: sh -c "npx prisma db push --skip-generate && node dist/index.js"
+    command: sh -c "npx prisma db push --url \"$$DATABASE_URL\" --accept-data-loss && node dist/index.js"
     expose:
       - "4003"
     environment:
@@ -249,6 +262,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   # ========================================================
   # 4. FRONTEND

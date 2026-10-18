@@ -54,7 +54,7 @@ import {
 import { formatRide, rideClient } from "../../clients/ride.client.js";
 import { RidePaymentStatus, RideStatus } from "../types/payment.types.js";
 export { RidePaymentStatus, RideStatus };
-import { UserRole } from "@prisma/client";
+import { UserRole } from "../../db/client.js";
 import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from "../../sockets/emitters/rider.emitter.js";
 

@@ -12,7 +12,7 @@ export const notificationRedisClient: RedisClientType = createClient({
   name: 'notification-service',
 });
 
-notificationRedisClient.on('error', (err) => {
+notificationRedisClient.on('error', (err: any) => {
   logger.error('Notification Redis Client Error:', err);
 });
 

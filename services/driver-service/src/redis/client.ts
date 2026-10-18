@@ -12,7 +12,7 @@ export const driverRedisClient: RedisClientType = createClient({
   name: 'driver-service',
 });
 
-driverRedisClient.on('error', (err) => {
+driverRedisClient.on('error', (err: any) => {
   logger.error('Driver Redis Client Error:', err);
 });
 
