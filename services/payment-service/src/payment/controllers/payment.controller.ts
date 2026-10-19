@@ -34,10 +34,15 @@ function unauthenticated(): AppError {
   );
 }
 
-/** One user lookup per request (handled via service). */
+/** One user lookup per request (handled via service or authenticated request context). */
 async function loadRequester(
-  userId: string
+  userId: string,
+  req?: AuthenticatedRequest
 ): Promise<{ isAdmin: boolean }> {
+  const roles = req?.role || (req?.user?.roles ? req.user.roles : (req?.user?.role ? [req.user.role] : null));
+  if (roles && Array.isArray(roles) && roles.length > 0) {
+    return { isAdmin: roles.includes("ADMIN") || roles.includes("admin") };
+  }
   return paymentService.loadRequester(userId);
 }
 
@@ -188,7 +193,7 @@ export const getPayment =
 
     }
 
-    const { isAdmin } = await loadRequester(req.userId);
+    const { isAdmin } = await loadRequester(req.userId, req);
 
     if (
       !isParticipant(payment, req.userId) &&
@@ -232,7 +237,7 @@ export const getPaymentsByRide =
         req.params.rideId
       );
 
-    const { isAdmin } = await loadRequester(req.userId);
+    const { isAdmin } = await loadRequester(req.userId, req);
 
     const owns =
       payments.some(
@@ -281,7 +286,7 @@ export const listPayments =
       status?: PaymentStatus;
     };
 
-    const { isAdmin } = await loadRequester(req.userId);
+    const { isAdmin } = await loadRequester(req.userId, req);
 
     const filter =
       isAdmin
@@ -422,7 +427,7 @@ export const listPayouts =
       throw unauthenticated();
     }
 
-    const { isAdmin } = await loadRequester(userId);
+    const { isAdmin } = await loadRequester(userId, req);
     const driverId = req.driverId || userId;
 
     const payouts = isAdmin && !req.query.driverId

@@ -41,10 +41,13 @@ describe('Auth Service Business Logic', () => {
     const res = await authService.register({
       email: 'newrider@urbanfleet.com',
       password: 'Password@123',
-      fullName: 'New Rider',
+      firstName: 'New',
+      lastName: 'Rider',
       role: 'RIDER'
     });
 
+    expect(res.user.firstName).toBe('New');
+    expect(res.user.lastName).toBe('Rider');
     expect(res.user.email).toBe('newrider@urbanfleet.com');
     expect(res.accessToken).toBeDefined();
     expect(res.refreshToken).toBeDefined();

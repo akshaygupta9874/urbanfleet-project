@@ -153,7 +153,8 @@ export const authMiddleware = asyncHandler(
       email: user.email,
       role: user.role,
       roles: request.role,
-      fullName: user.fullName,
+      firstName: user.firstName,
+      lastName: user.lastName,
       driverId,
     };
 

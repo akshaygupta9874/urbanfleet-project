@@ -4,7 +4,8 @@ import { z } from 'zod';
 export const UserRegisteredPayloadSchema = z.object({
   userId: z.string().uuid(),
   email: z.string().email(),
-  fullName: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
   phone: z.string().optional(),
   role: z.enum(['RIDER', 'DRIVER', 'ADMIN'])
 });
@@ -29,6 +30,8 @@ export const RideCompletedPayloadSchema = z.object({
   surgeMultiplier: z.number().positive(),
   distanceKm: z.number().positive(),
   durationMinutes: z.number().int().positive(),
+  driverEarningPaise: z.number().int().nonnegative().optional(),
+  platformCommissionPaise: z.number().int().nonnegative().optional(),
   completedAt: z.string().datetime()
 });
 export type RideCompletedPayload = z.infer<typeof RideCompletedPayloadSchema>;
@@ -40,6 +43,7 @@ export const RideCancelledPayloadSchema = z.object({
   driverId: z.string().uuid().optional(),
   cancelledBy: z.string(),
   cancellationReason: z.string().optional(),
+  cancellationFeePaise: z.number().int().nonnegative().optional(),
   cancelledAt: z.string().datetime()
 });
 export type RideCancelledPayload = z.infer<typeof RideCancelledPayloadSchema>;

@@ -175,8 +175,12 @@ class PaymentService {
   async createOrder(
     input: CreateOrderInput
   ): Promise<CreateOrderResult> {
-    const rideIdStr = input.ride.toString();
-    const riderIdStr = input.rider.toString();
+    const rideIdStr = (input.ride ?? (input as any).rideId)?.toString();
+    const riderIdStr = (input.rider ?? (input as any).riderId)?.toString();
+
+    if (!rideIdStr || !riderIdStr) {
+      throw new AppError("Ride and rider are required.", 400, "INVALID_INPUT");
+    }
 
     const rawRide = await rideClient.getRideById(rideIdStr);
 
@@ -202,9 +206,19 @@ class PaymentService {
       );
     }
 
+    const isCancelled = ride.status === RideStatus.CANCELLED || ride.status === "CANCELLED";
+    const payableRideStatuses: string[] = [
+      RideStatus.ARRIVED_AT_DESTINATION,
+      RideStatus.COMPLETED,
+      "ARRIVED_AT_DESTINATION",
+      "COMPLETED",
+      RideStatus.CANCELLED,
+      "CANCELLED",
+    ];
+
     if (
       !(
-        ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
+        payableRideStatuses.includes(ride.status) &&
         PAYABLE_RIDE_PAYMENT_STATUSES.includes(ride.paymentStatus as RidePaymentStatus)
       )
     ) {
@@ -234,7 +248,7 @@ class PaymentService {
     const latestRide = (checkRows && checkRows.length > 0) ? formatRide(checkRows[0]) : ride;
 
     const latestDriverId = (latestRide.driverId ?? latestRide.driver)?.toString();
-    if (!latestDriverId) {
+    if (!latestDriverId && !isCancelled) {
       throw new AppError(
         "Driver not assigned.",
         400,
@@ -309,8 +323,8 @@ class PaymentService {
           }
 
           const lockedFare = lockedRide.fareBreakdown || lockedRide.fare?.breakdown;
-          const lockedDriverId = (lockedRide.driverId ?? lockedRide.driver)?.toString();
           const lockedRiderId = (lockedRide.riderId ?? lockedRide.rider)?.toString();
+          const lockedDriverId = (lockedRide.driverId ?? lockedRide.driver)?.toString() || (isCancelled ? lockedRiderId : undefined);
           if (!lockedDriverId || !lockedFare) {
             throw new AppError(
               "Ride payment details are incomplete.",
@@ -959,8 +973,9 @@ class PaymentService {
     if (!user) {
       throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
+    const roles = Array.isArray(user.roles) ? user.roles : [user.role || (user as any).roles || "RIDER"];
     return {
-      isAdmin: Array.isArray(user.roles) && user.roles.includes(UserRole.ADMIN),
+      isAdmin: roles.includes(UserRole.ADMIN) || roles.includes("ADMIN"),
     };
   }
 

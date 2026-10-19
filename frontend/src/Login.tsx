@@ -58,6 +58,10 @@ export default function LoginPage() {
   const [status, setStatus] = useState("");
   const [showOtp, setShowOtp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [isTwoFactorSetup, setIsTwoFactorSetup] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
@@ -71,19 +75,64 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const { data } = await api.post<{ message: string; devOtp?: string }>("/login", {
+      const { data } = await api.post<{
+        message?: string;
+        devOtp?: string;
+        accessToken?: string;
+        user?: User;
+        data?: {
+          accessToken?: string;
+          user?: User;
+          requiresTwoFactor?: boolean;
+          requiresTwoFactorSetup?: boolean;
+          challengeToken?: string;
+          qrCodeUrl?: string;
+          otpauthUri?: string;
+          userId?: string;
+          message?: string;
+        };
+      }>("/login", {
         email,
         password,
       });
-      if (data.devOtp) {
-        setStatus(`Code sent! (Testing OTP: ${data.devOtp} or use master code 123456)`);
-        setOtp(data.devOtp);
-      } else {
-        setStatus(data.message);
+
+      const accessToken = data.accessToken || data.data?.accessToken;
+      const user = data.user || data.data?.user;
+
+      if (data.data?.requiresTwoFactorSetup) {
+        setIsTwoFactorSetup(true);
+        setQrCodeUrl(data.data.qrCodeUrl || null);
+        setUserId(data.data.userId || null);
+        setStatus(data.data.message || "Admin 2FA setup required. Please scan the QR code with your authenticator app.");
+        setShowOtp(true);
+        return;
       }
-      setShowOtp(true);
+
+      const requiresTwoFactor = data.data?.requiresTwoFactor || !!data.devOtp;
+
+      if (requiresTwoFactor) {
+        if (data.data?.challengeToken) {
+          setChallengeToken(data.data.challengeToken);
+        }
+        if (data.devOtp) {
+          setStatus(`Code sent! (Testing OTP: ${data.devOtp} or use master code 123456)`);
+          setOtp(data.devOtp);
+        } else {
+          setStatus(data.data?.message || data.message || "Please enter your two-factor authentication code");
+        }
+        setShowOtp(true);
+      } else if (accessToken && user) {
+        establishSession(accessToken, user);
+        navigate("/dashboard", { replace: true });
+      } else {
+        setStatus(data.message || "Signed in successfully");
+      }
     } catch (error) {
-      setStatus(error instanceof AxiosError ? error.response?.data.message : "Login failed");
+      setStatus(
+        error instanceof AxiosError
+          ? (error.response?.data?.message || error.message)
+          : "Login failed"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -94,15 +143,36 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const { data } = await api.post<{ message: string }>("/verify-otp", {
-        email,
+      const payload: Record<string, string> = {
+        code: otp,
+        token: otp,
         otp,
-      });
-      setStatus(data.message);
-      await checkAuthentication();
+      };
+      if (email) payload.email = email;
+      if (challengeToken) payload.challengeToken = challengeToken;
+      if (userId) payload.userId = userId;
+
+      const { data } = await api.post<{
+        message?: string;
+        accessToken?: string;
+        user?: User;
+        data?: {
+          accessToken?: string;
+          user?: User;
+        };
+      }>("/verify-otp", payload);
+
+      const accessToken = data.accessToken || data.data?.accessToken;
+      const user = data.user || data.data?.user;
+
+      if (accessToken && user) {
+        establishSession(accessToken, user);
+      } else {
+        await checkAuthentication();
+      }
       navigate("/dashboard", { replace: true });
     } catch (error) {
-      setStatus(error instanceof AxiosError ? error.response?.data.message : "OTP verification failed");
+      setStatus(error instanceof AxiosError ? (error.response?.data?.message || error.message) : "OTP verification failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -195,77 +265,93 @@ export default function LoginPage() {
             Enter your credentials to continue your journey.
           </motion.p>
 
-          <motion.form variants={itemVariants} className="relative mb-6 space-y-4" onSubmit={handleLogin}>
-            <motion.div
-              aria-hidden
-              className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-[#7a4416] via-[#f4b860] to-[#b8722c] blur transition duration-500"
-              animate={{ opacity: focusedField ? 0.35 : 0 }}
-            />
+          {!showOtp ? (
+            <motion.form variants={itemVariants} className="relative mb-6 space-y-4" onSubmit={handleLogin}>
+              <motion.div
+                aria-hidden
+                className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-[#7a4416] via-[#f4b860] to-[#b8722c] blur transition duration-500"
+                animate={{ opacity: focusedField ? 0.35 : 0 }}
+              />
 
-            {/* Email */}
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              onFocus={() => setFocusedField("contact")}
-              onBlur={() => setFocusedField(null)}
-              required
-              className={`${inputBase} py-4 text-lg`}
-            />
-
-            {/* Password */}
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              onFocus={() => setFocusedField("password")}
-              onBlur={() => setFocusedField(null)}
-              required
-              className={`${inputBase} py-4 text-lg`}
-            />
-
-            {/* Primary CTA — brass gradient with shine sweep and glow */}
-            <motion.button
-              type="submit"
-              disabled={isSubmitting}
-              whileTap={{ scale: 0.98 }}
-              className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-4 text-lg font-semibold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_50px_-14px_rgba(58,31,10,0.85),inset_0_1px_0_rgba(255,216,138,0.5)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {/* Brass inner rim */}
-              <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
-              {/* Shine sweep */}
-              <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/60 to-transparent transition-transform duration-1000 group-hover:translate-x-[460%]" />
-              <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                {isSubmitting ? (
-                  <>
-                    <motion.span
-                      className="inline-block h-3 w-3 rounded-full border-2 border-[#ffd88a]/40 border-t-[#ffd88a]"
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-                    />
-                    Authenticating...
-                  </>
-                ) : (
-                  <>
-                    <Navigation size={16} className="text-[#ffd88a]" />
-                    Continue
-                  </>
-                )}
-              </span>
-            </motion.button>
-          </motion.form>
-
-          {showOtp && (
-            <motion.div variants={itemVariants} className="mb-6 space-y-4">
+              {/* Email */}
               <input
-                type="text"
-                placeholder="Enter email OTP"
-                value={otp}
-                onChange={(event) => setOtp(event.target.value)}
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                onFocus={() => setFocusedField("contact")}
+                onBlur={() => setFocusedField(null)}
                 required
                 className={`${inputBase} py-4 text-lg`}
+              />
+
+              {/* Password */}
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onFocus={() => setFocusedField("password")}
+                onBlur={() => setFocusedField(null)}
+                required
+                className={`${inputBase} py-4 text-lg`}
+              />
+
+              {/* Primary CTA — brass gradient with shine sweep and glow */}
+              <motion.button
+                type="submit"
+                disabled={isSubmitting}
+                whileTap={{ scale: 0.98 }}
+                className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-4 text-lg font-semibold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_50px_-14px_rgba(58,31,10,0.85),inset_0_1px_0_rgba(255,216,138,0.5)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {/* Brass inner rim */}
+                <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
+                {/* Shine sweep */}
+                <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/60 to-transparent transition-transform duration-1000 group-hover:translate-x-[460%]" />
+                <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                  {isSubmitting ? (
+                    <>
+                      <motion.span
+                        className="inline-block h-3 w-3 rounded-full border-2 border-[#ffd88a]/40 border-t-[#ffd88a]"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
+                      />
+                      Authenticating...
+                    </>
+                  ) : (
+                    <>
+                      <Navigation size={16} className="text-[#ffd88a]" />
+                      Continue
+                    </>
+                  )}
+                </span>
+              </motion.button>
+            </motion.form>
+          ) : (
+            <motion.div variants={itemVariants} className="mb-6 space-y-4">
+              {isTwoFactorSetup && qrCodeUrl && (
+                <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/95 text-center shadow-inner">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4416] mb-2">
+                    Scan with Authenticator App
+                  </p>
+                  <img
+                    src={qrCodeUrl}
+                    alt="2FA QR Code"
+                    className="w-44 h-44 rounded-lg shadow-sm border border-[#7a4416]/15 bg-white p-2"
+                  />
+                  <p className="text-xs text-[#6b3a12]/75 mt-2 max-w-[280px]">
+                    Open Google Authenticator, Authy, or 1Password to scan this code and retrieve your 6-digit TOTP code.
+                  </p>
+                </div>
+              )}
+              <input
+                type="text"
+                placeholder={isTwoFactorSetup ? "Enter 6-digit code from app" : "Enter verification code / OTP"}
+                value={otp}
+                onChange={(event) => setOtp(event.target.value)}
+                maxLength={8}
+                required
+                className={`${inputBase} py-4 text-lg text-center tracking-widest font-mono`}
               />
               <motion.button
                 type="button"
@@ -275,9 +361,35 @@ export default function LoginPage() {
                 className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#7a4416] via-[#9a581e] to-[#3a1f0a] py-3.5 text-base font-semibold text-[#ffe9be] shadow-md transition-all hover:opacity-95 disabled:opacity-60"
               >
                 <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                  {isSubmitting ? "Verifying..." : "Verify OTP"}
+                  {isSubmitting ? (
+                    <>
+                      <motion.span
+                        className="inline-block h-3 w-3 rounded-full border-2 border-[#ffd88a]/40 border-t-[#ffd88a]"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
+                      />
+                      Verifying...
+                    </>
+                  ) : (
+                    isTwoFactorSetup ? "Activate 2FA & Sign In" : "Verify Code"
+                  )}
                 </span>
               </motion.button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOtp(false);
+                  setIsTwoFactorSetup(false);
+                  setQrCodeUrl(null);
+                  setChallengeToken(null);
+                  setUserId(null);
+                  setOtp("");
+                  setStatus("");
+                }}
+                className="w-full text-center text-xs font-semibold text-[#6b3a12] hover:text-[#3a1f0a] transition-colors py-1"
+              >
+                ← Back to sign in
+              </button>
             </motion.div>
           )}
 

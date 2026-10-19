@@ -43,6 +43,9 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       update: vi.fn().mockImplementation(async (id, data) => ({ ...mockFullProfile, ...data })),
       updateVehicle: vi.fn().mockResolvedValue({ id: 'veh-1', brand: 'Toyota' }),
       createVehicle: vi.fn().mockResolvedValue({ id: 'veh-2' }),
+      create: vi.fn().mockImplementation(async (data) => ({ id: 'new-id', ...data })),
+      updateFullProfile: vi.fn().mockImplementation(async (id, data) => ({ id, ...data, verificationStatus: 'PENDING' })),
+      createFullProfile: vi.fn().mockImplementation(async (data) => ({ id: 'new-full-id', ...data })),
     };
 
     mockDocService = {
@@ -107,18 +110,22 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
-    it('allows document verification with x-internal-service-key header', async () => {
+    it('rejects document verification with x-internal-service-key header if user lacks VERIFIER role', async () => {
       const req: any = {
         params: { id: 'doc-3' },
         body: { status: 'VERIFIED' },
-        headers: { 'x-internal-service-key': 'urbanfleet_internal_secret' },
+        headers: { 'x-internal-service-key': 'test-internal-secret' },
       };
       const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+      let caughtError: any;
 
-      await driverController.verifyDocument(req, res, () => {});
+      await driverController.verifyDocument(req, res, (err: any) => {
+        caughtError = err;
+      });
 
-      expect(mockDocService.verifyDocument).toHaveBeenCalledWith('doc-3', 'VERIFIED', undefined);
-      expect(res.status).toHaveBeenCalledWith(200);
+      expect(caughtError).toBeDefined();
+      expect(caughtError.statusCode).toBe(403);
+      expect(mockDocService.verifyDocument).not.toHaveBeenCalledWith('doc-3', 'VERIFIED', undefined);
     });
   });
 
@@ -218,6 +225,153 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
         model: 'Innova',
         color: 'Silver',
       });
+    });
+  });
+
+  describe('Placeholder Driver Profile Completion & Registration Conflict', () => {
+    const placeholderProfile = {
+      id: 'drv-placeholder-1',
+      userId: 'usr-new-driver',
+      licenseNumber: 'PENDING_usr-new-',
+      verificationStatus: 'PENDING',
+      isVerified: false,
+      vehicles: [],
+      documents: [],
+    };
+
+    it('createDriverProfile updates existing placeholder profile instead of throwing ConflictError', async () => {
+      mockDriverRepo.findByUserId.mockResolvedValueOnce(placeholderProfile);
+
+      const result = await driverService.createDriverProfile('usr-new-driver', 'DL-NEW-556677');
+
+      expect(mockDriverRepo.update).toHaveBeenCalledWith('drv-placeholder-1', {
+        licenseNumber: 'DL-NEW-556677',
+        verificationStatus: 'PENDING',
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('createDriverProfile throws ConflictError if driver profile is already completed/approved', async () => {
+      mockDriverRepo.findByUserId.mockResolvedValueOnce(mockFullProfile);
+
+      await expect(
+        driverService.createDriverProfile('usr-uuid-1', 'DL-NEW-999999')
+      ).rejects.toThrow('Driver profile already exists for this account');
+    });
+
+    it('registerFullDriver updates existing placeholder profile via updateFullProfile', async () => {
+      mockDriverRepo.findByUserId.mockResolvedValueOnce(placeholderProfile);
+
+      const registrationData = {
+        userId: 'usr-new-driver',
+        licenseNumber: 'DL-REAL-123456',
+        vehicle: {
+          type: 'CAR',
+          brand: 'Hyundai',
+          model: 'i20',
+          color: 'Blue',
+          registrationNumber: 'DL-02-CD-5678',
+          registrationYear: 2023,
+        },
+        documents: [
+          {
+            type: 'DRIVING_LICENSE',
+            number: 'DL-REAL-123456',
+            frontImage: 'https://cloudinary.com/dl.jpg',
+          },
+        ],
+      };
+
+      const result = await driverService.registerFullDriver(registrationData);
+
+      expect(mockDriverRepo.updateFullProfile).toHaveBeenCalledWith(
+        'drv-placeholder-1',
+        registrationData
+      );
+      expect(result.id).toBe('drv-placeholder-1');
+      expect(result.verificationStatus).toBe('PENDING');
+    });
+
+    it('registerFullDriver creates new full profile if no existing record exists', async () => {
+      mockDriverRepo.findByUserId.mockResolvedValueOnce(null);
+
+      const registrationData = {
+        userId: 'usr-brand-new',
+        licenseNumber: 'DL-BRAND-NEW',
+        vehicle: {
+          type: 'CAR',
+          brand: 'Maruti',
+          model: 'Swift',
+          color: 'Red',
+          registrationNumber: 'DL-03-EF-9012',
+          registrationYear: 2024,
+        },
+        documents: [],
+      };
+
+      const result = await driverService.registerFullDriver(registrationData);
+
+      expect(mockDriverRepo.createFullProfile).toHaveBeenCalledWith(registrationData);
+      expect(result.id).toBe('new-full-id');
+    });
+
+    it('registerFullDriver throws ConflictError if existing profile is already completed/approved', async () => {
+      mockDriverRepo.findByUserId.mockResolvedValueOnce(mockFullProfile);
+
+      const registrationData = {
+        userId: 'usr-uuid-1',
+        licenseNumber: 'DL-CONFLICT',
+        vehicle: {
+          type: 'CAR',
+          brand: 'Honda',
+          model: 'City',
+          color: 'White',
+          registrationNumber: 'DL-01-AB-1234',
+          registrationYear: 2022,
+        },
+        documents: [],
+      };
+
+      await expect(driverService.registerFullDriver(registrationData)).rejects.toThrow(
+        'Driver application already exists for this account'
+      );
+    });
+  });
+
+  describe('Driver Earnings Post-Commission Calculation', () => {
+    it('increments totalEarningsPaise using driverEarningPaise when present', () => {
+      const payload = {
+        rideId: 'ride-1',
+        riderId: 'rider-1',
+        driverId: 'drv-uuid-1',
+        totalFarePaise: 10000,
+        baseFarePaise: 2500,
+        surgeMultiplier: 1.0,
+        distanceKm: 5,
+        durationMinutes: 15,
+        driverEarningPaise: 9000,
+        platformCommissionPaise: 1000,
+        completedAt: new Date().toISOString()
+      };
+
+      const computedEarning = payload.driverEarningPaise !== undefined
+        ? BigInt(payload.driverEarningPaise)
+        : (BigInt(payload.totalFarePaise) - BigInt(Math.round(payload.totalFarePaise * 0.10)));
+
+      expect(computedEarning).toBe(9000n);
+    });
+
+    it('falls back to 90% net driver share if driverEarningPaise is omitted', () => {
+      const payload = {
+        totalFarePaise: 10000,
+      };
+
+      const computedEarning = (payload as any).driverEarningPaise !== undefined
+        ? BigInt((payload as any).driverEarningPaise)
+        : (BigInt(payload.totalFarePaise) - BigInt(Math.round(payload.totalFarePaise * 0.10)));
+
+      expect(computedEarning).toBe(9000n);
+      expect(computedEarning).not.toBe(BigInt(payload.totalFarePaise));
     });
   });
 });

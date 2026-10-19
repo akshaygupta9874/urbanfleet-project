@@ -18,7 +18,8 @@ describe('AuthClient Inter-Service HTTP Communication in notification-service', 
     const mockUser = {
       id: 'rider-123',
       email: 'john.rider@example.com',
-      fullName: 'John Rider',
+      firstName: 'John',
+      lastName: 'Rider',
       role: 'RIDER',
       isEmailVerified: true,
     };

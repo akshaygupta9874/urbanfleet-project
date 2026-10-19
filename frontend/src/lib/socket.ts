@@ -66,7 +66,8 @@ const inferredWebSocketUrl = apiUrl.replace(/^http/u, (protocol: string) =>
 // In production the WebSocket server is hosted by the same service as the API.
 // This keeps the real-time connection on Render even when VITE_WS_URL was not
 // separately configured at build time.
-const WS_URL = import.meta.env.VITE_WS_URL || inferredWebSocketUrl;
+const baseWsUrl = (import.meta.env.VITE_WS_URL || inferredWebSocketUrl).replace(/\/+$/u, "");
+const WS_URL = baseWsUrl.includes("/ws") ? baseWsUrl : `${baseWsUrl}/ws/ride`;
 
 export function connectRiderSocket(options: RiderSocketOptions): WebSocket {
   const token = getAccessToken();

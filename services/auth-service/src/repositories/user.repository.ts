@@ -18,9 +18,12 @@ export class UserRepository {
   async create(data: {
     email: string;
     passwordHash: string;
-    fullName: string;
+    firstName: string;
+    lastName: string;
     phone?: string;
     role?: Role;
+    avatarUrl?: string;
+    isEmailVerified?: boolean;
   }): Promise<User> {
     return this.prisma.user.create({ data });
   }

@@ -1,7 +1,8 @@
 export interface AuthUser {
   id: string;
   email: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phone?: string | null;
   role: string;
   isEmailVerified: boolean;
@@ -14,7 +15,7 @@ export class AuthClient {
 
   async getUserById(userId: string): Promise<AuthUser | null> {
     try {
-      const internalKey = process.env.INTERNAL_SERVICE_KEY || 'urbanfleet_internal_secret';
+      const internalKey = process.env.INTERNAL_SERVICE_KEY || '';
       const res = await fetch(`${this.baseUrl}/api/auth/users/${userId}`, {
         headers: {
           Accept: 'application/json',

@@ -14,6 +14,21 @@ export function formatRide(ride: any): any {
   if (!ride) return null;
   const riderId = ride.riderId ?? ride.rider_id ?? (typeof ride.rider === "object" ? (ride.rider?.id || ride.rider?._id) : ride.rider);
   const driverId = ride.driverId ?? ride.driver_id ?? (typeof ride.driver === "object" ? (ride.driver?.id || ride.driver?._id) : ride.driver);
+  let fareBreakdown = ride.fareBreakdown || ride.fare?.breakdown;
+  if (!fareBreakdown && (ride.totalFarePaise !== undefined || ride.totalFare !== undefined)) {
+    const total = Number(ride.totalFarePaise ?? ride.totalFare);
+    const platform = Math.round(total * 0.10);
+    const driver = total - platform;
+    fareBreakdown = {
+      baseFarePaise: Number(ride.baseFarePaise ?? total),
+      distanceFarePaise: 0,
+      timeFarePaise: 0,
+      surgePaise: 0,
+      platformCommissionPaise: platform,
+      driverEarningPaise: driver,
+      totalPaise: total
+    };
+  }
   return {
     ...ride,
     id: ride.id || ride._id,
@@ -22,12 +37,13 @@ export function formatRide(ride: any): any {
     driverId: driverId ? String(driverId) : null,
     rider: riderId ? String(riderId) : undefined,
     driver: driverId ? String(driverId) : null,
+    fareBreakdown,
   };
 }
 
 export class RideClient {
   constructor(
-    private baseUrl: string = process.env.RIDE_SERVICE_URL || 'http://localhost:4003'
+    private baseUrl: string = process.env.RIDE_SERVICE_URL || 'http://localhost:4004'
   ) {}
 
   async getRideById(id: string): Promise<any> {
@@ -36,10 +52,10 @@ export class RideClient {
       return (prisma as any).ride.findUnique({ where: { id } });
     }
 
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (process.env.INTERNAL_SERVICE_KEY) {
-      headers['x-internal-service-key'] = process.env.INTERNAL_SERVICE_KEY;
-    }
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
+    };
 
     try {
       let res = await fetch(`${this.baseUrl}/api/rides/${id}`, {
@@ -80,10 +96,10 @@ export class RideClient {
       return (prisma as any).ride.updateMany({ where, data: { paymentStatus } });
     }
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (process.env.INTERNAL_SERVICE_KEY) {
-      headers['x-internal-service-key'] = process.env.INTERNAL_SERVICE_KEY;
-    }
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
+    };
 
     try {
       let res = await fetch(`${this.baseUrl}/api/rides/${id}/payment-status`, {

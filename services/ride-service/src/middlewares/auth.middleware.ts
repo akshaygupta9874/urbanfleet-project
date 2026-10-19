@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
+import crypto from 'crypto';
 import { AppError } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
 import { rideRedisClient } from '../redis/client.js';
@@ -24,6 +25,22 @@ export const authMiddleware = asyncHandler(
   async (request: AuthenticatedRequest, response: Response, next: NextFunction) => {
     // If request already has authenticated user (test bypass / mock), proceed
     if (request.userId && request.user) {
+      return next();
+    }
+
+    // Allow internal service communication (strictly requiring configured non-fallback key)
+    const internalKey = request.headers['x-internal-service-key'];
+    const expectedKey = process.env.INTERNAL_SERVICE_KEY;
+    if (
+      expectedKey &&
+      internalKey &&
+      typeof internalKey === 'string' &&
+      internalKey.length === expectedKey.length &&
+      crypto.timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
+    ) {
+      request.userId = 'internal-service';
+      request.role = ['ADMIN'];
+      request.user = { id: 'internal-service', userId: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
       return next();
     }
 
@@ -125,13 +142,17 @@ export const authMiddleware = asyncHandler(
     request.userId = userId;
     request.role = Array.isArray(user.roles) ? user.roles : [user.role || 'RIDER'];
     request.driverId = user.driver?.id || user.driverId;
+    const firstName = user.firstName || 'User';
+    const lastName = user.lastName || '';
+
     request.user = {
       userId,
       id: userId,
       email: user.email,
       role: user.role,
       roles: request.role,
-      fullName: user.fullName,
+      firstName,
+      lastName,
       driverId: request.driverId,
     };
 

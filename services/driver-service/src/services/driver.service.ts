@@ -6,8 +6,30 @@ export class DriverService {
 
   async createDriverProfile(userId: string, licenseNumber: string) {
     const existing = await this.driverRepo.findByUserId(userId);
-    if (existing) throw new ConflictError('Driver profile already exists for this account');
-    return this.driverRepo.create({ userId, licenseNumber });
+    if (existing) {
+      const isPlaceholder = existing.licenseNumber.startsWith('PENDING_');
+      if (isPlaceholder) {
+        return this.driverRepo.update(existing.id, {
+          licenseNumber,
+          verificationStatus: 'PENDING',
+        });
+      }
+      throw new ConflictError('Driver profile already exists for this account');
+    }
+    try {
+      return await this.driverRepo.create({ userId, licenseNumber });
+    } catch (err: any) {
+      if (err.code === 'P2002') {
+        const raceExisting = await this.driverRepo.findByUserId(userId);
+        if (raceExisting) {
+          return this.driverRepo.update(raceExisting.id, {
+            licenseNumber,
+            verificationStatus: 'PENDING',
+          });
+        }
+      }
+      throw err;
+    }
   }
 
   async getDriverByUserId(userId: string) {
@@ -109,9 +131,26 @@ export class DriverService {
   }) {
     const existing = await this.driverRepo.findByUserId(data.userId);
     if (existing) {
+      const isPlaceholder =
+        existing.licenseNumber.startsWith('PENDING_') ||
+        !existing.vehicles ||
+        existing.vehicles.length === 0;
+      if (isPlaceholder) {
+        return this.driverRepo.updateFullProfile(existing.id, data);
+      }
       throw new ConflictError('Driver application already exists for this account');
     }
-    return this.driverRepo.createFullProfile(data);
+    try {
+      return await this.driverRepo.createFullProfile(data);
+    } catch (err: any) {
+      if (err.code === 'P2002') {
+        const raceExisting = await this.driverRepo.findByUserId(data.userId);
+        if (raceExisting) {
+          return this.driverRepo.updateFullProfile(raceExisting.id, data);
+        }
+      }
+      throw err;
+    }
   }
 }
 

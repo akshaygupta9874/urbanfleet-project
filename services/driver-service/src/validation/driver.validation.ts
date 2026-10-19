@@ -44,6 +44,10 @@ export const driverIdParamSchema = z.object({
   driverId: z.string().uuid('Invalid driver UUID'),
 });
 
+export const uuidParamSchema = z.object({
+  id: z.string().uuid('Invalid UUID parameter'),
+});
+
 export const driverRegistrationSchema = z.object({
   userId: z.string().optional(),
   vehicle: z.object({

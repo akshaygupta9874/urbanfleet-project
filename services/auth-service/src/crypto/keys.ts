@@ -33,7 +33,16 @@ export function initAsymmetricKeys(): { privateKey: string; publicKey: string } 
   return { privateKey, publicKey };
 }
 
-export function signAccessToken(payload: { userId: string; email: string; role: string; sessionId?: string; tokenType?: string }): string {
+export function signAccessToken(payload: {
+  userId: string;
+  email: string;
+  role: string;
+  roles?: string[];
+  firstName?: string;
+  lastName?: string;
+  sessionId?: string;
+  tokenType?: string;
+}): string {
   if (!privateKey) initAsymmetricKeys();
 
   return jwt.sign({ ...payload, tokenType: 'ACCESS' }, privateKey, {

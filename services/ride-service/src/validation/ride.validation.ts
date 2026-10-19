@@ -66,14 +66,40 @@ export const estimateFareSchema = z.object({
   vehicleCategory: vehicleCategorySchema,
 });
 
-export const requestRideSchema = z.object({
-  pickup: locationSchema,
-  destination: locationSchema,
-  estimatedFare: z.number().int().positive('Estimated fare must be a positive integer in paise').optional(),
-  estimatedDistance: z.number().positive('Estimated distance must be positive in meters').optional(),
-  estimatedDuration: z.number().int().positive('Estimated duration must be positive in seconds').optional(),
-  vehicleCategory: vehicleCategorySchema,
-});
+export const requestRideSchema = z.preprocess(
+  (val: any) => {
+    if (val && typeof val === 'object') {
+      const rawCategory = val.vehicleCategory || val.vehicleType || 'CAR';
+      const rawFare = val.estimatedFare ?? val.fare?.estimated ?? val.fare;
+      const rawDistance = val.estimatedDistance ?? val.distance?.estimated ?? val.distance;
+      const rawDuration = val.estimatedDuration ?? val.duration?.estimated ?? val.duration;
+
+      return {
+        ...val,
+        vehicleCategory: rawCategory,
+        vehicleType: rawCategory,
+        estimatedFare: typeof rawFare === 'number' ? Math.round(rawFare) : undefined,
+        estimatedDistance: typeof rawDistance === 'number' ? rawDistance : undefined,
+        estimatedDuration: typeof rawDuration === 'number' ? Math.round(rawDuration) : undefined,
+      };
+    }
+    return val;
+  },
+  z.object({
+    pickup: locationSchema,
+    destination: locationSchema,
+    estimatedFare: z.number().optional(),
+    estimatedDistance: z.number().optional(),
+    estimatedDuration: z.number().optional(),
+    vehicleCategory: vehicleCategorySchema,
+    vehicleType: vehicleCategorySchema,
+    fare: z.any().optional(),
+    distance: z.any().optional(),
+    duration: z.any().optional(),
+    rider: z.string().optional(),
+    riderId: z.string().optional(),
+  })
+);
 
 export const rideIdParamSchema = z.object({
   id: z.string().uuid('Invalid ride UUID').optional(),
@@ -98,9 +124,19 @@ export const completeRideSchema = z.object({
   actualDuration: z.number().int().positive().optional(),
 });
 
-export const cancelRideSchema = z.object({
-  reason: z.string().min(2, 'Cancellation reason is required').max(300),
-});
+export const cancelRideSchema = z.preprocess(
+  (val: any) => {
+    if (val && typeof val === 'object') {
+      const reason = val.reason || val.cancellationReason || 'Ride cancelled by user';
+      return { ...val, reason };
+    }
+    return val;
+  },
+  z.object({
+    reason: z.string().max(300).optional().default('Ride cancelled by user'),
+    cancellationReason: z.string().optional(),
+  })
+);
 
 export const rateRideSchema = z.object({
   score: z.number().int().min(1, 'Rating must be at least 1').max(5, 'Rating cannot exceed 5'),

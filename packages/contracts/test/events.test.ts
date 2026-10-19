@@ -48,4 +48,16 @@ describe('Event Contracts & Zod Schema Validation', () => {
     expect(EventTopics.PAYMENT_EVENTS).toBe('urbanfleet.payment.events');
     expect(EventTopics.RIDE_DLQ).toBe('urbanfleet.ride.events.DLQ');
   });
+
+  it('should validate UserRegistered payload with firstName and lastName', async () => {
+    const { UserRegisteredPayloadSchema } = await import('../src/index.js');
+    const valid = {
+      userId: crypto.randomUUID(),
+      email: 'user@urbanfleet.com',
+      firstName: 'John',
+      lastName: 'Doe',
+      role: 'RIDER',
+    };
+    expect(() => UserRegisteredPayloadSchema.parse(valid)).not.toThrow();
+  });
 });

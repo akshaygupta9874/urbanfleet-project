@@ -9,19 +9,19 @@ export class RideSocketClient {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectDelay = 30000;
-  private heartbeatTimer: any = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private isExplicitlyClosed = false;
 
   private gatewayUrl: string;
   private token: string;
   private onStateRehydrate: () => Promise<void>;
-  private onMessage: (event: string, data: any) => void;
+  private onMessage: (event: string, data: unknown) => void;
 
   constructor(
     gatewayUrl: string, // E.g., 'ws://localhost:3001/ws/ride'
     token: string,
     onStateRehydrate: () => Promise<void>,
-    onMessage: (event: string, data: any) => void
+    onMessage: (event: string, data: unknown) => void
   ) {
     this.gatewayUrl = gatewayUrl;
     this.token = token;
@@ -52,12 +52,12 @@ export class RideSocketClient {
         const payload = JSON.parse(event.data);
         if (payload.type === 'pong') return;
         this.onMessage(payload.event, payload.data);
-      } catch (e) {
+      } catch {
         console.warn('[WS] Non-JSON payload received:', event.data);
       }
     };
 
-    this.ws.onclose = (_event: CloseEvent) => {
+    this.ws.onclose = () => {
       this.stopHeartbeat();
       if (!this.isExplicitlyClosed) {
         this.scheduleReconnect();
@@ -89,7 +89,7 @@ export class RideSocketClient {
     setTimeout(() => this.connect(), delay);
   }
 
-  public send(event: string, data: any): void {
+  public send(event: string, data: unknown): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ event, data }));
     } else {

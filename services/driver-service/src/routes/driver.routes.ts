@@ -5,12 +5,16 @@ import {
   updateProfileSchema,
   updateStatusSchema,
   uploadDocumentSchema,
+  uuidParamSchema,
 } from '../validation/driver.validation.js';
 import { uploadDriverDocuments, uploadSingleImage } from '../middlewares/driver-upload.middleware.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 export function createDriverRouter(controller: DriverController): Router {
   const router = Router();
+
+  // Public Health Check Endpoint
+  router.get('/health', (_req, res) => res.status(200).json({ status: 'UP', service: 'driver-service' }));
 
   // Driver Registration (supports both multipart form with Cloudinary image uploads and direct JSON)
   router.post('/register', uploadDriverDocuments, authMiddleware, controller.registerDriver);
@@ -32,7 +36,7 @@ export function createDriverRouter(controller: DriverController): Router {
   router.post('/availability', authMiddleware, validateRequest({ body: updateStatusSchema }), controller.toggleAvailability);
   router.get('/earnings', authMiddleware, controller.getEarnings);
   router.get('/by-user/:userId', controller.getDriverByUserId);
-  router.get('/:id', controller.getDriverById);
+  router.get('/:id', validateRequest({ params: uuidParamSchema }), controller.getDriverById);
 
   return router;
 }

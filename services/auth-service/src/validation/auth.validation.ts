@@ -1,37 +1,17 @@
 import { z } from 'zod';
 
-export const registerSchema = z
-  .object({
-    firstName: z.string().min(2, 'First name must be at least 2 characters').max(50).optional(),
-    lastName: z.string().min(2, 'Last name must be at least 2 characters').max(50).optional(),
-    fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100).optional(),
-    email: z.string().email('Invalid email address format'),
-    password: z
-      .string()
-      .min(8, 'Password must be at least 8 characters long')
-      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-      .regex(/[0-9]/, 'Password must contain at least one number'),
-    role: z.enum(['RIDER', 'DRIVER', 'ADMIN']).optional(),
-    roles: z.array(z.enum(['RIDER', 'DRIVER', 'ADMIN'])).optional().default(['RIDER']),
-  })
-  .superRefine((data, ctx) => {
-    if (!data.fullName && (!data.firstName || !data.lastName)) {
-      if (!data.firstName) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'First name is required',
-          path: ['firstName'],
-        });
-      }
-      if (!data.lastName) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Last name is required',
-          path: ['lastName'],
-        });
-      }
-    }
-  });
+export const registerSchema = z.object({
+  firstName: z.string().min(2, 'First name must be at least 2 characters').max(50),
+  lastName: z.string().min(1, 'Last name must be at least 1 character').max(50),
+  email: z.string().email('Invalid email address format'),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters long')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
+  role: z.enum(['RIDER', 'DRIVER', 'ADMIN']).optional(),
+  roles: z.array(z.enum(['RIDER', 'DRIVER', 'ADMIN'])).optional().default(['RIDER']),
+});
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address format'),
@@ -111,5 +91,9 @@ export const changePasswordSchema = z.object({
 
 export const resendVerificationSchema = z.object({
   email: z.string().email('Invalid email address format'),
+});
+
+export const googleAuthSchema = z.object({
+  credential: z.string().min(10, 'A valid Google credential token is required'),
 });
 

@@ -4,7 +4,7 @@ import { UserService } from '../services/user.service.js';
 import { TwoFactorService } from '../services/two-factor.service.js';
 import { getCookieOptions, getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
 import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from '../middlewares/csrf.middleware.js';
-import { UnauthorizedError, BadRequestError, AuthenticatedRequest } from '@urbanfleet/common';
+import { UnauthorizedError, BadRequestError, ForbiddenError, AuthenticatedRequest } from '@urbanfleet/common';
 import asyncHandler from '../middlewares/asyncHandler.js';
 
 export class AuthController {
@@ -110,7 +110,43 @@ export class AuthController {
     });
   });
 
+  googleAuth = asyncHandler(async (req: Request, res: Response) => {
+    const { credential } = req.body;
+    const result = await this.authService.googleAuth(
+      credential,
+      req.ip,
+      req.headers['user-agent']
+    );
+
+    // 1. Set httpOnly refresh cookie
+    if (result.refreshToken) {
+      res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+    }
+
+    // 2. Set CSRF cookie
+    const csrfToken = await generateCSRFToken(result.user.id, res);
+
+    res.status(200).json({
+      success: true,
+      message: 'Signed in with Google successfully.',
+      data: {
+        user: result.user,
+        accessToken: result.accessToken,
+        csrfToken,
+        tokens: {
+          accessToken: result.accessToken,
+        },
+      },
+      tokens: {
+        accessToken: result.accessToken,
+      },
+      user: result.user,
+      accessToken: result.accessToken,
+    });
+  });
+
   login2FA = asyncHandler(async (req: Request, res: Response) => {
+
     let user: any = null;
 
     if (req.body.challengeToken) {
@@ -136,7 +172,7 @@ export class AuthController {
       // Backward compatibility for legacy test callers
       const isValid = await this.twoFactorService.verifyToken(
         req.body.userId,
-        req.body.token || req.body.otp
+        req.body.code || req.body.token || req.body.otp
       );
       if (!isValid) return res.status(401).json({ success: false, message: 'Invalid 2FA code' });
       user = await this.userService.getUserById(req.body.userId);
@@ -277,7 +313,22 @@ export class AuthController {
   });
 
   getUserById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const profile = await this.userService.getUserById(req.params.id);
+    const callerId = req.user?.userId || req.user?.id || req.userId;
+    const targetId = req.params.id;
+
+    if (!callerId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+
+    const roles: string[] = req.role || req.user?.roles || (req.user?.role ? [req.user.role] : []);
+    const isPrivileged = roles.includes('ADMIN') || callerId === 'internal-service';
+    const isSelf = callerId === targetId;
+
+    if (!isPrivileged && !isSelf) {
+      throw new ForbiddenError('You are not authorized to view another user profile');
+    }
+
+    const profile = await this.userService.getUserById(targetId);
     res.status(200).json({ success: true, data: profile });
   });
 

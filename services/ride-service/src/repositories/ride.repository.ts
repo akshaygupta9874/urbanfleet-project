@@ -3,8 +3,9 @@ import { PrismaClient, Ride } from '../db/client.js';
 export class RideRepository {
   constructor(private prisma: PrismaClient) {}
 
-  async findById(id: string): Promise<Ride | null> {
-    return this.prisma.ride.findUnique({ where: { id }, include: { ratings: true } });
+  async findById(id: string, tx?: any): Promise<Ride | null> {
+    const client = tx || this.prisma;
+    return client.ride.findUnique({ where: { id }, include: { ratings: true } });
   }
 
   async findActiveRide(riderId: string): Promise<Ride | null> {
@@ -43,8 +44,9 @@ export class RideRepository {
     });
   }
 
-  async create(data: any): Promise<Ride> {
-    return this.prisma.ride.create({ data });
+  async create(data: any, tx?: any): Promise<Ride> {
+    const client = tx || this.prisma;
+    return client.ride.create({ data });
   }
 
   async update(id: string, data: any, tx?: any): Promise<Ride> {

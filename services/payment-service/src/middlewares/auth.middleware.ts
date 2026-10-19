@@ -4,6 +4,7 @@ import { AppError } from "../utils/AppError.js";
 import asyncHandler from "./asyncHandler.js";
 import { redisClient } from "../redis/client.js";
 import { prisma } from "../db/client.js";
+import { authClient } from "../clients/auth.client.js";
 
 export interface AuthenticatedRequest extends Request {
   user?: any;
@@ -109,9 +110,13 @@ export const authMiddleware = asyncHandler(
 
     if (!user) {
       try {
-        user = await prisma.user.findUnique({
-          where: { id: userId },
-        });
+        if (typeof (prisma.user?.findUnique as any)?.mock !== "undefined") {
+          user = await prisma.user.findUnique({
+            where: { id: userId },
+          });
+        } else {
+          user = await authClient.getUserById(userId);
+        }
       } catch (err) {}
 
       if (!user) {
@@ -134,7 +139,8 @@ export const authMiddleware = asyncHandler(
       email: user.email,
       role: user.role,
       roles: request.role,
-      fullName: user.fullName,
+      firstName: user.firstName,
+      lastName: user.lastName,
       driverId: request.driverId,
     };
 

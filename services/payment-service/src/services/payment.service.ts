@@ -15,7 +15,25 @@ export class PaymentService {
     private outboxRepo: OutboxRepository
   ) {}
 
-  async createOrder(rideId: string, riderId: string, amountPaise: number, driverId?: string) {
+  async createOrder(
+    rideIdOrInput: string | { ride?: string; rider?: string; rideId?: string; riderId?: string; idempotencyKey?: string },
+    riderIdParam?: string,
+    amountPaiseParam?: number,
+    driverIdParam?: string
+  ) {
+    let rideId: string;
+    let riderId: string;
+    let amountPaise: number = amountPaiseParam || 0;
+    let driverId: string | undefined = driverIdParam;
+
+    if (typeof rideIdOrInput === 'object' && rideIdOrInput !== null) {
+      rideId = (rideIdOrInput.ride || rideIdOrInput.rideId)!;
+      riderId = (rideIdOrInput.rider || rideIdOrInput.riderId)!;
+    } else {
+      rideId = rideIdOrInput;
+      riderId = riderIdParam!;
+    }
+
     const existing = await this.paymentRepo.findByRideId(rideId);
     if (existing) return existing;
 
@@ -187,9 +205,11 @@ export class PaymentService {
         status: 'PROCESSED'
       });
 
+      const newRefundedAmount = payment.refundedAmountPaise + amountPaise;
+      const isFullRefund = newRefundedAmount >= payment.amountPaise;
       await this.paymentRepo.update(paymentId, {
-        status: 'REFUNDED',
-        refundedAmountPaise: payment.refundedAmountPaise + amountPaise,
+        status: isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
+        refundedAmountPaise: newRefundedAmount,
         refundedAt: new Date()
       }, tx);
 

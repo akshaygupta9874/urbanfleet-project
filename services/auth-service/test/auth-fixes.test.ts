@@ -7,8 +7,9 @@ import { TwoFactorService } from '../src/services/two-factor.service.js';
 import { AuthController } from '../src/controllers/auth.controller.js';
 import { createAuthRouter } from '../src/routes/auth.routes.js';
 import { authRedisClient } from '../src/redis/client.js';
-import { signRefreshToken, initAsymmetricKeys } from '../src/crypto/keys.js';
+import { signAccessToken, signRefreshToken, initAsymmetricKeys } from '../src/crypto/keys.js';
 import { authMiddleware } from '../src/middlewares/auth.middleware.js';
+import { authenticator } from 'otplib';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -89,7 +90,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
   });
 
   // Issue 1: Registration parameter normalization
-  it('Issue 1: Successfully registers with firstName & lastName, computing fullName and roles array', async () => {
+  it('Issue 1: Successfully registers with firstName & lastName and roles array', async () => {
     mockUserRepo.findByEmail.mockResolvedValue(null);
 
     const res = await fetch(`${baseUrl}/register`, {
@@ -108,7 +109,8 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     expect(res.status).toBe(201);
     expect(body.success).toBe(true);
     expect(mockUserRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      fullName: 'Jane Doe',
+      firstName: 'Jane',
+      lastName: 'Doe',
       role: 'RIDER',
     }));
   });
@@ -118,7 +120,8 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     mockUserRepo.findById.mockResolvedValue({
       id: 'usr-sensitive',
       email: 'sensitive@urbanfleet.com',
-      fullName: 'Sensitive User',
+      firstName: 'Sensitive',
+      lastName: 'User',
       passwordHash: 'secret_hash',
       twoFactorSecret: 'active_secret',
       twoFactorPendingSecret: 'pending_secret',
@@ -307,7 +310,8 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     await authService.register({
       email: 'outbox.user@urbanfleet.com',
       password: 'Password123!',
-      fullName: 'Outbox User',
+      firstName: 'Outbox',
+      lastName: 'User',
     });
 
     expect(mockOutboxRepo.stageEvent).toHaveBeenCalledWith(null, expect.objectContaining({
@@ -369,4 +373,347 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     }));
     expect(next).not.toHaveBeenCalled();
   });
+
+  // Issue 16: Google Authentication
+  describe('Issue 16: Google Auth endpoint POST /google', () => {
+    const originalFetch = globalThis.fetch;
+
+    it('rejects request when credential is missing or too short', async () => {
+      const res = await originalFetch(`${baseUrl}/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: 'abc' }),
+      });
+
+      expect(res.status).toBe(422);
+    });
+
+    it('rejects request when Google token verification fails', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
+        const urlStr = typeof url === 'string' ? url : url.url;
+        if (urlStr && urlStr.includes('tokeninfo')) {
+          return new Response(JSON.stringify({ error: 'invalid_token' }), { status: 400 });
+        }
+        return originalFetch(url, init);
+      });
+
+      const res = await originalFetch(`${baseUrl}/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: 'invalid_google_credential_token' }),
+      });
+
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.error).toMatch(/Google could not verify/);
+      fetchSpy.mockRestore();
+    });
+
+    it('creates new user and signs in successfully with verified Google token', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
+        const urlStr = typeof url === 'string' ? url : url.url;
+        if (urlStr && urlStr.includes('tokeninfo')) {
+          return new Response(
+            JSON.stringify({
+              sub: 'google-sub-12345',
+              email: 'newgoogleuser@example.com',
+              email_verified: true,
+              name: 'Google Traveler',
+              picture: 'https://example.com/avatar.jpg',
+              aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return originalFetch(url, init);
+      });
+
+      mockUserRepo.findByEmail.mockResolvedValue(null);
+      mockUserRepo.create.mockImplementation(async (data: any) => ({
+        id: 'usr-google-1',
+        ...data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-google-1' });
+
+      const res = await originalFetch(`${baseUrl}/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: 'valid_google_credential_token_12345' }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.accessToken).toBeDefined();
+      expect(body.user.email).toBe('newgoogleuser@example.com');
+      expect(body.user.firstName).toBe('Google');
+      expect(body.user.lastName).toBe('Traveler');
+      expect(mockUserRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'newgoogleuser@example.com',
+          isEmailVerified: true,
+          role: 'RIDER',
+        })
+      );
+      fetchSpy.mockRestore();
+    });
+
+    it('logs in existing user successfully when authenticated with Google', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
+        const urlStr = typeof url === 'string' ? url : url.url;
+        if (urlStr && urlStr.includes('tokeninfo')) {
+          return new Response(
+            JSON.stringify({
+              sub: 'google-sub-99999',
+              email: 'existinguser@example.com',
+              email_verified: 'true',
+              name: 'Existing Rider',
+              aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return originalFetch(url, init);
+      });
+
+      mockUserRepo.findByEmail.mockResolvedValue({
+        id: 'usr-existing-1',
+        email: 'existinguser@example.com',
+        firstName: 'Existing',
+        lastName: 'Rider',
+        role: 'RIDER',
+        isEmailVerified: true,
+      });
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-existing-1' });
+
+      const res = await originalFetch(`${baseUrl}/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: 'valid_google_credential_token_existing' }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.user.email).toBe('existinguser@example.com');
+      expect(mockUserRepo.create).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe('Issue 17: Cross-User Profile Access Restrictions (GET /users/:id)', () => {
+    const userA = {
+      id: '00000000-0000-0000-0000-000000000001',
+      email: 'usera@example.com',
+      firstName: 'User',
+      lastName: 'A',
+      role: 'RIDER',
+      isEmailVerified: true,
+    };
+    const userB = {
+      id: '00000000-0000-0000-0000-000000000002',
+      email: 'userb@example.com',
+      firstName: 'User',
+      lastName: 'B',
+      role: 'RIDER',
+      isEmailVerified: true,
+    };
+
+    it('rejects cross-user profile access for non-admin user with 403 Forbidden', async () => {
+      mockUserRepo.findById.mockResolvedValue(userB);
+
+      const tokenA = signAccessToken({
+        userId: userA.id,
+        email: userA.email,
+        role: 'RIDER',
+      });
+
+      const res = await fetch(`${baseUrl}/users/${userB.id}`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${tokenA}` },
+      });
+
+      expect(res.status).toBe(403);
+      const body = await res.json() as any;
+      expect(body.code).toBe('FORBIDDEN');
+    });
+
+    it('allows a user to view their own profile via GET /users/:id', async () => {
+      mockUserRepo.findById.mockResolvedValue(userA);
+
+      const tokenA = signAccessToken({
+        userId: userA.id,
+        email: userA.email,
+        role: 'RIDER',
+      });
+
+      const res = await fetch(`${baseUrl}/users/${userA.id}`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${tokenA}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data.id).toBe(userA.id);
+    });
+
+    it('allows an ADMIN user to view any user profile', async () => {
+      mockUserRepo.findById.mockResolvedValue(userB);
+
+      const adminToken = signAccessToken({
+        userId: 'admin-uuid-1',
+        email: 'admin@urbanfleet.com',
+        role: 'ADMIN',
+      });
+
+      const res = await fetch(`${baseUrl}/users/${userB.id}`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data.id).toBe(userB.id);
+    });
+
+    it('allows internal services to query user profile with valid x-internal-service-key', async () => {
+      mockUserRepo.findById.mockResolvedValue(userB);
+
+      const res = await fetch(`${baseUrl}/users/${userB.id}`, {
+        method: 'GET',
+        headers: {
+          'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '9fef5ba5e9688b75efee1781b80dad81703c29df93181ab9c474532c3281dd99',
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data.id).toBe(userB.id);
+    });
+  });
+
+  describe('Issue 18: 2FA Login & Setup Flow (POST /verify-otp)', () => {
+    it('activates 2FA and completes login when userId is provided with pending 2FA setup', async () => {
+      const secret = authenticator.generateSecret();
+      const code = authenticator.generate(secret);
+
+      const pendingAdmin = {
+        id: 'admin-setup-1',
+        email: 'admin-setup@urbanfleet.com',
+        role: 'ADMIN',
+        roles: ['ADMIN'],
+        twoFactorEnabled: false,
+        twoFactorPendingSecret: secret,
+        twoFactorSetupRequestedAt: new Date(),
+      };
+
+      mockUserRepo.findById.mockResolvedValue(pendingAdmin);
+      mockUserRepo.update.mockImplementation(async (id: string, updates: any) => {
+        Object.assign(pendingAdmin, updates);
+        return pendingAdmin;
+      });
+
+      const res = await fetch(`${baseUrl}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: 'admin-setup-1',
+          code,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.accessToken).toBeDefined();
+      expect(body.data.user.id).toBe('admin-setup-1');
+
+      // Verify that 2FA was enabled and pending secret promoted
+      expect(mockUserRepo.update).toHaveBeenCalledWith(
+        'admin-setup-1',
+        expect.objectContaining({
+          twoFactorEnabled: true,
+          twoFactorSecret: secret,
+          twoFactorPendingSecret: null,
+        })
+      );
+    });
+
+    it('rejects invalid OTP when completing 2FA setup with 401', async () => {
+      const secret = authenticator.generateSecret();
+      const pendingAdmin = {
+        id: 'admin-setup-2',
+        email: 'admin-setup2@urbanfleet.com',
+        role: 'ADMIN',
+        roles: ['ADMIN'],
+        twoFactorEnabled: false,
+        twoFactorPendingSecret: secret,
+        twoFactorSetupRequestedAt: new Date(),
+      };
+
+      mockUserRepo.findById.mockResolvedValue(pendingAdmin);
+
+      const res = await fetch(`${baseUrl}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: 'admin-setup-2',
+          code: '000000',
+        }),
+      });
+
+      expect(res.status).toBe(401);
+      const body = await res.json() as any;
+      expect(body.success).toBe(false);
+    });
+
+    it('completes login when valid challengeToken is provided to /verify-otp', async () => {
+      const activeUser = {
+        id: 'user-2fa-1',
+        email: 'user2fa@urbanfleet.com',
+        role: 'RIDER',
+        roles: ['RIDER'],
+        twoFactorEnabled: true,
+      };
+
+      vi.spyOn(twoFactorService, 'verifyLoginChallenge').mockResolvedValue(activeUser);
+
+      const res = await fetch(`${baseUrl}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeToken: 'valid-challenge-token-123',
+          code: '123456',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.accessToken).toBeDefined();
+      expect(body.data.user.id).toBe('user-2fa-1');
+      expect(twoFactorService.verifyLoginChallenge).toHaveBeenCalledWith(
+        'valid-challenge-token-123',
+        '123456',
+        expect.anything()
+      );
+    });
+  });
+
+  describe('Auth Service Health Check', () => {
+    it('returns UP with status and service name', async () => {
+      const res = await fetch(`${baseUrl}/health`);
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.status).toBe('UP');
+      expect(data.service).toBe('auth-service');
+    });
+  });
 });
+
+

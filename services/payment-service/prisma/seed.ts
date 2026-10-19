@@ -1,17 +1,41 @@
-import { PrismaClient, PaymentStatus, LedgerAccount, LedgerEntryType } from '../src/db/client.js';
 import crypto from 'crypto';
 
-const prisma = new PrismaClient();
+let prisma: any;
+let pool: any;
+
+async function getClient() {
+  try {
+    return await import('../dist/db/client.js');
+  } catch {
+    return await import('../src/db/client.js');
+  }
+}
+
 const DEMO_RIDER_ID = '11111111-1111-1111-1111-111111111111';
 const DEMO_DRIVER_PROFILE_ID = '44444444-4444-4444-4444-444444444444';
+const DEMO_RIDE_ID = '33333333-3333-3333-3333-333333333333';
 
 async function main() {
   console.log('🌱 Seeding urbanfleet_payment database...');
+  const clientMod = await getClient();
+  prisma = clientMod.prisma;
+  pool = clientMod.pool;
+  const PaymentStatus = clientMod.PaymentStatus;
+  const LedgerAccount = clientMod.LedgerAccount;
+  const LedgerEntryType = clientMod.LedgerEntryType;
 
-  const rideId = crypto.randomUUID();
+  const existing = await prisma.payment.findFirst({
+    where: { rideId: DEMO_RIDE_ID }
+  });
+
+  if (existing) {
+    console.log(`ℹ️ Seed payment for ride ${DEMO_RIDE_ID} already exists: ${existing.id}`);
+    return;
+  }
+
   const payment = await prisma.payment.create({
     data: {
-      rideId,
+      rideId: DEMO_RIDE_ID,
       riderId: DEMO_RIDER_ID,
       driverId: DEMO_DRIVER_PROFILE_ID,
       amountPaise: 14750,
@@ -66,4 +90,12 @@ async function main() {
   console.log(`✅ Upserted Demo Payment: ${payment.id} with balanced double-entry ledger entries!`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); }).finally(async () => { await prisma.$disconnect(); });
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    if (prisma) await prisma.$disconnect();
+    if (pool) await pool.end();
+  });

@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
+import crypto from 'crypto';
 import { AppError } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
 
@@ -21,6 +22,22 @@ export interface AuthPayload extends JwtPayload {
 export const authMiddleware = asyncHandler(
   async (request: AuthenticatedRequest, response: Response, next: NextFunction) => {
     if (request.userId && request.user) {
+      return next();
+    }
+
+    // Allow internal service communication (strictly requiring configured key)
+    const internalKey = request.headers['x-internal-service-key'];
+    const expectedKey = process.env.INTERNAL_SERVICE_KEY;
+    if (
+      expectedKey &&
+      internalKey &&
+      typeof internalKey === 'string' &&
+      internalKey.length === expectedKey.length &&
+      crypto.timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
+    ) {
+      request.userId = 'internal-service';
+      request.role = ['ADMIN'];
+      request.user = { id: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
       return next();
     }
 

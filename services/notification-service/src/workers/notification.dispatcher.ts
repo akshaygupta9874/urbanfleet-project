@@ -80,4 +80,8 @@ export class NotificationDispatcher {
   stop() {
     this.isRunning = false;
   }
+
+  isHealthy(): boolean {
+    return this.isRunning;
+  }
 }

@@ -538,8 +538,17 @@ export class TwoFactorService {
    */
   async verifyToken(userId: string, token: string): Promise<boolean> {
     const user = await this.userRepo.findById(userId);
-    const secret = user?.twoFactorSecret || user?.twoFactorPendingSecret;
-    if (!user || !secret) return false;
+    if (!user) return false;
+    if (user.twoFactorPendingSecret && !user.twoFactorEnabled) {
+      try {
+        await this.verifyAndEnable(userId, token);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    const secret = user?.twoFactorSecret;
+    if (!secret) return false;
     return authenticator.verify({ token: token.trim(), secret });
   }
 }

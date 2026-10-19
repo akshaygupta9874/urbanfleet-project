@@ -17,7 +17,7 @@ import { AdminController } from './controllers/admin.controller.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { createAdminRouter } from './routes/admin.routes.js';
 
-import { initAuthRedis } from './redis/client.js';
+import { initAuthRedis, authRedisClient } from './redis/client.js';
 import { OutboxRepository } from './repositories/outbox.repository.js';
 import { OutboxWorker } from './workers/outbox.worker.js';
 
@@ -55,17 +55,54 @@ const adminService = new AdminService(userRepo);
 const authController = new AuthController(authService, userService, twoFactorService);
 const adminController = new AdminController(adminService);
 
+// Health check endpoint (mounted before router)
+const healthHandler = async (_req: express.Request, res: express.Response) => {
+  let dbStatus = 'DOWN';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'UP';
+  } catch {
+    dbStatus = 'DOWN';
+  }
+
+  let redisStatus = 'DOWN';
+  try {
+    if (authRedisClient.isOpen) {
+      await authRedisClient.ping();
+      redisStatus = 'UP';
+    } else {
+      redisStatus = process.env.NODE_ENV !== 'production' ? 'SKIPPED' : 'DOWN';
+    }
+  } catch {
+    redisStatus = 'DOWN';
+  }
+
+  const isHealthy = dbStatus === 'UP' && (redisStatus === 'UP' || redisStatus === 'SKIPPED');
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'UP' : 'DOWN',
+    service: 'auth-service',
+    dependencies: {
+      database: dbStatus,
+      redis: redisStatus,
+      outbox: outboxWorker.isHealthy() ? 'UP' : 'DOWN'
+    }
+  });
+};
+
+app.get('/health', healthHandler);
+app.get('/v1/auth/health', healthHandler);
+app.get('/api/auth/health', healthHandler);
+
 // 4. Mounting Routes
 const authRouter = createAuthRouter(authController);
 const adminRouter = createAdminRouter(adminController);
 
+app.use('/auth', authRouter);
+app.use('/admin', adminRouter);
 app.use('/api/auth', authRouter);
 app.use('/v1/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/v1/admin', adminRouter);
-
-// Health check endpoint
-app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'auth-service' }));
 
 // 5. Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: NextFunction) => {
@@ -81,6 +118,28 @@ app.use((err: any, req: express.Request, res: express.Response, next: NextFuncti
   res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Internal server error' });
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   logger.info(`Auth Service running internally on port ${port}`);
 });
+
+// Graceful shutdown handling
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`Received ${signal}. Shutting down Auth Service gracefully...`);
+  outboxWorker.stop();
+  server.close(async () => {
+    try {
+      if (authRedisClient.isOpen) {
+        await authRedisClient.disconnect();
+      }
+      await prisma.$disconnect();
+      logger.info('Auth Service shut down cleanly.');
+      process.exit(0);
+    } catch (err) {
+      logger.error('Error during graceful shutdown:', err);
+      process.exit(1);
+    }
+  });
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

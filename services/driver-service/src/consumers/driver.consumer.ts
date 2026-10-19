@@ -73,14 +73,18 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
               }
             });
             if (profile) {
+              const driverEarningPaise = payload.driverEarningPaise !== undefined
+                ? BigInt(payload.driverEarningPaise)
+                : (BigInt(payload.totalFarePaise) - BigInt(Math.round(payload.totalFarePaise * 0.10)));
+
               await tx.driverProfile.update({
                 where: { id: profile.id },
                 data: {
                   totalTrips: { increment: 1 },
-                  totalEarningsPaise: { increment: BigInt(payload.totalFarePaise) }
+                  totalEarningsPaise: { increment: driverEarningPaise }
                 }
               });
-              logger.info(`Incremented trips and earnings for driver profile ${profile.id}`);
+              logger.info(`Incremented trips and earnings for driver profile ${profile.id} by ${driverEarningPaise} paise`);
             } else {
               logger.warn(`Could not find driver profile for driverId ${payload.driverId} on RIDE_COMPLETED event`);
             }

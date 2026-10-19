@@ -89,11 +89,8 @@ export const getCookieValue = (name: string) => {
 
 const attachAuthInterceptors = (instance: AxiosInstance) => {
   instance.interceptors.request.use((config) => {
-    config.headers = config.headers || ({} as any);
-
     if (accessToken) {
-      (config.headers as Record<string, string>).Authorization =
-        `Bearer ${accessToken}`;
+      config.headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
     const csrfToken = getCookieValue("csrfToken");
@@ -105,8 +102,7 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
         config.method.toLowerCase()
       )
     ) {
-      (config.headers as Record<string, string>)["x-csrf-token"] =
-        csrfToken;
+      config.headers.set("x-csrf-token", csrfToken);
     }
 
     return config;
@@ -118,14 +114,25 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
     async (error: AxiosError) => {
       const originalRequest = error.config as RetryableRequestConfig;
 
-      const shouldSkipRefresh =
-        originalRequest.skipRefresh ||
-        originalRequest.url?.includes("/refresh") ||
-        originalRequest.url?.includes("/logout");
+      const url = originalRequest?.url || "";
+      const isAuthEndpoint =
+        url.includes("/login") ||
+        url.includes("/register") ||
+        url.includes("/google") ||
+        url.includes("/verify") ||
+        url.includes("/verify-otp") ||
+        url.includes("/refresh") ||
+        url.includes("/logout") ||
+        url.includes("/forgot-password") ||
+        url.includes("/reset-password");
 
-      // Don't try to refresh for logout or refresh requests themselves.
+      const shouldSkipRefresh = originalRequest.skipRefresh || isAuthEndpoint;
+
+      // Don't try to refresh for auth endpoints, logout or refresh requests themselves.
       if (shouldSkipRefresh) {
-        clearAccessToken();
+        if (url.includes("/logout") || url.includes("/refresh")) {
+          clearAccessToken();
+        }
         return Promise.reject(error);
       }
 

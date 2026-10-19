@@ -9,6 +9,8 @@ services:
     routes:
       - name: auth-routes
         paths:
+          - /auth
+          - /admin
           - /api/auth
           - /v1/auth
           - /api/admin
@@ -31,6 +33,8 @@ services:
     routes:
       - name: driver-routes
         paths:
+          - /driver
+          - /drivers
           - /api/driver
           - /api/drivers
           - /v1/driver
@@ -48,6 +52,8 @@ services:
     routes:
       - name: ride-routes
         paths:
+          - /ride
+          - /rides
           - /api/ride
           - /api/rides
           - /v1/ride
@@ -66,6 +72,8 @@ services:
       - name: ride-websocket-route
         paths:
           - /ws/ride
+          - /ws
+          - /socket
         strip_path: false
         protocols:
           - http
@@ -79,6 +87,9 @@ services:
     routes:
       - name: payment-routes
         paths:
+          - /payment
+          - /payments
+          - /webhooks
           - /api/payment
           - /api/payments
           - /v1/payment
@@ -98,6 +109,7 @@ services:
     routes:
       - name: notification-routes
         paths:
+          - /notifications
           - /api/notifications
           - /v1/notifications
         strip_path: false

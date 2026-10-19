@@ -3,21 +3,24 @@ import { createRoot } from 'react-dom/client'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import './index.css'
 import { BrowserRouter, Routes, Route } from "react-router-dom"
-import LoginPage from './Login.tsx'
-import FinalLandingPage from './FinalLandingPage.tsx'
-import SignupPage from './Signup.tsx'
-import VerifyEmail from './VerifyEmail.tsx'
-import Dashboard from './Dashboard.tsx'
-import ForgotPasswordPage from './ForgotPassword.tsx'
-import ResetPasswordPage from './ResetPassword.tsx'
-import RideHistory from './RideHistory.tsx'
-import DriverRegistration from './DriverRegistration.tsx'
-import DriverDashboard from './DriverDashboard.tsx'
+import { lazy, Suspense } from 'react'
+import LoadingScreen from './components/LoadingScreen.tsx'
 export { default as LoadingScreen } from './components/LoadingScreen.tsx'
 import { AuthContextProvider } from './context/authContext.tsx'
 import { ProtectedRoutes } from './components/ProtectedRoutes.tsx'
-import RideDetails from './RideDetails.tsx'
-import ChooseMode from './ChooseMode.tsx'
+
+const LoginPage = lazy(() => import('./Login.tsx'))
+const FinalLandingPage = lazy(() => import('./FinalLandingPage.tsx'))
+const SignupPage = lazy(() => import('./Signup.tsx'))
+const VerifyEmail = lazy(() => import('./VerifyEmail.tsx'))
+const Dashboard = lazy(() => import('./Dashboard.tsx'))
+const ForgotPasswordPage = lazy(() => import('./ForgotPassword.tsx'))
+const ResetPasswordPage = lazy(() => import('./ResetPassword.tsx'))
+const RideHistory = lazy(() => import('./RideHistory.tsx'))
+const DriverRegistration = lazy(() => import('./DriverRegistration.tsx'))
+const DriverDashboard = lazy(() => import('./DriverDashboard.tsx'))
+const RideDetails = lazy(() => import('./RideDetails.tsx'))
+const ChooseMode = lazy(() => import('./ChooseMode.tsx'))
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
@@ -25,6 +28,7 @@ createRoot(document.getElementById('root')!).render(
   <GoogleOAuthProvider clientId={googleClientId ?? ""}>
   <BrowserRouter>
     <AuthContextProvider>
+     <Suspense fallback={<LoadingScreen />}>
      <Routes>
 
   <Route path="/" element={<FinalLandingPage />} />
@@ -48,6 +52,7 @@ createRoot(document.getElementById('root')!).render(
     <Route path="/driver-dashboard" element={<DriverDashboard />} />
   </Route>
 </Routes>
+     </Suspense>
     </AuthContextProvider>
   </BrowserRouter>
   </GoogleOAuthProvider>

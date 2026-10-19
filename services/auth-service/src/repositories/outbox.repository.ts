@@ -39,14 +39,20 @@ export class OutboxRepository {
           WHERE status = 'PROCESSING'
             AND lease_expires_at > NOW()
         ),
-        eligible_events AS (
-          SELECT DISTINCT ON (partition_key) id
+        locked_candidates AS (
+          SELECT id, partition_key, aggregate_sequence
           FROM outbox_events
           WHERE (status = 'PENDING' OR (status = 'PROCESSING' AND lease_expires_at < NOW()))
             AND partition_key NOT IN (SELECT partition_key FROM active_partitions)
             AND retry_count < 5
           ORDER BY partition_key, aggregate_sequence ASC
           LIMIT ${limit}
+          FOR UPDATE SKIP LOCKED
+        ),
+        eligible_events AS (
+          SELECT DISTINCT ON (partition_key) id
+          FROM locked_candidates
+          ORDER BY partition_key, aggregate_sequence ASC
         )
         UPDATE outbox_events
         SET status = 'PROCESSING',
@@ -59,8 +65,36 @@ export class OutboxRepository {
       return rows || [];
     } catch (err) {
       // Fallback if raw query fails or is mocked in unit tests
-      return this.getPendingEvents(limit);
+      return this.claimPendingEventsFallback(workerId, limit);
     }
+  }
+
+  async claimPendingEventsFallback(workerId: string, limit = 20): Promise<OutboxEvent[]> {
+    const candidates = await this.getPendingEvents(limit);
+    if (!candidates || candidates.length === 0) return [];
+
+    const claimed: OutboxEvent[] = [];
+    const now = new Date();
+    const leaseExpires = new Date(now.getTime() + 30000);
+
+    for (const c of candidates) {
+      try {
+        const updated = await this.prisma.outboxEvent.update({
+          where: { id: c.id },
+          data: {
+            status: 'PROCESSING',
+            lockedAt: now,
+            lockedBy: workerId,
+            leaseExpiresAt: leaseExpires,
+          },
+        });
+        claimed.push(updated);
+      } catch {
+        // Already claimed or modified concurrently - skip
+      }
+    }
+
+    return claimed;
   }
 
   async getPendingEvents(limit = 20): Promise<OutboxEvent[]> {

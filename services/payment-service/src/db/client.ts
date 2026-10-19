@@ -47,17 +47,54 @@ export const prisma: PaymentPrismaClient = new PrismaClient({
 }) as any;
 
 (prisma as any).ride = (prisma as any).ride || {
-  findUnique: async () => null,
-  update: async () => null,
-  updateMany: async () => ({ count: 0 }),
+  findUnique: async (args: any) => {
+    const id = args?.where?.id;
+    if (!id) return null;
+    const { rideClient } = await import('../clients/ride.client.js');
+    return rideClient.getRideById(id);
+  },
+  update: async (args: any) => {
+    const id = args?.where?.id;
+    const { rideClient } = await import('../clients/ride.client.js');
+    if (id && args?.data?.paymentStatus) {
+      await rideClient.updatePaymentStatus(id, args.data.paymentStatus);
+    }
+    return id ? rideClient.getRideById(id) : null;
+  },
+  updateMany: async (args: any) => {
+    const id = args?.where?.id;
+    const { rideClient } = await import('../clients/ride.client.js');
+    if (id && args?.data?.paymentStatus) {
+      await rideClient.updatePaymentStatus(id, args.data.paymentStatus);
+      return { count: 1 };
+    }
+    return { count: 0 };
+  },
 };
 
 (prisma as any).user = (prisma as any).user || {
-  findUnique: async () => null,
+  findUnique: async (args: any) => {
+    const id = args?.where?.id;
+    if (!id) return null;
+    try {
+      const { redisClient } = await import('../redis/client.js');
+      if (redisClient.isOpen) {
+        const cached = await redisClient.get(`auth:user:${id}`);
+        if (cached) {
+          const u = JSON.parse(cached);
+          return { id: u.id || id, roles: u.roles || (u.role ? [u.role] : ['RIDER']) };
+        }
+      }
+    } catch {}
+    const { authClient } = await import('../clients/auth.client.js');
+    const u = await authClient.getUserById(id);
+    return u ? { id: u.id, roles: u.roles || (u.role ? [u.role] : ['RIDER']) } : null;
+  },
 };
 
-if (process.env.NODE_ENV === "test") {
-  prisma.$transaction = (async (arg: any) => {
+const originalTransaction = prisma.$transaction.bind(prisma);
+prisma.$transaction = (async (arg: any, options?: any) => {
+  if (process.env.NODE_ENV === "test") {
     if (typeof arg === "function") {
       return await arg(prisma);
     }
@@ -65,5 +102,13 @@ if (process.env.NODE_ENV === "test") {
       return await Promise.all(arg);
     }
     return arg;
-  }) as any;
-}
+  }
+  if (typeof arg === "function") {
+    return await originalTransaction(async (tx: any) => {
+      if (!tx.ride) tx.ride = (prisma as any).ride;
+      if (!tx.user) tx.user = (prisma as any).user;
+      return await arg(tx);
+    }, options);
+  }
+  return await originalTransaction(arg, options);
+}) as any;

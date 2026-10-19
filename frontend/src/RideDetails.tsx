@@ -60,6 +60,7 @@ interface FareBreakdown {
 }
 interface DriverInfo {
   _id: string;
+  id?: string;
   firstName?: string;
   lastName?: string;
   vehicleNumber?: string | null;
@@ -460,8 +461,9 @@ export default function RideDetails() {
       );
       currentRide = response.data.ride;
       setRide(currentRide);
-    } catch (err: any) {
-      const serverMsg = err?.response?.data?.message;
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      const serverMsg = axiosErr?.response?.data?.message;
       setError(serverMsg || "Unable to calculate the final fare. Please try again.");
       return;
     }
@@ -471,7 +473,7 @@ export default function RideDetails() {
       return;
     }
 
-    const driverId = currentRide.driver?._id || (currentRide.driver as any)?.id || (typeof currentRide.driver === "string" ? currentRide.driver : "");
+    const driverId = currentRide.driver?._id || currentRide.driver?.id || (typeof currentRide.driver === "string" ? currentRide.driver : "");
     if (!driverId) {
       setError("Driver information is unavailable.");
       return;

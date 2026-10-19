@@ -3,8 +3,9 @@ import { PrismaClient, Payout } from '../db/client.js';
 export class PayoutRepository {
   constructor(private prisma: PrismaClient) {}
 
-  async create(data: any): Promise<Payout> {
-    return this.prisma.payout.create({ data });
+  async create(data: any, tx?: any): Promise<Payout> {
+    const client = tx || this.prisma;
+    return client.payout.create({ data });
   }
 
   async findByDriverId(driverId: string): Promise<Payout[]> {

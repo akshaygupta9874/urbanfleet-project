@@ -23,6 +23,12 @@ export interface IFareBreakdown {
 export class FareService {
   normalizeCoords(point: any): { lat: number; lng: number } {
     if (!point) return { lat: 0, lng: 0 };
+    if (Array.isArray(point)) {
+      return { lat: Number(point[1] ?? 0), lng: Number(point[0] ?? 0) };
+    }
+    if (Array.isArray(point.coordinates)) {
+      return { lat: Number(point.coordinates[1] ?? 0), lng: Number(point.coordinates[0] ?? 0) };
+    }
     const lat = point.lat ?? point.latitude ?? point.coordinates?.lat ?? point.coordinates?.latitude ?? 0;
     const lng = point.lng ?? point.longitude ?? point.coordinates?.lng ?? point.coordinates?.longitude ?? 0;
     return { lat: Number(lat), lng: Number(lng) };

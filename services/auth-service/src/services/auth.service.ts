@@ -4,7 +4,7 @@ import { UserRepository } from '../repositories/user.repository.js';
 import { SessionRepository } from '../repositories/session.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
-import { ConflictError, UnauthorizedError, NotFoundError, createLogger } from '@urbanfleet/common';
+import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, createLogger } from '@urbanfleet/common';
 import { Role } from '../db/client.js';
 import { cacheTokens, revokeCachedTokens } from '../redis/token-cache.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
@@ -37,7 +37,6 @@ export class AuthService {
   async register(input: {
     email: string;
     password: string;
-    fullName?: string;
     firstName?: string;
     lastName?: string;
     phone?: string;
@@ -51,10 +50,8 @@ export class AuthService {
       throw new ConflictError('A user with this email address already exists');
     }
 
-    const fullName =
-      input.fullName ||
-      [input.firstName, input.lastName].filter(Boolean).join(' ').trim() ||
-      'User';
+    const firstName = input.firstName || 'User';
+    const lastName = input.lastName || '';
     const role =
       (input.role as Role) ||
       (input.roles && input.roles.length > 0 ? (input.roles[0] as Role) : undefined) ||
@@ -64,7 +61,8 @@ export class AuthService {
     const user = await this.userRepo.create({
       email: input.email,
       passwordHash,
-      fullName,
+      firstName,
+      lastName,
       phone: input.phone,
       role,
     });
@@ -74,6 +72,9 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
+      roles: [user.role],
+      firstName: user.firstName,
+      lastName: user.lastName,
       sessionId,
       tokenType: 'ACCESS',
     });
@@ -85,7 +86,7 @@ export class AuthService {
       refreshToken,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       ipAddress: input.ipAddress,
-      userAgent: input.userAgent
+      userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined
     });
 
     // Cache tokens in Redis for fast access
@@ -132,7 +133,8 @@ export class AuthService {
             payload: {
               userId: user.id,
               email: user.email,
-              fullName: user.fullName,
+              firstName: user.firstName,
+              lastName: user.lastName,
               phone: user.phone || undefined,
               role: user.role as any,
               verifyToken,
@@ -174,7 +176,8 @@ export class AuthService {
       {
         userId: user.id,
         email: user.email,
-        fullName: user.fullName,
+        firstName: user.firstName,
+        lastName: user.lastName,
         phone: user.phone || undefined,
         role: user.role as any,
       },
@@ -184,9 +187,12 @@ export class AuthService {
     return {
       user: {
         id: user.id,
+        _id: user.id,
         email: user.email,
-        fullName: user.fullName,
-        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: [user.role],
+        roles: [user.role],
         isEmailVerified: user.isEmailVerified
       },
       accessToken,
@@ -220,11 +226,17 @@ export class AuthService {
       };
     }
 
+    const firstName = (user as any).firstName || 'User';
+    const lastName = (user as any).lastName || '';
+
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
       role: user.role,
+      roles: [user.role],
+      firstName,
+      lastName,
       sessionId,
       tokenType: 'ACCESS',
     });
@@ -236,7 +248,7 @@ export class AuthService {
       refreshToken,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       ipAddress: input.ipAddress,
-      userAgent: input.userAgent
+      userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined
     });
 
     // Cache tokens in Redis for fast access
@@ -252,21 +264,31 @@ export class AuthService {
       requires2FA: false,
       user: {
         id: user.id,
+        _id: user.id,
         email: user.email,
-        fullName: user.fullName,
-        role: user.role
+        firstName,
+        lastName,
+        role: [user.role],
+        roles: [user.role],
+        isEmailVerified: user.isEmailVerified,
       },
       accessToken,
       refreshToken
     };
   }
 
-  async complete2FALogin(user: { id: string; email: string; role: Role; fullName?: string }, ipAddress?: string, userAgent?: string) {
+  async complete2FALogin(user: { id: string; email: string; role: Role; firstName?: string; lastName?: string }, ipAddress?: string, userAgent?: string) {
+    const firstName = user.firstName || 'User';
+    const lastName = user.lastName || '';
+
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
       role: user.role,
+      roles: [user.role],
+      firstName,
+      lastName,
       sessionId,
       tokenType: 'ACCESS',
     });
@@ -292,9 +314,12 @@ export class AuthService {
     return {
       user: {
         id: user.id,
+        _id: user.id,
         email: user.email,
-        fullName: user.fullName || '',
-        role: user.role
+        firstName,
+        lastName,
+        role: [user.role],
+        roles: [user.role]
       },
       accessToken,
       refreshToken
@@ -321,11 +346,17 @@ export class AuthService {
       throw new UnauthorizedError('User not found');
     }
 
+    const firstName = user.firstName || 'User';
+    const lastName = user.lastName || '';
+
     const newSessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
       role: user.role,
+      roles: [user.role],
+      firstName,
+      lastName,
       sessionId: newSessionId,
       tokenType: 'ACCESS',
     });
@@ -356,7 +387,16 @@ export class AuthService {
     return {
       accessToken,
       refreshToken: newRefreshToken,
-      user: { id: user.id, email: user.email, role: user.role }
+      user: {
+        id: user.id,
+        _id: user.id,
+        email: user.email,
+        firstName,
+        lastName,
+        role: [user.role],
+        roles: [user.role],
+        isEmailVerified: user.isEmailVerified,
+      }
     };
   }
 
@@ -531,4 +571,177 @@ export class AuthService {
       throw new UnauthorizedError(`Invalid refresh token: ${err.message}`);
     }
   }
+
+  async googleAuth(credential: string, ipAddress?: string, userAgent?: string) {
+    if (!credential || typeof credential !== 'string') {
+      throw new BadRequestError('A Google credential is required');
+    }
+
+    // 1. Verify Google ID token via Google TokenInfo API
+    let payload: any;
+    try {
+      const response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`
+      );
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        logger.warn(`Google token verification failed with status ${response.status}: ${errText}`);
+        throw new UnauthorizedError('Google could not verify this account');
+      }
+      payload = await response.json();
+    } catch (err: any) {
+      if (err instanceof UnauthorizedError || err instanceof BadRequestError) {
+        throw err;
+      }
+      logger.error('Error contacting Google OAuth service:', err);
+      throw new UnauthorizedError('Google authentication failed');
+    }
+
+    // 2. Validate token claims
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    if (googleClientId && payload.aud && payload.aud !== googleClientId) {
+      logger.warn(`Google token audience mismatch: expected ${googleClientId}, got ${payload.aud}`);
+      throw new UnauthorizedError('Google credential audience mismatch');
+    }
+
+    const isVerified = payload.email_verified === 'true' || payload.email_verified === true;
+    if (!payload.sub || !payload.email || !isVerified) {
+      throw new UnauthorizedError('Google account email is not verified');
+    }
+
+    const email = payload.email.toLowerCase();
+
+    // 3. Find or register user
+    let user = await this.userRepo.findByEmail(email);
+    let isNewUser = false;
+    const registrationEventId = crypto.randomUUID();
+
+    if (!user) {
+      isNewUser = true;
+      const nameParts = (payload.name?.trim() || '').split(' ');
+      const givenName = payload.given_name?.trim() || nameParts[0];
+      const familyName = payload.family_name?.trim() || nameParts.slice(1).join(' ');
+      const firstName = givenName || 'Google';
+      const lastName = familyName || 'User';
+      const passwordHash = await this.hashPassword(crypto.randomBytes(32).toString('hex'));
+
+      user = await this.userRepo.create({
+        email,
+        firstName: firstName.slice(0, 50),
+        lastName: lastName.slice(0, 50),
+        passwordHash,
+        role: 'RIDER' as Role,
+        avatarUrl: payload.picture ? String(payload.picture).slice(0, 500) : undefined,
+        isEmailVerified: true,
+      });
+
+      // Stage durable outbox event for user registration
+      if (this.outboxRepo) {
+        try {
+          await this.outboxRepo.stageEvent(null, {
+            topic: EventTopics.AUTH_EVENTS,
+            partitionKey: user.id,
+            eventType: 'USER_REGISTERED',
+            aggregateType: 'USER',
+            aggregateId: user.id,
+            payload: {
+              id: registrationEventId,
+              version: 1,
+              eventType: 'USER_REGISTERED',
+              producer: 'auth-service',
+              timestamp: new Date().toISOString(),
+              partitionKey: user.id,
+              aggregateType: 'USER',
+              aggregateId: user.id,
+              aggregateSequence: 1,
+              payload: {
+                userId: user.id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                phone: user.phone || undefined,
+                role: user.role as any,
+              },
+            },
+          });
+        } catch (err) {
+          logger.error('Failed to stage outbox event for Google registration:', err);
+        }
+      }
+
+      // Publish Kafka user registered event
+      await publishUserRegistered(
+        {
+          userId: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone || undefined,
+          role: user.role as any,
+        },
+        registrationEventId
+      );
+    } else {
+      // If user exists and email was not marked verified, verify it now
+      if (!user.isEmailVerified) {
+        user = await this.userRepo.update(user.id, { isEmailVerified: true });
+      }
+    }
+
+    const firstName = user.firstName || 'User';
+    const lastName = user.lastName || '';
+
+    // 4. Session & Token generation
+    const sessionId = crypto.randomUUID();
+    const accessToken = signAccessToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      roles: [user.role],
+      firstName,
+      lastName,
+      sessionId,
+      tokenType: 'ACCESS',
+    });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
+
+    const session = await this.sessionRepo.create({
+      id: sessionId,
+      userId: user.id,
+      refreshToken,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      ipAddress,
+      userAgent: userAgent ? userAgent.slice(0, 1000) : undefined,
+    });
+
+    // Cache tokens in Redis
+    await cacheTokens(user.id, session.id, accessToken, refreshToken);
+
+    // Audit log
+    await this.auditRepo.record({
+      userId: user.id,
+      action: isNewUser ? 'USER_REGISTERED_GOOGLE' : 'USER_LOGIN_GOOGLE',
+      ipAddress,
+    });
+
+    const userPayload = {
+      id: user.id,
+      _id: user.id,
+      email: user.email,
+      firstName,
+      lastName,
+      role: [user.role],
+      roles: [user.role],
+      isEmailVerified: user.isEmailVerified,
+      avatarUrl: user.avatarUrl,
+    };
+
+    return {
+      user: userPayload,
+      accessToken,
+      refreshToken,
+      sessionId,
+    };
+  }
 }
+

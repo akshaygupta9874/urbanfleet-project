@@ -30,7 +30,7 @@ export interface AuthContextType {
 
 async function requestAuthentication(): Promise<{ accessToken: string; user: User } | null> {
   try {
-    const response = await api.post<{ accessToken?: unknown; user?: any }>("/refresh");
+    const response = await api.post<{ accessToken?: unknown; user?: Partial<User> & Record<string, unknown> }>("/refresh");
     const accessToken = response.data.accessToken;
     const rawUser = response.data.user;
     if (typeof accessToken !== "string" || !rawUser || typeof rawUser !== "object") {
@@ -41,10 +41,14 @@ async function requestAuthentication(): Promise<{ accessToken: string; user: Use
       : Array.isArray(rawUser.role)
       ? rawUser.role
       : ["RIDER"];
+    const firstName = (rawUser.firstName as string) || "";
+    const lastName = (rawUser.lastName as string) || "";
     const normalizedUser: User = {
       ...rawUser,
       _id: rawUser._id || rawUser.id,
       id: rawUser.id || rawUser._id,
+      firstName,
+      lastName,
       role: roles,
       roles: roles,
     };
@@ -105,10 +109,14 @@ export const AuthContextProvider = ({
       : Array.isArray(authenticatedUser.role)
       ? authenticatedUser.role
       : ["RIDER"];
+    const firstName = authenticatedUser.firstName || "";
+    const lastName = authenticatedUser.lastName || "";
     const normalizedUser: User = {
       ...authenticatedUser,
       _id: authenticatedUser._id || authenticatedUser.id,
       id: authenticatedUser.id || authenticatedUser._id,
+      firstName,
+      lastName,
       role: roles,
       roles: roles,
     };

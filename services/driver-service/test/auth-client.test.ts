@@ -18,7 +18,8 @@ describe('AuthClient Inter-Service HTTP Communication in driver-service', () => 
     const mockUser = {
       id: 'usr-123',
       email: 'driver@urbanfleet.com',
-      fullName: 'John Driver',
+      firstName: 'John',
+      lastName: 'Driver',
       phone: '+919876543210',
       role: 'DRIVER',
       isEmailVerified: true,

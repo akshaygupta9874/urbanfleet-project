@@ -57,14 +57,20 @@ export class OutboxWorker {
         FROM outbox_events
         WHERE status = 'PROCESSING' AND lease_expires_at >= NOW()
       ),
-      eligible_events AS (
-        SELECT DISTINCT ON (partition_key) id
+      locked_candidates AS (
+        SELECT id, partition_key, aggregate_sequence
         FROM outbox_events
         WHERE (status = 'PENDING' OR (status = 'PROCESSING' AND lease_expires_at < NOW()))
           AND partition_key NOT IN (SELECT partition_key FROM active_partitions)
           AND retry_count < 5
         ORDER BY partition_key, aggregate_sequence ASC
         LIMIT 25
+        FOR UPDATE SKIP LOCKED
+      ),
+      eligible_events AS (
+        SELECT DISTINCT ON (partition_key) id
+        FROM locked_candidates
+        ORDER BY partition_key, aggregate_sequence ASC
       )
       UPDATE outbox_events
       SET status = 'PROCESSING',

@@ -171,10 +171,11 @@ export default function ChooseMode() {
             sessionStorage.removeItem("pendingRide");
             const targetRideId = response.data.ride?._id || response.data.ride?.id;
             navigate(`/ride/${targetRideId}`, { replace: true });
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const axiosError = err as { response?: { data?: { message?: string; errors?: { rider?: string[] } } } };
             const serverMessage =
-                err?.response?.data?.message ||
-                (err?.response?.data?.errors?.rider && err.response.data.errors.rider[0]);
+                axiosError?.response?.data?.message ||
+                (axiosError?.response?.data?.errors?.rider && axiosError.response.data.errors.rider[0]);
             setError(serverMessage || "Unable to create ride request. Please try again.");
             setIsCreatingRide(false);
         }

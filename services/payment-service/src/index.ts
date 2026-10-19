@@ -19,6 +19,11 @@ import { connectRedis, disconnectRedis, redisClient } from './redis/client.js';
 
 const logger = createLogger('payment-service');
 import { prisma } from './db/client.js';
+
+(BigInt.prototype as any).toJSON = function () {
+  return Number(this);
+};
+
 const app = express();
 
 const port = process.env.PORT || 4005;
@@ -44,23 +49,22 @@ const stopReconciliation = startPaymentReconciliationJob();
 initPaymentConsumer(prisma, paymentService).catch(err => logger.error('Consumer error:', err));
 
 // Middlewares
+app.use((req, _res, next) => {
+  logger.info(`[HTTP IN] ${req.method} ${req.originalUrl}`);
+  next();
+});
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 
 // Raw Webhook Endpoints (BEFORE express.json for cryptographic HMAC verification)
+app.use('/webhooks', webhookRouter);
 app.use('/v1/webhooks', webhookRouter);
 app.use('/api/webhooks', webhookRouter);
 
 app.use(express.json());
 
-// Routes (Real Payment Subsystem & Legacy compatibility)
-app.use('/v1/payments', paymentRouter);
-app.use('/v1/payment', paymentRouter);
-app.use('/api/payment', paymentRouter);
-app.use('/api/payments', paymentRouter);
-
-// Health check with active dependency validation
-app.get('/health', async (req, res) => {
+// Health check with active dependency validation (mounted before routers)
+const healthHandler = async (_req: express.Request, res: express.Response) => {
   let dbStatus = 'DOWN';
   let redisStatus = 'DOWN';
 
@@ -89,21 +93,38 @@ app.get('/health', async (req, res) => {
       redis: redisStatus,
     },
   });
-});
+};
 
-app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok', service: 'payment-service' }));
+app.get('/health', healthHandler);
+app.get('/healthz', (_req, res) => res.status(200).json({ status: 'ok', service: 'payment-service' }));
+app.get('/payment/health', healthHandler);
+app.get('/payments/health', healthHandler);
+app.get('/v1/payment/health', healthHandler);
+app.get('/v1/payments/health', healthHandler);
+app.get('/api/payment/health', healthHandler);
+app.get('/api/payments/health', healthHandler);
+
+// Routes (Real Payment Subsystem & Legacy compatibility)
+app.use('/payments', paymentRouter);
+app.use('/payment', paymentRouter);
+app.use('/v1/payments', paymentRouter);
+app.use('/v1/payment', paymentRouter);
+app.use('/api/payment', paymentRouter);
+app.use('/api/payments', paymentRouter);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
+  const statusCode = err.statusCode || (err.status || 500);
+  const code = err.code || (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
+  if (statusCode < 500 || err.isOperational) {
+    return res.status(statusCode).json({
       success: false,
-      code: err.code,
+      code,
       message: err.message
     });
   }
   logger.error('Unhandled internal error:', err);
-  res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Internal server error' });
+  res.status(statusCode).json({ success: false, code, message: err.message || 'Internal server error' });
 });
 
 const server = app.listen(port, () => {

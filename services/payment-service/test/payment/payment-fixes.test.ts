@@ -1,9 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { formatRide, RideClient } from '../../src/clients/ride.client.js';
+import { formatRide, RideClient, rideClient } from '../../src/clients/ride.client.js';
 import { PayoutService } from '../../src/payment/services/payout.service.js';
 import { payoutRepository } from '../../src/payment/repositories/payout.repository.js';
+import { paymentRepository } from '../../src/payment/repositories/payment.repository.js';
 import { ledgerService } from '../../src/payment/services/ledger.service.js';
 import { initPaymentConsumer } from '../../src/consumers/payment.consumer.js';
+import { authClient } from '../../src/clients/auth.client.js';
+import { requireAdmin } from '../../src/payment/middlewares/require-admin.middleware.js';
+import { prisma, UserRole } from '../../src/db/client.js';
+import { redisClient } from '../../src/redis/client.js';
 
 const { mockKafkaConsumer, getCapturedHandler } = vi.hoisted(() => {
   let capturedHandler: any = null;
@@ -219,6 +224,215 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       expect(recordedEvents[0].eventId).toBeDefined();
       expect(typeof recordedEvents[0].eventId).toBe('string');
     });
+
+    it('RIDE_ARRIVED_AT_DESTINATION: creates payment order at arrival stage with dual aliases', async () => {
+      await initPaymentConsumer(mockPrisma, mockPaymentService);
+      const messageHandler = getCapturedHandler();
+      expect(messageHandler).toBeDefined();
+
+      const arrivedEnvelope = {
+        id: 'evt-arrived-1',
+        version: 1,
+        eventType: 'RIDE_ARRIVED_AT_DESTINATION',
+        producer: 'ride-service',
+        timestamp: '2026-10-18T00:00:00Z',
+        partitionKey: 'ride-arr-1',
+        aggregateType: 'RIDE',
+        aggregateId: 'ride-arr-1',
+        aggregateSequence: 1,
+        payload: {
+          rideId: 'ride-arr-1',
+          riderId: 'rider-arr-1',
+          totalFarePaise: 42000,
+          driverId: 'driver-arr-1',
+        },
+      };
+
+      await messageHandler({
+        message: {
+          key: Buffer.from('ride-arr-1'),
+          value: Buffer.from(JSON.stringify(arrivedEnvelope)),
+        },
+      });
+
+      expect(mockPaymentService.createOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ride: 'ride-arr-1',
+          rider: 'rider-arr-1',
+          rideId: 'ride-arr-1',
+          riderId: 'rider-arr-1',
+          idempotencyKey: 'ride-order-ride-arr-1',
+        })
+      );
+    });
+
+    it('RIDE_COMPLETED: acknowledges completion without creating duplicate order when payment exists', async () => {
+      mockPrisma = {
+        $transaction: vi.fn().mockImplementation(async (cb: any) => {
+          const tx = {
+            processedEvent: {
+              findUnique: vi.fn().mockResolvedValue(null),
+              create: vi.fn().mockResolvedValue({}),
+            },
+            payment: {
+              findUnique: vi.fn().mockResolvedValue({
+                id: 'pay-existing-99',
+                rideId: 'ride-comp-99',
+                status: 'CAPTURED',
+              }),
+              update: vi.fn().mockResolvedValue({}),
+            },
+          };
+          return cb(tx);
+        }),
+      };
+
+      await initPaymentConsumer(mockPrisma, mockPaymentService);
+      const messageHandler = getCapturedHandler();
+
+      const completedEnvelope = {
+        id: 'evt-completed-99',
+        version: 1,
+        eventType: 'RIDE_COMPLETED',
+        producer: 'ride-service',
+        timestamp: '2026-10-18T00:00:00Z',
+        partitionKey: 'ride-comp-99',
+        aggregateType: 'RIDE',
+        aggregateId: 'ride-comp-99',
+        aggregateSequence: 2,
+        payload: {
+          rideId: 'ride-comp-99',
+          riderId: 'rider-comp-99',
+          totalFarePaise: 60000,
+          driverId: 'driver-comp-99',
+        },
+      };
+
+      await messageHandler({
+        message: {
+          key: Buffer.from('ride-comp-99'),
+          value: Buffer.from(JSON.stringify(completedEnvelope)),
+        },
+      });
+
+      // Should NOT have created a new order because payment already existed!
+      expect(mockPaymentService.createOrder).not.toHaveBeenCalled();
+    });
+
+    it('RIDE_CANCELLED: deducts cancellation fee from captured payment and issues partial refund', async () => {
+      mockPrisma = {
+        $transaction: vi.fn().mockImplementation(async (cb: any) => {
+          const tx = {
+            processedEvent: {
+              findUnique: vi.fn().mockResolvedValue(null),
+              create: vi.fn().mockResolvedValue({}),
+            },
+            payment: {
+              findUnique: vi.fn().mockResolvedValue({
+                id: 'pay-captured-1',
+                rideId: 'ride-cancel-1',
+                amountPaise: 50000, // ₹500
+                status: 'CAPTURED',
+              }),
+              update: vi.fn().mockResolvedValue({}),
+            },
+          };
+          return cb(tx);
+        }),
+      };
+
+      await initPaymentConsumer(mockPrisma, mockPaymentService);
+      const messageHandler = getCapturedHandler();
+
+      const cancelEnvelope = {
+        id: 'evt-cancel-1',
+        version: 1,
+        eventType: 'RIDE_CANCELLED',
+        aggregateType: 'RIDE',
+        aggregateId: 'ride-cancel-1',
+        aggregateSequence: 2,
+        timestamp: new Date().toISOString(),
+        payload: {
+          rideId: 'ride-cancel-1',
+          riderId: 'rider-1',
+          cancelledBy: 'RIDER',
+          cancellationFeePaise: 5000, // ₹50 fee
+          cancelledAt: new Date().toISOString(),
+        },
+      };
+
+      await messageHandler({
+        message: {
+          key: Buffer.from('ride-cancel-1'),
+          value: Buffer.from(JSON.stringify(cancelEnvelope)),
+        },
+      });
+
+      // Captured amount 50000 - 5000 fee = 45000 refund
+      expect(mockPaymentService.issueRefund).toHaveBeenCalledWith(
+        'pay-captured-1',
+        45000,
+        expect.stringContaining('fee deducted: 5000')
+      );
+    });
+
+    it('RIDE_CANCELLED: bills cancellation fee when payment was not captured', async () => {
+      mockPrisma = {
+        $transaction: vi.fn().mockImplementation(async (cb: any) => {
+          const tx = {
+            processedEvent: {
+              findUnique: vi.fn().mockResolvedValue(null),
+              create: vi.fn().mockResolvedValue({}),
+            },
+            payment: {
+              findUnique: vi.fn().mockResolvedValue({
+                id: 'pay-pending-1',
+                rideId: 'ride-cancel-2',
+                status: 'PENDING',
+              }),
+              update: vi.fn().mockResolvedValue({}),
+            },
+          };
+          return cb(tx);
+        }),
+      };
+
+      await initPaymentConsumer(mockPrisma, mockPaymentService);
+      const messageHandler = getCapturedHandler();
+
+      const cancelEnvelope = {
+        id: 'evt-cancel-2',
+        version: 1,
+        eventType: 'RIDE_CANCELLED',
+        aggregateType: 'RIDE',
+        aggregateId: 'ride-cancel-2',
+        aggregateSequence: 2,
+        timestamp: new Date().toISOString(),
+        payload: {
+          rideId: 'ride-cancel-2',
+          riderId: 'rider-2',
+          cancelledBy: 'RIDER',
+          cancellationFeePaise: 5000,
+          cancelledAt: new Date().toISOString(),
+        },
+      };
+
+      await messageHandler({
+        message: {
+          key: Buffer.from('ride-cancel-2'),
+          value: Buffer.from(JSON.stringify(cancelEnvelope)),
+        },
+      });
+
+      expect(mockPaymentService.createOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rideId: 'ride-cancel-2',
+          riderId: 'rider-2',
+          amountPaise: 5000,
+          idempotencyKey: 'cancellation-fee-ride-cancel-2',
+        })
+      );
+    });
   });
 
   // ==========================================
@@ -271,6 +485,117 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
     it('payoutRepository exports findByDriver and findPending query methods', () => {
       expect(typeof payoutRepository.findByDriver).toBe('function');
       expect(typeof payoutRepository.findPending).toBe('function');
+    });
+  });
+
+  // ==========================================
+  // 5. Payment Data Model Decoupling & Requester Resolution
+  // ==========================================
+  describe('Payment Data Model Decoupling & Isolation', () => {
+    it('queryRideRaw calls rideClient and does not query payments database when unmocked', async () => {
+      const getSpy = vi.spyOn(rideClient, 'getRideById').mockResolvedValue({
+        id: 'ride-decoupled-1',
+        riderId: 'rider-1',
+        paymentStatus: 'PENDING',
+      });
+
+      const rows = await paymentRepository.queryRideRaw('ride-decoupled-1');
+      expect(getSpy).toHaveBeenCalledWith('ride-decoupled-1');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe('ride-decoupled-1');
+
+      getSpy.mockRestore();
+    });
+
+    it('findRideById and updateRide delegate to rideClient in runtime', async () => {
+      const getSpy = vi.spyOn(rideClient, 'getRideById').mockResolvedValue({
+        id: 'ride-decoupled-2',
+        status: 'ARRIVED_AT_DESTINATION',
+      });
+      const updateSpy = vi.spyOn(rideClient, 'updatePaymentStatus').mockResolvedValue({
+        id: 'ride-decoupled-2',
+        paymentStatus: 'CAPTURED',
+      });
+
+      const ride = await paymentRepository.findRideById('ride-decoupled-2');
+      expect(ride.id).toBe('ride-decoupled-2');
+      expect(getSpy).toHaveBeenCalledWith('ride-decoupled-2');
+
+      await paymentRepository.updateRide('ride-decoupled-2', { paymentStatus: 'CAPTURED' });
+      expect(updateSpy).toHaveBeenCalledWith('ride-decoupled-2', 'CAPTURED');
+
+      getSpy.mockRestore();
+      updateSpy.mockRestore();
+    });
+
+    it('findUserById checks Redis cache first, then falls back to authClient', async () => {
+      const redisSpy = vi.spyOn(redisClient, 'get').mockResolvedValue(
+        JSON.stringify({ id: 'user-cached-1', roles: [UserRole.RIDER] })
+      );
+
+      const userFromCache = await paymentRepository.findUserById('user-cached-1');
+      expect(userFromCache.id).toBe('user-cached-1');
+      expect(userFromCache.roles).toContain(UserRole.RIDER);
+      expect(redisSpy).toHaveBeenCalledWith('auth:user:user-cached-1');
+
+      redisSpy.mockRestore();
+
+      // Now test fallback to authClient when not cached
+      vi.spyOn(redisClient, 'get').mockResolvedValue(null);
+      const authSpy = vi.spyOn(authClient, 'getUserById').mockResolvedValue({
+        id: 'user-auth-2',
+        email: 'user2@example.com',
+        firstName: 'User',
+        lastName: 'Two',
+        role: 'ADMIN',
+        roles: ['ADMIN'],
+        isEmailVerified: true,
+      });
+
+      const userFromAuth = await paymentRepository.findUserById('user-auth-2');
+      expect(userFromAuth.id).toBe('user-auth-2');
+      expect(userFromAuth.roles).toContain('ADMIN');
+      expect(authSpy).toHaveBeenCalledWith('user-auth-2');
+
+      authSpy.mockRestore();
+    });
+
+    it('requireAdmin reads roles from request context without querying database', async () => {
+      const req: any = {
+        userId: 'admin-1',
+        role: ['ADMIN'],
+        user: { userId: 'admin-1', roles: ['ADMIN'] },
+      };
+      const res: any = {};
+      const next = vi.fn();
+
+      await requireAdmin(req, res, next);
+      expect(next).toHaveBeenCalledWith();
+
+      // Rejects non-admin user
+      const riderReq: any = {
+        userId: 'rider-1',
+        role: ['RIDER'],
+        user: { userId: 'rider-1', roles: ['RIDER'] },
+      };
+      const riderNext = vi.fn();
+
+      await requireAdmin(riderReq, res, riderNext);
+      expect(riderNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 403,
+          code: 'FORBIDDEN',
+        })
+      );
+    });
+
+    it('prisma.$transaction attaches ride and user delegates to transactional client', async () => {
+      await prisma.$transaction(async (tx: any) => {
+        expect(tx.ride).toBeDefined();
+        expect(tx.user).toBeDefined();
+        expect(typeof tx.ride.findUnique).toBe('function');
+        expect(typeof tx.user.findUnique).toBe('function');
+      });
     });
   });
 });

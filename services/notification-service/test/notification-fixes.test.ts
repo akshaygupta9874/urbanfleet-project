@@ -1,6 +1,10 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import express from 'express';
+import http from 'node:http';
+import jwt from 'jsonwebtoken';
 import { initNotificationConsumer } from '../src/consumers/notification.consumer.js';
 import { NotificationRepository } from '../src/repositories/notification.repository.js';
+import { createNotificationRouter } from '../src/routes/notification.routes.js';
 import { getRideReceiptHtml } from '../src/services/email.service.js';
 
 const { mockKafkaConsumer, getCapturedHandler } = vi.hoisted(() => {
@@ -88,6 +92,18 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
           }
           return { id: where.id, ...data };
         }),
+        findMany: vi.fn().mockImplementation(async ({ where }: any) => {
+          return stagedNotifications.filter((n) => {
+            if (where.OR) {
+              return where.OR.some((cond: any) => {
+                if (cond.recipient && n.recipient === cond.recipient) return true;
+                return false;
+              });
+            }
+            if (where.recipient && n.recipient !== where.recipient) return false;
+            return true;
+          });
+        }),
       },
     };
 
@@ -168,7 +184,8 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         payload: {
           userId: 'usr-789',
           email: 'plain@example.com',
-          fullName: 'Plain User',
+          firstName: 'Plain',
+          lastName: 'User',
         },
       };
 
@@ -256,6 +273,175 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
       expect(html).toContain('₹450.00');
       expect(html).toContain('Connaught Place, New Delhi');
       expect(html).toContain('Cyber City, Gurugram');
+    });
+  });
+
+  describe('Notification Ownership & Query Bounding Suite', () => {
+    let app: express.Express;
+    let server: http.Server;
+    let baseUrl: string;
+    const secret = 'test-access-secret-only';
+
+    beforeEach(async () => {
+      const repo = new NotificationRepository(mockPrisma);
+      (repo as any).prisma = mockPrisma;
+      app = express();
+      app.use(express.json());
+      app.use('/api/notifications', createNotificationRouter(repo));
+
+      server = http.createServer(app);
+      await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+          const addr = server.address() as any;
+          baseUrl = `http://127.0.0.1:${addr.port}/api/notifications`;
+          resolve();
+        });
+      });
+    });
+
+    afterEach(async () => {
+      if (server?.listening) {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
+    it('GET /my: token without email returns strictly notifications for userId, preventing whole-table scan', async () => {
+      stagedNotifications.push(
+        { id: 'notif-user-1', recipient: 'usr-bounded-1', status: 'SENT', createdAt: new Date() },
+        { id: 'notif-victim', recipient: 'victim@example.com', status: 'SENT', createdAt: new Date() },
+        { id: 'notif-other', recipient: 'usr-other', status: 'SENT', createdAt: new Date() }
+      );
+
+      const tokenNoEmail = jwt.sign({ userId: 'usr-bounded-1', role: 'RIDER' }, secret);
+
+      const res = await fetch(`${baseUrl}/my`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${tokenNoEmail}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0].id).toBe('notif-user-1');
+      expect(body.data.some((n: any) => n.id === 'notif-victim')).toBe(false);
+    });
+
+    it('GET /my: token for user without notifications returns empty list', async () => {
+      stagedNotifications.push({ id: 'notif-1', recipient: 'someone@example.com', status: 'SENT' });
+
+      // Token for user with no matching notifications
+      const tokenEmpty = jwt.sign({ userId: 'usr-no-notifications', role: 'RIDER' }, secret);
+
+      const res = await fetch(`${baseUrl}/my`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${tokenEmpty}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data).toEqual([]);
+    });
+
+    it('GET /:id: rejects access to another user notification with 403 Forbidden', async () => {
+      stagedNotifications.push({
+        id: 'notif-confidential-99',
+        recipient: 'victim@example.com',
+        status: 'SENT',
+        payload: { token: 'reset-token-123' },
+      });
+
+      const attackerToken = jwt.sign({ userId: 'usr-attacker', email: 'attacker@example.com', role: 'RIDER' }, secret);
+
+      const res = await fetch(`${baseUrl}/notif-confidential-99`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${attackerToken}` },
+      });
+
+      expect(res.status).toBe(403);
+      const body = await res.json() as any;
+      expect(body.code).toBe('FORBIDDEN');
+    });
+
+    it('GET /:id: permits recipient by email to view their notification', async () => {
+      stagedNotifications.push({
+        id: 'notif-user-doc',
+        recipient: 'rider@example.com',
+        status: 'SENT',
+      });
+
+      const ownerToken = jwt.sign({ userId: 'usr-owner', email: 'rider@example.com', role: 'RIDER' }, secret);
+
+      const res = await fetch(`${baseUrl}/notif-user-doc`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data.id).toBe('notif-user-doc');
+    });
+
+    it('GET /:id: permits recipient by userId to view their notification', async () => {
+      stagedNotifications.push({
+        id: 'notif-user-by-id',
+        recipient: 'usr-direct-id',
+        status: 'SENT',
+      });
+
+      const ownerToken = jwt.sign({ userId: 'usr-direct-id', role: 'RIDER' }, secret);
+
+      const res = await fetch(`${baseUrl}/notif-user-by-id`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data.id).toBe('notif-user-by-id');
+    });
+
+    it('GET /:id: permits ADMIN to view any notification', async () => {
+      stagedNotifications.push({
+        id: 'notif-admin-inspect',
+        recipient: 'random@example.com',
+        status: 'SENT',
+      });
+
+      const adminToken = jwt.sign({ userId: 'admin-id', role: 'ADMIN' }, secret);
+
+      const res = await fetch(`${baseUrl}/notif-admin-inspect`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data.id).toBe('notif-admin-inspect');
+    });
+
+    it('GET /:id: permits internal service to query notification via x-internal-service-key', async () => {
+      stagedNotifications.push({
+        id: 'notif-internal-inspect',
+        recipient: 'anyone@example.com',
+        status: 'SENT',
+      });
+
+      const res = await fetch(`${baseUrl}/notif-internal-inspect`, {
+        method: 'GET',
+        headers: {
+          'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '9fef5ba5e9688b75efee1781b80dad81703c29df93181ab9c474532c3281dd99',
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.data.id).toBe('notif-internal-inspect');
     });
   });
 });

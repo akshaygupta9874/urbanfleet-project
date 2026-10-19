@@ -74,7 +74,7 @@ export function asyncHandler<
 ): RequestHandler {
   const handler: RequestHandler = (req: Request, res: Response, next: NextFunction): void => {
     // Immediate circuit-breaker: if client aborted or stream already ended, skip execution
-    if (res.headersSent || req.destroyed || res.writableEnded) {
+    if (res.headersSent || res.writableEnded || (res as any).destroyed || (req as any).aborted) {
       return;
     }
 
@@ -84,7 +84,7 @@ export function asyncHandler<
 
       return Promise.resolve(result).catch((err: unknown) => {
         // If response headers have already been transmitted, delegate directly to Express default handler
-        if (res.headersSent || req.destroyed || res.writableEnded) {
+        if (res.headersSent || res.writableEnded || (res as any).destroyed) {
           return next(err);
         }
 
@@ -96,7 +96,7 @@ export function asyncHandler<
       }) as any;
     } catch (syncErr: unknown) {
       // Catch synchronous errors thrown before any async await yields
-      if (res.headersSent || req.destroyed || res.writableEnded) {
+      if (res.headersSent || res.writableEnded || (res as any).destroyed) {
         return next(syncErr);
       }
 

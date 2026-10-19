@@ -7,7 +7,6 @@ export interface AuthUser {
   role?: string;
   roles?: string[];
   driverId?: string;
-  fullName?: string;
   firstName?: string;
   lastName?: string;
   [key: string]: any;

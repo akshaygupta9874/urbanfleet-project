@@ -23,15 +23,66 @@ const notifService = new NotificationService(notifRepo);
 const dispatcher = new NotificationDispatcher(notifRepo);
 dispatcher.start();
 
-initNotificationConsumer(prisma, notifService).catch(err => logger.error('Consumer error:', err));
+let notifConsumer: any = null;
+initNotificationConsumer(prisma, notifService).then(c => {
+  notifConsumer = c;
+}).catch(err => logger.error('Consumer error:', err));
+
+// Health check endpoint (mounted before router)
+const healthHandler = async (_req: express.Request, res: express.Response) => {
+  let dbStatus = 'DOWN';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'UP';
+  } catch {
+    dbStatus = 'DOWN';
+  }
+
+  const isHealthy = dbStatus === 'UP';
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'UP' : 'DOWN',
+    service: 'notification-service',
+    dependencies: {
+      database: dbStatus,
+      dispatcher: dispatcher.isHealthy() ? 'UP' : 'DOWN',
+      consumer: notifConsumer ? 'UP' : 'INITIALIZING'
+    }
+  });
+};
+
+app.get('/health', healthHandler);
+app.get('/notifications/health', healthHandler);
+app.get('/v1/notifications/health', healthHandler);
+app.get('/api/notifications/health', healthHandler);
 
 // Routes
 const notifRouter = createNotificationRouter(notifRepo);
+app.use('/notifications', notifRouter);
 app.use('/api/notifications', notifRouter);
 app.use('/v1/notifications', notifRouter);
 
-app.get('/health', (req, res) => res.status(200).json({ status: 'UP', service: 'notification-service' }));
-
-app.listen(port, () => {
+const server = app.listen(port, () => {
   logger.info(`Notification Service running internally on port ${port}`);
 });
+
+// Graceful shutdown handling
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`Received ${signal}. Shutting down Notification Service gracefully...`);
+  dispatcher.stop();
+  server.close(async () => {
+    try {
+      if (notifConsumer && typeof notifConsumer.disconnect === 'function') {
+        await notifConsumer.disconnect();
+      }
+      await prisma.$disconnect();
+      logger.info('Notification Service shut down cleanly.');
+      process.exit(0);
+    } catch (err) {
+      logger.error('Error during graceful shutdown:', err);
+      process.exit(1);
+    }
+  });
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

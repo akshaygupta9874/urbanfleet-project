@@ -111,6 +111,10 @@ interface DriverProfileData {
     totalDistance: number;
     totalEarnings: number;
   };
+  totalTrips?: number;
+  completedTrips?: number;
+  averageRating?: number;
+  totalEarningsPaise?: number;
   lastOnlineAt?: string;
 }
 
@@ -693,7 +697,7 @@ export default function DriverDashboard() {
         watchIdRef.current = null;
       }
     };
-  }, [currentRideStatus, driverStatus, profile?.verificationStatus]);
+  }, [currentRideStatus, driverStatus, profile?.verificationStatus, profile]);
 
   useEffect(() => {
     if (!currentRide) return;
@@ -780,8 +784,8 @@ export default function DriverDashboard() {
 
   const acceptanceRate = useMemo(() => {
     if (!profile) return 0;
-    const total = profile.statistics?.totalTrips ?? (profile as any).totalTrips ?? 1;
-    const completed = profile.statistics?.completedTrips ?? (profile as any).completedTrips ?? 0;
+    const total = profile.statistics?.totalTrips ?? profile.totalTrips ?? 1;
+    const completed = profile.statistics?.completedTrips ?? profile.completedTrips ?? 0;
     return Math.round((completed / (total || 1)) * 100);
   }, [profile]);
 
@@ -1001,9 +1005,9 @@ export default function DriverDashboard() {
 
         {/* Analytics Stat Cards — FULL WIDTH */}
         <section className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Trips" value={String(profile?.statistics?.totalTrips ?? (profile as any)?.totalTrips ?? 0)} icon={RouteIcon} trend="+4% this week" />
-          <StatCard label="Driver Rating" value={Number(profile?.rating?.average ?? (profile as any)?.averageRating ?? 5).toFixed(1)} icon={Star} />
-          <StatCard label="Total Earnings" value={formatPaise(profile?.statistics?.totalEarnings ?? (profile as any)?.totalEarningsPaise ?? 0)} icon={Wallet} trend="Verified" />
+          <StatCard label="Total Trips" value={String(profile?.statistics?.totalTrips ?? profile?.totalTrips ?? 0)} icon={RouteIcon} trend="+4% this week" />
+          <StatCard label="Driver Rating" value={Number(profile?.rating?.average ?? profile?.averageRating ?? 5).toFixed(1)} icon={Star} />
+          <StatCard label="Total Earnings" value={formatPaise(profile?.statistics?.totalEarnings ?? profile?.totalEarningsPaise ?? 0)} icon={Wallet} trend="Verified" />
           <StatCard label="Completion Rate" value={`${acceptanceRate}%`} icon={CheckCircle2} />
         </section>
 
@@ -1286,19 +1290,19 @@ export default function DriverDashboard() {
             {
               title: "Driving License",
               number: profile?.documents?.drivingLicense?.number || "DL-9876543210",
-              expiry: profile?.documents?.drivingLicense?.expiryDate || new Date(Date.now() + 365*24*3600*1000).toISOString(),
+              expiry: profile?.documents?.drivingLicense?.expiryDate || new Date(currentTime + 365*24*3600*1000).toISOString(),
               verified: profile?.documents?.drivingLicense?.verified ?? true,
             },
             {
               title: "Vehicle Insurance",
               number: profile?.documents?.insurance?.number || "INS-123456",
-              expiry: profile?.documents?.insurance?.expiryDate || new Date(Date.now() + 365*24*3600*1000).toISOString(),
+              expiry: profile?.documents?.insurance?.expiryDate || new Date(currentTime + 365*24*3600*1000).toISOString(),
               verified: profile?.documents?.insurance?.verified ?? true,
             },
             {
               title: "Pollution Certificate",
               number: "Active Compliance",
-              expiry: profile?.documents?.pollutionCertificate?.expiryDate || new Date(Date.now() + 180*24*3600*1000).toISOString(),
+              expiry: profile?.documents?.pollutionCertificate?.expiryDate || new Date(currentTime + 180*24*3600*1000).toISOString(),
               verified: true,
             },
           ].map((doc) => {

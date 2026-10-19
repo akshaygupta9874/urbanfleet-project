@@ -99,5 +99,119 @@ export class DriverRepository {
       },
     });
   }
+
+  async updateFullProfile(
+    id: string,
+    data: {
+      licenseNumber: string;
+      profilePhoto?: any;
+      vehicle: {
+        type: string;
+        brand: string;
+        model: string;
+        color: string;
+        registrationNumber: string;
+        registrationYear: number;
+        images?: any;
+      };
+      documents: Array<{
+        type: string;
+        number: string;
+        expiryDate?: Date;
+        frontImage: string;
+        backImage?: string;
+      }>;
+    }
+  ): Promise<DriverProfile & { vehicles: Vehicle[]; documents: any[] }> {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update the placeholder driver profile
+      await tx.driverProfile.update({
+        where: { id },
+        data: {
+          licenseNumber: data.licenseNumber,
+          profilePhoto: data.profilePhoto,
+          verificationStatus: 'PENDING',
+          isVerified: false,
+        },
+      });
+
+      // 2. Create vehicle if not exists, or update existing vehicle
+      const existingVehicle = await tx.vehicle.findFirst({
+        where: { driverProfileId: id },
+      });
+
+      if (existingVehicle) {
+        await tx.vehicle.update({
+          where: { id: existingVehicle.id },
+          data: {
+            category: data.vehicle.type || 'SEDAN',
+            make: data.vehicle.brand,
+            model: data.vehicle.model,
+            color: data.vehicle.color,
+            plateNumber: data.vehicle.registrationNumber,
+            year: data.vehicle.registrationYear,
+            images: data.vehicle.images,
+          },
+        });
+      } else {
+        await tx.vehicle.create({
+          data: {
+            driverProfileId: id,
+            category: data.vehicle.type || 'SEDAN',
+            make: data.vehicle.brand,
+            model: data.vehicle.model,
+            color: data.vehicle.color,
+            plateNumber: data.vehicle.registrationNumber,
+            year: data.vehicle.registrationYear,
+            images: data.vehicle.images,
+          },
+        });
+      }
+
+      // 3. Upsert uploaded documents
+      for (const doc of data.documents) {
+        const existingDoc = await tx.document.findFirst({
+          where: { driverProfileId: id, type: doc.type },
+        });
+
+        if (existingDoc) {
+          await tx.document.update({
+            where: { id: existingDoc.id },
+            data: {
+              number: doc.number,
+              documentUrl: doc.frontImage,
+              frontImage: doc.frontImage,
+              backImage: doc.backImage,
+              expiresAt: doc.expiryDate,
+              status: 'PENDING',
+              isVerified: false,
+            },
+          });
+        } else {
+          await tx.document.create({
+            data: {
+              driverProfileId: id,
+              type: doc.type,
+              number: doc.number,
+              documentUrl: doc.frontImage,
+              frontImage: doc.frontImage,
+              backImage: doc.backImage,
+              expiresAt: doc.expiryDate,
+              status: 'PENDING',
+              isVerified: false,
+            },
+          });
+        }
+      }
+
+      return tx.driverProfile.findUniqueOrThrow({
+        where: { id },
+        include: {
+          vehicles: true,
+          documents: true,
+        },
+      });
+    });
+  }
 }
 

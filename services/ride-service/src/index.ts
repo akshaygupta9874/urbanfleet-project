@@ -32,6 +32,10 @@ const outboxWorker = new OutboxWorker(prisma);
 outboxWorker.start().catch(err => logger.error('Outbox worker start error:', err));
 
 // Middlewares
+app.use((req, res, next) => {
+  logger.info(`[HTTP IN] ${req.method} ${req.originalUrl}`);
+  next();
+});
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 app.use(express.json());
@@ -59,15 +63,8 @@ initRideWebSocketServer(
   dispatchService
 );
 
-// HTTP Routes
-const rideRouter = createRideRouter(rideController);
-app.use('/api/ride', rideRouter);
-app.use('/api/rides', rideRouter);
-app.use('/v1/ride', rideRouter);
-app.use('/v1/rides', rideRouter);
-
-// Health check with active dependency validation
-app.get('/health', async (req, res) => {
+// Health check with active dependency validation (mounted before authenticated router)
+const healthHandler = async (_req: express.Request, res: express.Response) => {
   let dbStatus = 'DOWN';
   let redisStatus = 'DOWN';
 
@@ -100,7 +97,24 @@ app.get('/health', async (req, res) => {
       outbox: outboxWorker.isHealthy() ? 'UP' : 'DOWN'
     }
   });
-});
+};
+
+app.get('/health', healthHandler);
+app.get('/ride/health', healthHandler);
+app.get('/rides/health', healthHandler);
+app.get('/v1/ride/health', healthHandler);
+app.get('/v1/rides/health', healthHandler);
+app.get('/api/ride/health', healthHandler);
+app.get('/api/rides/health', healthHandler);
+
+// HTTP Routes
+const rideRouter = createRideRouter(rideController);
+app.use('/ride', rideRouter);
+app.use('/rides', rideRouter);
+app.use('/api/ride', rideRouter);
+app.use('/api/rides', rideRouter);
+app.use('/v1/ride', rideRouter);
+app.use('/v1/rides', rideRouter);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

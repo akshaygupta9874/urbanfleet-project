@@ -10,7 +10,11 @@ function sanitizeUser(user: any) {
     twoFactorSetupRequestedAt,
     ...safeUser
   } = user;
-  return safeUser;
+  return {
+    ...safeUser,
+    firstName: user.firstName || 'User',
+    lastName: user.lastName || '',
+  };
 }
 
 export class UserService {
@@ -28,7 +32,7 @@ export class UserService {
     return sanitizeUser(user);
   }
 
-  async updateUser(id: string, data: { fullName?: string; phone?: string; avatarUrl?: string }) {
+  async updateUser(id: string, data: { firstName?: string; lastName?: string; phone?: string; avatarUrl?: string }) {
     const updated = await this.userRepo.update(id, data);
     return sanitizeUser(updated);
   }

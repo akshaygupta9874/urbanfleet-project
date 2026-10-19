@@ -48,19 +48,36 @@ export async function initPaymentConsumer(
             data: { eventId, consumerGroup }
           });
 
-          if (eventType === 'RIDE_COMPLETED') {
+          if (eventType === 'RIDE_ARRIVED_AT_DESTINATION') {
             const rideId = payload.rideId || payload.id;
-            const riderId = payload.riderId || payload.rider;
-            const totalFarePaise = payload.totalFarePaise || payload.amountPaise || payload.fare;
-            const driverId = payload.driverId || payload.driver;
+            let riderId = payload.riderId || payload.rider;
+            let totalFarePaise = payload.totalFarePaise || payload.amountPaise || payload.fare;
+            let driverId = payload.driverId || payload.driver;
+
+            // If riderId or totalFarePaise missing, fetch authoritative details from rideClient
+            if ((!riderId || !totalFarePaise) && rideId) {
+              try {
+                const { rideClient } = await import('../clients/ride.client.js');
+                const rideDetails = await rideClient.getRideById(rideId);
+                if (rideDetails) {
+                  riderId = riderId || rideDetails.riderId || rideDetails.rider;
+                  totalFarePaise = totalFarePaise || rideDetails.totalFarePaise || rideDetails.estimatedFarePaise || rideDetails.fare?.breakdown?.totalPaise;
+                  driverId = driverId || rideDetails.driverId || rideDetails.driver;
+                }
+              } catch (err: any) {
+                logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${err.message}`);
+              }
+            }
 
             if (typeof (paymentService as any).createOrder === 'function') {
               if (paymentService.createOrder.length <= 1) {
-                // New payment engine: createOrder({ rideId, riderId, idempotencyKey })
+                // Pass both ride/rider and rideId/riderId for universal compatibility
                 await (paymentService as any).createOrder({
+                  ride: rideId,
+                  rider: riderId,
                   rideId,
                   riderId,
-                  idempotencyKey: `ride-completed-${rideId}`,
+                  idempotencyKey: `ride-order-${rideId}`,
                 });
               } else {
                 // Legacy signature: createOrder(rideId, riderId, amountPaise, driverId)
@@ -72,26 +89,119 @@ export async function initPaymentConsumer(
                 );
               }
             }
-            logger.info(`Initialized payment order for completed ride ${rideId}`);
+            logger.info(`Initialized payment order for ride ${rideId} at arrival stage`);
+          } else if (eventType === 'RIDE_COMPLETED') {
+            const rideId = payload.rideId || payload.id;
+            let riderId = payload.riderId || payload.rider;
+            let totalFarePaise = payload.totalFarePaise || payload.amountPaise || payload.fare;
+            let driverId = payload.driverId || payload.driver;
+
+            // Check if payment already exists for this ride
+            const existingPayment = await tx.payment.findUnique({ where: { rideId } });
+            if (existingPayment) {
+              logger.info(`Ride ${rideId} completed; payment order ${existingPayment.id} already exists with status ${existingPayment.status}`);
+            } else {
+              // Resilient fallback: order wasn't created at arrival stage (e.g. driver completed directly)
+              if ((!riderId || !totalFarePaise) && rideId) {
+                try {
+                  const { rideClient } = await import('../clients/ride.client.js');
+                  const rideDetails = await rideClient.getRideById(rideId);
+                  if (rideDetails) {
+                    riderId = riderId || rideDetails.riderId || rideDetails.rider;
+                    totalFarePaise = totalFarePaise || rideDetails.totalFarePaise || rideDetails.estimatedFarePaise || rideDetails.fare?.breakdown?.totalPaise;
+                    driverId = driverId || rideDetails.driverId || rideDetails.driver;
+                  }
+                } catch (err: any) {
+                  logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${err.message}`);
+                }
+              }
+
+              if (typeof (paymentService as any).createOrder === 'function') {
+                if (paymentService.createOrder.length <= 1) {
+                  // Pass both ride/rider and rideId/riderId for universal compatibility
+                  await (paymentService as any).createOrder({
+                    ride: rideId,
+                    rider: riderId,
+                    rideId,
+                    riderId,
+                    idempotencyKey: `ride-order-${rideId}`,
+                  });
+                } else {
+                  await (paymentService as any).createOrder(
+                    rideId,
+                    riderId,
+                    totalFarePaise,
+                    driverId
+                  );
+                }
+              }
+              logger.info(`Initialized fallback payment order for completed ride ${rideId}`);
+            }
           } else if (eventType === 'RIDE_CANCELLED') {
             const rideId = payload.rideId || payload.id;
+            const riderId = payload.riderId || payload.rider;
+            const cancellationFeePaise = Number(payload.cancellationFeePaise || 0);
             const existingPayment = await tx.payment.findUnique({ where: { rideId } });
 
-            // Compensating Saga: If payment was captured, issue automatic refund!
+            // Compensating Saga: If payment was captured, issue partial refund deducting cancellation fee
             if (existingPayment && existingPayment.status === 'CAPTURED') {
-              if (typeof (paymentService as any).issueRefund === 'function') {
+              const refundAmount = existingPayment.amountPaise - cancellationFeePaise;
+              if (refundAmount > 0 && typeof (paymentService as any).issueRefund === 'function') {
                 await (paymentService as any).issueRefund(
                   existingPayment.id,
-                  existingPayment.amountPaise,
-                  `Compensating refund for cancelled ride: ${payload.cancellationReason || 'Rider Cancelled'}`
+                  refundAmount,
+                  `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${payload.cancellationReason || 'Rider Cancelled'}`
                 );
+                logger.info(`Compensating partial refund of ${refundAmount} paise executed for cancelled ride ${rideId}`);
+              } else {
+                logger.info(`No refund issued for cancelled ride ${rideId}; fee (${cancellationFeePaise}) covers captured amount (${existingPayment.amountPaise})`);
               }
-              logger.info(`Compensating refund executed for cancelled ride ${rideId}`);
             } else if (existingPayment && (existingPayment.status === 'PENDING' || existingPayment.status === 'CREATED')) {
               await tx.payment.update({
                 where: { id: existingPayment.id },
                 data: { status: 'CANCELLED' }
               });
+              if (cancellationFeePaise > 0 && typeof (paymentService as any).createOrder === 'function') {
+                if (paymentService.createOrder.length <= 1) {
+                  await (paymentService as any).createOrder({
+                    ride: rideId,
+                    rider: riderId,
+                    rideId,
+                    riderId,
+                    amountPaise: cancellationFeePaise,
+                    idempotencyKey: `cancellation-fee-${rideId}`,
+                  });
+                } else {
+                  await (paymentService as any).createOrder(
+                    rideId,
+                    riderId,
+                    cancellationFeePaise,
+                    payload.driverId
+                  );
+                }
+                logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on cancelled ride ${rideId}`);
+              }
+            } else if (!existingPayment && cancellationFeePaise > 0) {
+              if (typeof (paymentService as any).createOrder === 'function') {
+                if (paymentService.createOrder.length <= 1) {
+                  await (paymentService as any).createOrder({
+                    ride: rideId,
+                    rider: riderId,
+                    rideId,
+                    riderId,
+                    amountPaise: cancellationFeePaise,
+                    idempotencyKey: `cancellation-fee-${rideId}`,
+                  });
+                } else {
+                  await (paymentService as any).createOrder(
+                    rideId,
+                    riderId,
+                    cancellationFeePaise,
+                    payload.driverId
+                  );
+                }
+                logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on unbilled cancelled ride ${rideId}`);
+              }
             }
           }
         });

@@ -23,6 +23,11 @@ import {
 } from "../controllers/payment.controller.js";
 
 const router = Router();
+
+// Public health check endpoints
+router.get("/health", (_req, res) => res.status(200).json({ status: "UP", service: "payment-service" }));
+router.get("/healthz", (_req, res) => res.status(200).json({ status: "ok", service: "payment-service" }));
+
 router.use(authMiddleware);
 
 // Driver payout management (must stay ABOVE "/:paymentId")

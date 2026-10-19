@@ -1,7 +1,8 @@
 export interface AuthUser {
   id: string;
   email: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phone?: string | null;
   role: string;
   isEmailVerified: boolean;

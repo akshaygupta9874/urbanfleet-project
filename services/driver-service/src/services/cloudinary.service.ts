@@ -1,5 +1,5 @@
 import { UploadApiResponse, UploadApiErrorResponse } from 'cloudinary';
-import cloudinary from '../config/cloudinary.config.js';
+import cloudinary, { isCloudinaryConfigured } from '../config/cloudinary.config.js';
 
 export interface CloudinaryUploadResult {
   publicId: string;
@@ -25,6 +25,14 @@ export class CloudinaryService {
   ): Promise<CloudinaryUploadResult> {
     if (!file || !file.buffer) {
       throw new Error('Invalid file provided for upload: file buffer is empty.');
+    }
+
+    if (!isCloudinaryConfigured) {
+      const mockId = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      return {
+        publicId: mockId,
+        url: `https://res.cloudinary.com/urbanfleet/image/upload/${mockId}.jpg`,
+      };
     }
 
     return new Promise((resolve, reject) => {
@@ -62,6 +70,14 @@ export class CloudinaryService {
     folder: string,
     filename?: string
   ): Promise<CloudinaryUploadResult> {
+    if (!isCloudinaryConfigured) {
+      const mockId = `${folder}/${filename || Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      return {
+        publicId: mockId,
+        url: `https://res.cloudinary.com/urbanfleet/image/upload/${mockId}.jpg`,
+      };
+    }
+
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
@@ -90,6 +106,7 @@ export class CloudinaryService {
    * Delete a single image from Cloudinary by public ID
    */
   async deleteImage(publicId: string): Promise<void> {
+    if (!isCloudinaryConfigured) return;
     await cloudinary.uploader.destroy(publicId);
   }
 

@@ -15,14 +15,21 @@ import {
   resetPasswordSchema,
   changePasswordSchema,
   resendVerificationSchema,
+  googleAuthSchema,
 } from '../validation/auth.validation.js';
 
 export function createAuthRouter(controller: AuthController): Router {
   const router = Router();
 
+  // Public Health Endpoint
+  router.get('/health', (_req, res) => res.status(200).json({ status: 'UP', service: 'auth-service' }));
+
   // Public Identity Endpoints
   router.post('/register', validateRequest({ body: registerSchema }), controller.register);
   router.post('/login', validateRequest({ body: loginSchema }), controller.login);
+  if (controller.googleAuth) {
+    router.post('/google', validateRequest({ body: googleAuthSchema }), controller.googleAuth);
+  }
   router.post('/verify-otp', validateRequest({ body: verifyOtpSchema }), controller.verifyOtp);
   router.post('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
   router.get('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);

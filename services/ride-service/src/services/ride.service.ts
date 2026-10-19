@@ -48,7 +48,7 @@ export class RideService {
         otp,
         status: 'SEARCHING',
         rideSequence: 1
-      });
+      }, tx);
 
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
@@ -303,6 +303,9 @@ export class RideService {
         rideSequence: nextSequence
       }, tx);
 
+      const platformCommissionPaise = Math.round(ride.totalFarePaise * 0.10);
+      const driverEarningPaise = ride.totalFarePaise - platformCommissionPaise;
+
       // Atomically stage Outbox event for Kafka in SAME transaction
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
@@ -320,6 +323,8 @@ export class RideService {
           surgeMultiplier: Number(ride.surgeMultiplier),
           distanceKm: Number(ride.distanceKm),
           durationMinutes: ride.durationMinutes,
+          driverEarningPaise,
+          platformCommissionPaise,
           completedAt: completed.completedAt
         }
       });
@@ -360,7 +365,8 @@ export class RideService {
         cancelledBy,
         cancellationReason: reason,
         cancelledAt: new Date(),
-        rideSequence: nextSequence
+        rideSequence: nextSequence,
+        ...(cancellationFeePaise > 0 ? { totalFarePaise: cancellationFeePaise } : {})
       }, tx);
 
       await this.outboxRepo.stageEvent(tx, {

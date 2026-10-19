@@ -39,6 +39,10 @@ export class OutboxWorker {
     logger.info('Auth OutboxWorker stopped.');
   }
 
+  isHealthy(): boolean {
+    return this.isRunning;
+  }
+
   async processPendingEvents(): Promise<number> {
     const producer = getAuthProducer();
     if (!producer) {

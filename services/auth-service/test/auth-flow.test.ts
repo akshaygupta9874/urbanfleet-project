@@ -24,6 +24,14 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
           data: { requiresTwoFactor: true, message: 'OTP sent' },
         });
       }),
+      googleAuth: vi.fn(async (req, res) => {
+        res.status(200).json({
+          success: true,
+          message: 'Signed in with Google successfully.',
+          accessToken: 'act_google_test',
+          user: { id: 'usr-google', email: 'google@test.com' },
+        });
+      }),
       verifyOtp: vi.fn(async (req, res) => {
         res.status(200).json({
           success: true,
