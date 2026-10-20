@@ -28,7 +28,7 @@ export function validateLedgerBalance(legs: LedgerLegInput[]): void {
     } else if (leg.entryType === LedgerEntryType.CREDIT) {
       totalCredits += amount;
     } else {
-      throw new Error(`Invalid ledger entry type: ${(leg as any).entryType}`);
+      throw new Error(`Invalid ledger entry type: ${String((leg as LedgerLegInput).entryType)}`);
     }
   }
 

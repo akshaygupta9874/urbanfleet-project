@@ -55,19 +55,17 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       expect(formatted.id).toBe('ride-uuid-1');
     });
 
-    it('sets both riderId and rider from nested object format', () => {
+    it('sets both riderId and driverId', () => {
       const incomingRide = {
         id: 'ride-uuid-2',
-        rider: { id: 'rider-nested-2' },
-        driver: { id: 'driver-nested-2' },
+        riderId: 'rider-nested-2',
+        driverId: 'driver-nested-2',
         status: 'ARRIVED_AT_DESTINATION',
       };
 
       const formatted = formatRide(incomingRide);
       expect(formatted.riderId).toBe('rider-nested-2');
-      expect(formatted.rider).toBe('rider-nested-2');
       expect(formatted.driverId).toBe('driver-nested-2');
-      expect(formatted.driver).toBe('driver-nested-2');
     });
 
     it('handles null driver gracefully', () => {
@@ -91,24 +89,18 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       process.env.INTERNAL_SERVICE_KEY = 'test-internal-key-999';
       const client = new RideClient('http://test-ride-service:4003');
 
-      const originalFetch = globalThis.fetch;
       try {
-        let sentHeaders: any = null;
-        globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: any) => {
-          sentHeaders = init?.headers;
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({ success: true, data: { id: 'ride-1', paymentStatus: 'CAPTURED' } }),
-          } as any;
+        const patchSpy = vi.spyOn((client as unknown as { client: { patch: Function } }).client, 'patch').mockResolvedValue({
+          status: 200,
+          data: { success: true, data: { id: 'ride-1', paymentStatus: 'CAPTURED' } },
         });
 
         await client.updatePaymentStatus('ride-1', 'CAPTURED');
 
-        expect(sentHeaders).toBeDefined();
-        expect(sentHeaders['x-internal-service-key']).toBe('test-internal-key-999');
+        expect(patchSpy).toHaveBeenCalled();
+        const headers = (client as unknown as { client: { defaults: { headers: Record<string, string> } } }).client.defaults.headers;
+        expect(headers['x-internal-service-key']).toBe('test-internal-key-999');
       } finally {
-        globalThis.fetch = originalFetch;
         delete process.env.INTERNAL_SERVICE_KEY;
       }
     });
@@ -203,6 +195,7 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
         rideId: 'ride-raw-999',
         riderId: 'rider-raw-888',
         totalFarePaise: 30000,
+        eventType: 'RIDE_COMPLETED',
         status: 'COMPLETED',
       };
 
@@ -256,8 +249,6 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
 
       expect(mockPaymentService.createOrder).toHaveBeenCalledWith(
         expect.objectContaining({
-          ride: 'ride-arr-1',
-          rider: 'rider-arr-1',
           rideId: 'ride-arr-1',
           riderId: 'rider-arr-1',
           idempotencyKey: 'ride-order-ride-arr-1',

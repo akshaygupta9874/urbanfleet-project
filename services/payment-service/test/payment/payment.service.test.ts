@@ -686,10 +686,10 @@ describe("createOrder", () => {
 
   const input = (
     ride: any,
-    rider = ride.rider
+    rider = ride.riderId
   ) => ({
-    ride: ride.id,
-    rider,
+    rideId: ride.id,
+    riderId: rider,
     idempotencyKey:
       "key-" + "x".repeat(20),
   });

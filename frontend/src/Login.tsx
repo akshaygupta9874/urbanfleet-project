@@ -96,8 +96,8 @@ export default function LoginPage() {
         password,
       });
 
-      const accessToken = data.accessToken || data.data?.accessToken;
-      const user = data.user || data.data?.user;
+      const accessToken = data.data?.accessToken ?? data.accessToken;
+      const user = data.data?.user ?? data.user;
 
       if (data.data?.requiresTwoFactorSetup) {
         setIsTwoFactorSetup(true);
@@ -143,14 +143,17 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const payload: Record<string, string> = {
-        code: otp,
-        token: otp,
-        otp,
-      };
-      if (email) payload.email = email;
-      if (challengeToken) payload.challengeToken = challengeToken;
-      if (userId) payload.userId = userId;
+      const payload: Record<string, string> = {};
+      if (challengeToken) {
+        payload.challengeToken = challengeToken;
+        payload.code = otp;
+      } else if (userId) {
+        payload.userId = userId;
+        payload.code = otp;
+      } else {
+        payload.email = email;
+        payload.otp = otp;
+      }
 
       const { data } = await api.post<{
         message?: string;
@@ -162,8 +165,8 @@ export default function LoginPage() {
         };
       }>("/verify-otp", payload);
 
-      const accessToken = data.accessToken || data.data?.accessToken;
-      const user = data.user || data.data?.user;
+      const accessToken = data.data?.accessToken ?? data.accessToken;
+      const user = data.data?.user ?? data.user;
 
       if (accessToken && user) {
         establishSession(accessToken, user);

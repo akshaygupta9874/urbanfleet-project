@@ -6,7 +6,7 @@ export function createAdminRouter(controller: AdminController): Router {
   const router = Router();
   const authMiddleware = createAuthMiddleware();
 
-  router.get('/stats', authMiddleware as any, requireRole('ADMIN') as any, controller.getSystemStats);
+  router.get('/stats', authMiddleware, requireRole('ADMIN'), controller.getSystemStats);
 
   return router;
 }

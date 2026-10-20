@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import { AppError } from '../errors/app-error.js';
 
 export interface AuthUser {
   id: string;
@@ -9,7 +10,7 @@ export interface AuthUser {
   driverId?: string;
   firstName?: string;
   lastName?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -17,6 +18,13 @@ export interface AuthenticatedRequest extends Request {
   role?: string[];
   driverId?: string;
   user?: AuthUser;
-  cookies: Record<string, any>;
-  files?: any;
+  cookies: Record<string, string | undefined>;
+}
+
+export function getAuthenticatedUserId(req: AuthenticatedRequest): string {
+  const userId = req.userId;
+  if (!userId) {
+    throw new AppError('Unauthorized: User identity not found on request', 401, 'UNAUTHORIZED');
+  }
+  return userId;
 }

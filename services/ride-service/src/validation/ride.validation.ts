@@ -26,27 +26,46 @@ export const locationSchema = z.object({
   { message: 'Valid latitude and longitude are required' }
 );
 
+export interface CoordinateInput {
+  latitude?: number;
+  longitude?: number;
+  lat?: number;
+  lng?: number;
+  coordinates?: {
+    latitude?: number;
+    longitude?: number;
+    lat?: number;
+    lng?: number;
+  };
+  address?: string;
+}
+
 export interface NormalizedLocation {
   lat: number;
   lng: number;
   address: string;
 }
 
-export function normalizeLocation(input: any): NormalizedLocation {
+export function normalizeLocation(input: CoordinateInput | Record<string, unknown> | null | undefined): NormalizedLocation {
   if (!input) {
     throw new Error('Location is required');
   }
+  const inputRecord = input as Record<string, unknown>;
+  const coords = (inputRecord.coordinates && typeof inputRecord.coordinates === 'object')
+    ? (inputRecord.coordinates as Record<string, unknown>)
+    : undefined;
+
   const lat =
-    input.lat ??
-    input.latitude ??
-    input.coordinates?.lat ??
-    input.coordinates?.latitude;
+    inputRecord.lat ??
+    inputRecord.latitude ??
+    coords?.lat ??
+    coords?.latitude;
   const lng =
-    input.lng ??
-    input.longitude ??
-    input.coordinates?.lng ??
-    input.coordinates?.longitude;
-  const address = input.address || 'Unknown Location';
+    inputRecord.lng ??
+    inputRecord.longitude ??
+    coords?.lng ??
+    coords?.longitude;
+  const address = inputRecord.address || 'Unknown Location';
 
   return {
     lat: Number(lat),
@@ -56,7 +75,7 @@ export function normalizeLocation(input: any): NormalizedLocation {
 }
 
 export const vehicleCategorySchema = z.preprocess(
-  (val) => (typeof val === 'string' ? val.toUpperCase() : val),
+  (val: unknown) => (typeof val === 'string' ? val.toUpperCase() : val),
   z.enum(['CAR', 'BIKE', 'AUTO', 'SEDAN']).optional().default('CAR')
 );
 
@@ -67,15 +86,19 @@ export const estimateFareSchema = z.object({
 });
 
 export const requestRideSchema = z.preprocess(
-  (val: any) => {
+  (val: unknown) => {
     if (val && typeof val === 'object') {
-      const rawCategory = val.vehicleCategory || val.vehicleType || 'CAR';
-      const rawFare = val.estimatedFare ?? val.fare?.estimated ?? val.fare;
-      const rawDistance = val.estimatedDistance ?? val.distance?.estimated ?? val.distance;
-      const rawDuration = val.estimatedDuration ?? val.duration?.estimated ?? val.duration;
+      const obj = val as Record<string, unknown>;
+      const rawCategory = obj.vehicleCategory || 'CAR';
+      const fareObj = (obj.fare && typeof obj.fare === 'object') ? (obj.fare as Record<string, unknown>) : undefined;
+      const rawFare = obj.estimatedFare ?? fareObj?.estimated ?? obj.fare;
+      const distObj = (obj.distance && typeof obj.distance === 'object') ? (obj.distance as Record<string, unknown>) : undefined;
+      const rawDistance = obj.estimatedDistance ?? distObj?.estimated ?? obj.distance;
+      const durObj = (obj.duration && typeof obj.duration === 'object') ? (obj.duration as Record<string, unknown>) : undefined;
+      const rawDuration = obj.estimatedDuration ?? durObj?.estimated ?? obj.duration;
 
       return {
-        ...val,
+        ...obj,
         vehicleCategory: rawCategory,
         vehicleType: rawCategory,
         estimatedFare: typeof rawFare === 'number' ? Math.round(rawFare) : undefined,
@@ -93,20 +116,16 @@ export const requestRideSchema = z.preprocess(
     estimatedDuration: z.number().optional(),
     vehicleCategory: vehicleCategorySchema,
     vehicleType: vehicleCategorySchema,
-    fare: z.any().optional(),
-    distance: z.any().optional(),
-    duration: z.any().optional(),
+    fare: z.unknown().optional(),
+    distance: z.unknown().optional(),
+    duration: z.unknown().optional(),
     rider: z.string().optional(),
     riderId: z.string().optional(),
   })
 );
 
 export const rideIdParamSchema = z.object({
-  id: z.string().uuid('Invalid ride UUID').optional(),
-  rideId: z.string().uuid('Invalid ride UUID').optional(),
-}).refine((data) => !!(data.id || data.rideId), {
-  message: 'Valid ride UUID is required in path parameters',
-  path: ['id'],
+  id: z.string().uuid('Invalid ride UUID'),
 });
 
 export const paymentStatusSchema = z.object({
@@ -125,10 +144,11 @@ export const completeRideSchema = z.object({
 });
 
 export const cancelRideSchema = z.preprocess(
-  (val: any) => {
+  (val: unknown) => {
     if (val && typeof val === 'object') {
-      const reason = val.reason || val.cancellationReason || 'Ride cancelled by user';
-      return { ...val, reason };
+      const obj = val as Record<string, unknown>;
+      const reason = obj.reason || 'Ride cancelled by user';
+      return { ...obj, reason };
     }
     return val;
   },
@@ -143,3 +163,11 @@ export const rateRideSchema = z.object({
   review: z.string().max(500).optional(),
   feedback: z.string().max(500).optional(),
 });
+
+export type EstimateFareDTO = z.infer<typeof estimateFareSchema>;
+export type RequestRideDTO = z.infer<typeof requestRideSchema>;
+export type StartRideDTO = z.infer<typeof startRideSchema>;
+export type CompleteRideDTO = z.infer<typeof completeRideSchema>;
+export type CancelRideDTO = z.infer<typeof cancelRideSchema>;
+export type RateRideDTO = z.infer<typeof rateRideSchema>;
+export type PaymentStatusDTO = z.infer<typeof paymentStatusSchema>;

@@ -25,37 +25,31 @@ describe('AuthClient Inter-Service HTTP Communication in driver-service', () => 
       isEmailVerified: true,
     };
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
+    const getSpy = vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockResolvedValue({
       status: 200,
-      json: async () => ({ success: true, data: mockUser }),
-    } as any);
+      data: { success: true, data: mockUser },
+    });
 
     const result = await client.getUserById('usr-123');
     expect(result).toEqual(mockUser);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://test-auth-service:4001/api/auth/users/usr-123',
-      expect.objectContaining({
-        headers: { Accept: 'application/json' },
-      })
-    );
+    expect(getSpy).toHaveBeenCalledWith('/api/auth/users/usr-123');
   });
 
   it('returns null when user is not found (404)', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-    } as any);
+    const notFoundError = new Error('Request failed with status code 404');
+    Object.assign(notFoundError, { isAxiosError: true, response: { status: 404 } });
+
+    vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockRejectedValue(notFoundError);
 
     const result = await client.getUserById('non-existent-user');
     expect(result).toBeNull();
   });
 
   it('throws an error when auth service responds with server error (500)', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-    } as any);
+    const serverError = new Error('Request failed with status code 500');
+    Object.assign(serverError, { isAxiosError: true, response: { status: 500 } });
+
+    vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockRejectedValue(serverError);
 
     await expect(client.getUserById('usr-err')).rejects.toThrow('Auth Service returned HTTP 500');
   });

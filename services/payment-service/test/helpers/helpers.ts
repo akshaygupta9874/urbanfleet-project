@@ -27,11 +27,17 @@ export function retryingSession(times: number) {
 export const oid = () => randomUUID();
 
 export function makePayment(over: Record<string, unknown> = {}) {
+  const rideOid = oid();
+  const riderOid = oid();
+  const driverOid = oid();
   const payment: any = {
     id: oid(),
-    ride: oid(),
-    rider: oid(),
-    driver: oid(),
+    rideId: rideOid,
+    riderId: riderOid,
+    driverId: driverOid,
+    ride: rideOid,
+    rider: riderOid,
+    driver: driverOid,
     gatewayOrderId: "order_TEST1",
     gatewayPaymentId: undefined,
     amountPaise: 1000,

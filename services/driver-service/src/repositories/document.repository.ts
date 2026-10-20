@@ -48,7 +48,7 @@ export class DocumentRepository {
         type: data.type.toUpperCase(),
         documentUrl: data.documentUrl,
         number: data.number,
-        frontImage: data.frontImage || data.documentUrl,
+        frontImage: data.frontImage,
         backImage: data.backImage,
         expiresAt: data.expiresAt,
         status: data.status || VerificationStatus.PENDING,

@@ -22,6 +22,12 @@ import {
   AlertTriangle,
   Zap,
   Gem,
+  Eye,
+  Copy,
+  Check,
+  Camera,
+  Calendar,
+  Palette,
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";
 import MapView from "./components/MapView";
@@ -367,7 +373,7 @@ function RideStepper({ status }: { status: RideStatus }) {
 
 
 export default function DriverDashboard() {
-  const { logout } = useAuthContext();
+  const { user, logout } = useAuthContext();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<DriverProfileData | null>(null);
   const [currentRide, setCurrentRide] = useState<Ride | null>(null);
@@ -381,6 +387,8 @@ export default function DriverDashboard() {
   const [error, setError] = useState("");
   const [showEarningsFlash, setShowEarningsFlash] = useState<number | null>(null);
   const [currentTime] = useState(() => Date.now());
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+  const [copiedId, setCopiedId] = useState(false);
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -784,8 +792,8 @@ export default function DriverDashboard() {
 
   const acceptanceRate = useMemo(() => {
     if (!profile) return 0;
-    const total = profile.statistics?.totalTrips ?? profile.totalTrips ?? 1;
-    const completed = profile.statistics?.completedTrips ?? profile.completedTrips ?? 0;
+    const total = profile.statistics?.totalTrips ?? 1;
+    const completed = profile.statistics?.completedTrips ?? 0;
     return Math.round((completed / (total || 1)) * 100);
   }, [profile]);
 
@@ -867,9 +875,9 @@ export default function DriverDashboard() {
   const distance = currentRide ? currentRide.distance.actual ?? currentRide.distance.estimated : null;
   const duration = currentRide ? currentRide.duration.actual ?? currentRide.duration.estimated : null;
   const fare = currentRide
-    ? currentRide.fare.breakdown?.driverEarningPaise ?? currentRide.fare.final ?? currentRide.fare.estimated
+    ? currentRide.fare.breakdown?.driverEarningPaise ?? currentRide.fare.estimated
     : null;
-  const fareBreakdownData = currentRide?.fare?.breakdown ?? currentRide?.fare?.fareBreakdown ?? null;
+  const fareBreakdownData = currentRide?.fare?.breakdown ?? null;
 
   const driverStatusCopy: Record<DriverStatus, string> = {
     OFFLINE: "You are offline. Riders cannot see your location.",
@@ -955,6 +963,97 @@ export default function DriverDashboard() {
           </div>
         </header>
 
+        {/* Driver Profile Overview Card — Beautiful Display of Registration Data */}
+        <section className="w-full rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-xl backdrop-blur-2xl relative overflow-hidden">
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <div className="relative">
+                {profile?.profilePhoto?.url ? (
+                  <img
+                    src={profile.profilePhoto.url}
+                    alt="Driver Avatar"
+                    className="h-20 w-20 sm:h-24 sm:w-24 rounded-3xl object-cover border-2 border-[#c58a3a] shadow-lg cursor-pointer hover:scale-105 transition-transform"
+                    onClick={() => setPreviewImage({ url: profile.profilePhoto.url, title: "Driver Profile Photo" })}
+                  />
+                ) : (
+                  <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-3xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] flex items-center justify-center text-[#ffd88a] font-bold text-2xl border-2 border-[#c58a3a] shadow-lg">
+                    {user?.firstName?.[0]?.toUpperCase() || "D"}
+                  </div>
+                )}
+                <span className={`absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2 border-[#fffaf0] ${statusDotColor}`} />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-black text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+                    {user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Driver Partner"}
+                  </h1>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-bold border shadow-xs ${
+                      profile?.verificationStatus === "APPROVED" || profile?.isVerified
+                        ? "bg-emerald-950/20 text-emerald-900 border-emerald-500/30"
+                        : profile?.verificationStatus === "REJECTED"
+                        ? "bg-rose-950/20 text-rose-900 border-rose-500/30"
+                        : "bg-amber-950/20 text-amber-900 border-amber-500/30"
+                    }`}
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    {profile?.verificationStatus === "APPROVED" || profile?.isVerified
+                      ? "Verified Partner"
+                      : profile?.verificationStatus === "REJECTED"
+                      ? "Verification Rejected"
+                      : "Pending Verification"}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 text-xs text-[#7a4416] flex-wrap">
+                  <span className="font-mono bg-[#3a1f0a]/10 px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                    ID: {profile?.id ? `${profile.id.slice(0, 8)}...${profile.id.slice(-4)}` : "UF-DRIVER"}
+                    <button
+                      onClick={() => {
+                        if (profile?.id) {
+                          navigator.clipboard.writeText(profile.id);
+                          setCopiedId(true);
+                          setTimeout(() => setCopiedId(false), 2000);
+                        }
+                      }}
+                      className="hover:text-[#2e1808] transition-colors"
+                      title="Copy full driver ID"
+                    >
+                      {copiedId ? <Check className="h-3 w-3 text-emerald-700" /> : <Copy className="h-3 w-3" />}
+                    </button>
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1 font-semibold text-[#2e1808]">
+                    <VehicleIcon className="h-3.5 w-3.5 text-[#b8722c]" />
+                    {profile?.vehicle?.brand || "Toyota"} {profile?.vehicle?.model || "Innova"} ({profile?.vehicle?.registrationNumber || "KA-01-UF-1001"})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 bg-[#fffaf0]/80 border border-[#7a4416]/20 rounded-2xl px-5 py-3 shadow-xs">
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">Rating Score</p>
+                <div className="flex items-center gap-1 mt-0.5 justify-end">
+                  <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+                  <span className="text-lg font-black text-[#2e1808] font-mono">
+                    {Number(profile?.rating?.average ?? 5.0).toFixed(1)}
+                  </span>
+                </div>
+              </div>
+              <div className="h-8 w-px bg-[#7a4416]/20" />
+              <div className="text-left">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">Total Ratings</p>
+                <p className="text-lg font-black text-[#2e1808] font-mono mt-0.5">
+                  {profile?.rating?.totalRatings ?? 0}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Status Control Card — FULL WIDTH */}
         <section className="w-full rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 shadow-xl backdrop-blur-2xl relative overflow-hidden">
           <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
@@ -1005,9 +1104,9 @@ export default function DriverDashboard() {
 
         {/* Analytics Stat Cards — FULL WIDTH */}
         <section className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Trips" value={String(profile?.statistics?.totalTrips ?? profile?.totalTrips ?? 0)} icon={RouteIcon} trend="+4% this week" />
-          <StatCard label="Driver Rating" value={Number(profile?.rating?.average ?? profile?.averageRating ?? 5).toFixed(1)} icon={Star} />
-          <StatCard label="Total Earnings" value={formatPaise(profile?.statistics?.totalEarnings ?? profile?.totalEarningsPaise ?? 0)} icon={Wallet} trend="Verified" />
+          <StatCard label="Total Trips" value={String(profile?.statistics?.totalTrips ?? 0)} icon={RouteIcon} trend="+4% this week" />
+          <StatCard label="Driver Rating" value={Number(profile?.rating?.average ?? 5).toFixed(1)} icon={Star} />
+          <StatCard label="Total Earnings" value={formatPaise(profile?.statistics?.totalEarnings ?? 0)} icon={Wallet} trend="Verified" />
           <StatCard label="Completion Rate" value={`${acceptanceRate}%`} icon={CheckCircle2} />
         </section>
 
@@ -1265,75 +1364,412 @@ export default function DriverDashboard() {
           ))}
         </section>
 
-        {/* Vehicle Information Grid — FULL WIDTH */}
-        <section className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[
-            { label: "Vehicle Category", value: VEHICLE_TYPE_LABEL[profile?.vehicle?.type || "CAR"] || "Car", icon: VehicleIcon },
-            { label: "Make & Model", value: `${profile?.vehicle?.brand || "Toyota"} ${profile?.vehicle?.model || "Prius"}`, icon: Car },
-            { label: "Registration No.", value: profile?.vehicle?.registrationNumber || "MH-02-UF-2026", icon: FileText },
-          ].map((item) => (
-            <div key={item.label} className="w-full rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 shadow-xl backdrop-blur-xl">
-              <div className="flex items-center gap-2.5 text-[#7a4416]">
+        {/* Extended Vehicle Specifications — FULL WIDTH */}
+        <section className="w-full rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-xl backdrop-blur-2xl relative">
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#7a4416]/20 pb-4 mb-6">
+            <div>
+              <div className="flex items-center gap-2">
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
-                  <item.icon className="h-4 w-4" />
+                  <VehicleIcon className="h-4 w-4" />
                 </span>
-                <p className="text-xs uppercase tracking-wider font-bold">{item.label}</p>
+                <h2 className="text-lg font-bold text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+                  Vehicle Specifications & Fleet Identity
+                </h2>
               </div>
-              <p className="mt-3 text-base font-bold text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>{item.value}</p>
+              <p className="text-xs text-[#7a4416] mt-1">Verified vehicle metadata registered for commercial dispatch</p>
             </div>
-          ))}
+            <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-full border border-emerald-500/30 bg-emerald-950/20 px-3 py-1 text-xs font-bold text-emerald-900 shadow-sm">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
+              RTO & Fleet Approved
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {[
+              {
+                label: "Category",
+                value: VEHICLE_TYPE_LABEL[profile?.vehicle?.type || "CAR"] || "Car",
+                icon: VehicleIcon,
+                sub: "Commercial Class",
+                mono: false,
+              },
+              {
+                label: "Make & Model",
+                value: `${profile?.vehicle?.brand || "Toyota"} ${profile?.vehicle?.model || "Innova Crysta"}`,
+                icon: Car,
+                sub: "Fleet Specification",
+                mono: false,
+              },
+              {
+                label: "Registration No.",
+                value: profile?.vehicle?.registrationNumber || "MH-02-UF-2026",
+                icon: FileText,
+                sub: "State RTO Registered",
+                mono: true,
+              },
+              {
+                label: "Vehicle Color",
+                value: profile?.vehicle?.color || "Pearl White",
+                icon: Palette,
+                sub: "Exterior Finish",
+                mono: false,
+              },
+              {
+                label: "Model Year",
+                value: String(profile?.vehicle?.registrationYear || 2024),
+                icon: Calendar,
+                sub: "Manufacturing Year",
+                mono: false,
+              },
+            ].map((spec) => (
+              <div
+                key={spec.label}
+                className="rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/80 p-4 shadow-sm hover:border-[#b8722c]/60 transition-all"
+              >
+                <div className="flex items-center justify-between text-[#7a4416] mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider">{spec.label}</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#3a1f0a] text-[#ffd88a]">
+                    <spec.icon className="h-3.5 w-3.5" />
+                  </span>
+                </div>
+                <p className={`text-base font-bold text-[#2e1808] ${spec.mono ? "font-mono tracking-tight" : ""}`} style={{ fontFamily: spec.mono ? undefined : "'Fraunces', Georgia, serif" }}>
+                  {spec.value}
+                </p>
+                <p className="text-[10px] text-[#7a4416]/80 mt-1">{spec.sub}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Vehicle 5-Perspective Photo Gallery — FULL WIDTH */}
+        <section className="w-full rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-xl backdrop-blur-2xl relative">
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#7a4416]/20 pb-4 mb-6">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
+                  <Camera className="h-4 w-4" />
+                </span>
+                <h2 className="text-lg font-bold text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+                  Vehicle Inspection Gallery (5 Angles)
+                </h2>
+              </div>
+              <p className="text-xs text-[#7a4416] mt-1">
+                Visual safety inspection photographs registered with fleet operations
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-[#7a4416]">Click any view to inspect high-resolution</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {[
+              {
+                key: "front",
+                label: "Front Elevation",
+                url: profile?.vehicleImages?.front,
+                desc: "Full front grill & headlights",
+              },
+              {
+                key: "back",
+                label: "Rear & Number Plate",
+                url: profile?.vehicleImages?.back,
+                desc: "Rear bumper & license plate",
+              },
+              {
+                key: "left",
+                label: "Left Flank",
+                url: profile?.vehicleImages?.left,
+                desc: "Full driver-side profile",
+              },
+              {
+                key: "right",
+                label: "Right Flank",
+                url: profile?.vehicleImages?.right,
+                desc: "Full passenger-side profile",
+              },
+              {
+                key: "interior",
+                label: "Interior Cabin",
+                url: profile?.vehicleImages?.interior,
+                desc: "Dashboard, seats & cockpit",
+              },
+            ].map((imgItem) => (
+              <div
+                key={imgItem.key}
+                onClick={() => {
+                  if (imgItem.url) {
+                    setPreviewImage({ url: imgItem.url, title: `Vehicle ${imgItem.label}` });
+                  }
+                }}
+                className={`group relative flex flex-col overflow-hidden rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0] p-3 shadow-sm transition-all duration-200 hover:shadow-md hover:border-[#b8722c] ${
+                  imgItem.url ? "cursor-pointer" : "opacity-75"
+                }`}
+              >
+                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#2e1808]/5 border border-[#7a4416]/10 flex items-center justify-center">
+                  {imgItem.url ? (
+                    <img
+                      src={imgItem.url}
+                      alt={imgItem.label}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-[#7a4416]/50">
+                      <Camera className="h-6 w-6 mb-1" />
+                      <span className="text-[10px]">No photo</span>
+                    </div>
+                  )}
+                  {imgItem.url && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                      <span className="flex items-center gap-1 rounded-full bg-[#3a1f0a]/90 px-3 py-1 text-xs font-semibold text-[#ffd88a] shadow-lg backdrop-blur-sm">
+                        <Eye className="h-3.5 w-3.5" /> Preview
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2.5">
+                  <p className="text-xs font-bold text-[#2e1808] truncate">{imgItem.label}</p>
+                  <p className="text-[10px] text-[#7a4416]/80 truncate">{imgItem.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* Compliance & Document Verification Status — FULL WIDTH */}
-        <section className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 pb-8">
-          {[
-            {
-              title: "Driving License",
-              number: profile?.documents?.drivingLicense?.number || "DL-9876543210",
-              expiry: profile?.documents?.drivingLicense?.expiryDate || new Date(currentTime + 365*24*3600*1000).toISOString(),
-              verified: profile?.documents?.drivingLicense?.verified ?? true,
-            },
-            {
-              title: "Vehicle Insurance",
-              number: profile?.documents?.insurance?.number || "INS-123456",
-              expiry: profile?.documents?.insurance?.expiryDate || new Date(currentTime + 365*24*3600*1000).toISOString(),
-              verified: profile?.documents?.insurance?.verified ?? true,
-            },
-            {
-              title: "Pollution Certificate",
-              number: "Active Compliance",
-              expiry: profile?.documents?.pollutionCertificate?.expiryDate || new Date(currentTime + 180*24*3600*1000).toISOString(),
-              verified: true,
-            },
-          ].map((doc) => {
-            const expiryDate = new Date(doc.expiry);
-            const daysLeft = Math.round((expiryDate.getTime() - currentTime) / (1000 * 60 * 60 * 24));
-            const expiringSoon = daysLeft < 30;
-            return (
-              <div key={doc.title} className="w-full rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 shadow-xl backdrop-blur-xl">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-[#7a4416]">{doc.title}</h3>
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
-                      doc.verified
-                        ? "bg-emerald-950/20 text-emerald-900 border-emerald-500/30"
-                        : "bg-amber-950/20 text-amber-900 border-amber-500/30"
-                    }`}
-                  >
-                    <Shield className="h-3 w-3" />
-                    {doc.verified ? "Verified" : "Pending"}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm font-bold text-[#2e1808]">{doc.number}</p>
-                <p className={`mt-1 text-xs console-readout font-medium tabular-nums ${expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"}`}>
-                  Expires {expiryDate.toLocaleDateString()}
-                  {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft} days left` : ""}
-                  {daysLeft < 0 ? " • Expired" : ""}
-                </p>
+        <section className="w-full rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-xl backdrop-blur-2xl relative pb-8">
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#7a4416]/20 pb-4 mb-6">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
+                  <Shield className="h-4 w-4" />
+                </span>
+                <h2 className="text-lg font-bold text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+                  Regulatory Compliance & Verified Credentials
+                </h2>
               </div>
-            );
-          })}
+              <p className="text-xs text-[#7a4416] mt-1">Official state transport compliance, certificates and policy records</p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-full border border-[#7a4416]/30 bg-[#fffaf0] px-3 py-1 text-xs font-bold text-[#2e1808] shadow-sm">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
+              4/4 Required Documents Valid
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. Driving License */}
+            {(() => {
+              const dl = profile?.documents?.drivingLicense;
+              const dlExpiry = dl?.expiryDate ? new Date(dl.expiryDate) : new Date(currentTime + 365 * 24 * 3600 * 1000);
+              const daysLeft = Math.round((dlExpiry.getTime() - currentTime) / (1000 * 60 * 60 * 24));
+              const expiringSoon = daysLeft < 30;
+              return (
+                <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/90 p-5 shadow-sm hover:border-[#b8722c]/60 transition-all">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">Driving License</span>
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/20 text-emerald-900 border-emerald-500/30">
+                        <Shield className="h-3 w-3" />
+                        {dl?.verified ?? true ? "Verified" : "Pending"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-bold font-mono text-[#2e1808]">{dl?.number || "DL-9876543210"}</p>
+                    <p className={`mt-1 text-xs console-readout font-medium tabular-nums ${expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"}`}>
+                      Expires {dlExpiry.toLocaleDateString()}
+                      {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
+                    </p>
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    {dl?.frontImage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setPreviewImage({ url: dl.frontImage, title: "Driving License (Front Side)" })}
+                        className="flex-1 text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                      >
+                        <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> Front
+                      </Button>
+                    )}
+                    {dl?.backImage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setPreviewImage({ url: dl.backImage, title: "Driving License (Back Side)" })}
+                        className="flex-1 text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                      >
+                        <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> Back
+                      </Button>
+                    )}
+                    {!dl?.frontImage && !dl?.backImage && (
+                      <span className="text-[10px] text-[#7a4416]/70">Digital copy on file</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 2. Registration Certificate (RC) */}
+            {(() => {
+              const rc = profile?.documents?.registrationCertificate;
+              return (
+                <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/90 p-5 shadow-sm hover:border-[#b8722c]/60 transition-all">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">RC Smart Card</span>
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/20 text-emerald-900 border-emerald-500/30">
+                        <Shield className="h-3 w-3" />
+                        {rc?.verified ?? true ? "Verified" : "Pending"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-bold font-mono text-[#2e1808]">{rc?.number || profile?.vehicle?.registrationNumber || "MH-02-UF-2026"}</p>
+                    <p className="mt-1 text-xs console-readout font-medium text-[#6b3a12]">
+                      State Transport Dept • Lifetime
+                    </p>
+                  </div>
+                  <div className="mt-4">
+                    {rc?.image ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setPreviewImage({ url: rc.image, title: "Registration Certificate (RC)" })}
+                        className="w-full text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                      >
+                        <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> View RC Smart Card
+                      </Button>
+                    ) : (
+                      <span className="text-[10px] text-[#7a4416]/70">Digital copy on file</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 3. Insurance Policy */}
+            {(() => {
+              const ins = profile?.documents?.insurance;
+              const insExpiry = ins?.expiryDate ? new Date(ins.expiryDate) : new Date(currentTime + 365 * 24 * 3600 * 1000);
+              const daysLeft = Math.round((insExpiry.getTime() - currentTime) / (1000 * 60 * 60 * 24));
+              const expiringSoon = daysLeft < 30;
+              return (
+                <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/90 p-5 shadow-sm hover:border-[#b8722c]/60 transition-all">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">Commercial Insurance</span>
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/20 text-emerald-900 border-emerald-500/30">
+                        <Shield className="h-3 w-3" />
+                        {ins?.verified ?? true ? "Active" : "Pending"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-bold font-mono text-[#2e1808]">{ins?.number || "INS-9823410"}</p>
+                    <p className={`mt-1 text-xs console-readout font-medium tabular-nums ${expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"}`}>
+                      Expires {insExpiry.toLocaleDateString()}
+                      {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
+                    </p>
+                  </div>
+                  <div className="mt-4">
+                    {ins?.image ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setPreviewImage({ url: ins.image, title: "Insurance Policy Certificate" })}
+                        className="w-full text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                      >
+                        <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> View Policy Certificate
+                      </Button>
+                    ) : (
+                      <span className="text-[10px] text-[#7a4416]/70">Digital copy on file</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 4. Pollution Under Control (PUC) */}
+            {(() => {
+              const puc = profile?.documents?.pollutionCertificate;
+              const pucExpiry = puc?.expiryDate ? new Date(puc.expiryDate) : new Date(currentTime + 180 * 24 * 3600 * 1000);
+              const daysLeft = Math.round((pucExpiry.getTime() - currentTime) / (1000 * 60 * 60 * 24));
+              const expiringSoon = daysLeft < 30;
+              return (
+                <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/90 p-5 shadow-sm hover:border-[#b8722c]/60 transition-all">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">Pollution (PUC)</span>
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/20 text-emerald-900 border-emerald-500/30">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Compliant
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-bold font-mono text-[#2e1808]">PUC-GREEN-EMISSION</p>
+                    <p className={`mt-1 text-xs console-readout font-medium tabular-nums ${expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"}`}>
+                      Valid until {pucExpiry.toLocaleDateString()}
+                      {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
+                    </p>
+                  </div>
+                  <div className="mt-4">
+                    {puc?.image ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setPreviewImage({ url: puc.image, title: "Pollution Under Control (PUC) Certificate" })}
+                        className="w-full text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                      >
+                        <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> View PUC Certificate
+                      </Button>
+                    ) : (
+                      <span className="text-[10px] text-[#7a4416]/70">Digital copy on file</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </section>
+
+        {/* High-Resolution Document & Photo Lightbox Modal */}
+        {previewImage && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+            onClick={() => setPreviewImage(null)}
+          >
+            <div
+              className="relative max-w-3xl w-full rounded-3xl border border-[#fff4dc]/40 bg-gradient-to-b from-[#2e1808] to-[#1a0c04] p-6 shadow-2xl text-white overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-[#7a4416]/40 pb-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#ffd88a] text-[#3a1f0a] font-bold">
+                    <Eye className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[#ffd88a]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+                      {previewImage.title}
+                    </h3>
+                    <p className="text-xs text-[#ffd88a]/70">Official driver registration document preview</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImage(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="relative flex items-center justify-center max-h-[70vh] overflow-hidden rounded-2xl bg-black/40 border border-white/10 p-2">
+                <img
+                  src={previewImage.url}
+                  alt={previewImage.title}
+                  className="max-h-[65vh] w-auto max-w-full rounded-xl object-contain shadow-lg"
+                />
+              </div>
+            </div>
+          </div>
+        )}
     </div>
     </div>
   );

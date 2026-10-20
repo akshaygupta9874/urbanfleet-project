@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
 import { getCsrfCookieOptions } from '../utils/cookie.js';
-import { ForbiddenError, UnauthorizedError } from '@urbanfleet/common';
+import { ForbiddenError, UnauthorizedError, AuthenticatedRequest } from '@urbanfleet/common';
 
 // Default to 24 hours (86400 seconds) if missing
 const CSRF_EXPIRE_SECONDS = process.env.CSRF_TOKEN_EXPIRE_SECONDS
@@ -36,24 +36,20 @@ export const generateCSRFToken = async (userId: string, response: Response): Pro
  * Express middleware to verify CSRF token on state-changing requests (POST, PUT, PATCH, DELETE).
  * Safe HTTP methods (GET, HEAD, OPTIONS) skip CSRF checks.
  */
-export const verifyCsrfToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const verifyCsrfToken = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   // 1. Skip safe HTTP methods
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase())) {
     return next();
   }
 
   // 2. Resolve user ID from authenticated request or session
-  const userId = (req as any).user?.userId || (req as any).userId;
+  const userId = req.userId;
   if (!userId) {
     return next(new UnauthorizedError('User unauthenticated for CSRF verification'));
   }
 
   // 3. Extract CSRF token from headers
-  const clientToken = (
-    req.headers['x-csrf-token'] ||
-    req.headers['x-xsrf-token'] ||
-    req.headers['csrf-token']
-  ) as string | undefined;
+  const clientToken = req.headers['x-csrf-token'] as string | undefined;
 
   if (!clientToken) {
     return next(new ForbiddenError('CSRF token missing', 'CSRF_TOKEN_MISSING'));

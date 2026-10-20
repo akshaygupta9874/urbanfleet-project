@@ -317,9 +317,11 @@ describe("Ride WebSocket Gateway Integration Suite", () => {
 
     ws.send(
       JSON.stringify({
-        type: "location_update",
-        latitude: 12.9716,
-        longitude: 77.5946,
+        event: "driver:update-location",
+        data: {
+          latitude: 12.9716,
+          longitude: 77.5946,
+        },
       })
     );
 

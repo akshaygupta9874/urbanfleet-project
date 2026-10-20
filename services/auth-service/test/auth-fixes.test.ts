@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterAll, beforeAll } from 'vitest';
 import express from 'express';
 import http from 'node:http';
+import axios from 'axios';
 import { AuthService } from '../src/services/auth.service.js';
 import { UserService } from '../src/services/user.service.js';
 import { TwoFactorService } from '../src/services/two-factor.service.js';
@@ -389,13 +390,12 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     });
 
     it('rejects request when Google token verification fails', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
-        const urlStr = typeof url === 'string' ? url : url.url;
-        if (urlStr && urlStr.includes('tokeninfo')) {
-          return new Response(JSON.stringify({ error: 'invalid_token' }), { status: 400 });
-        }
-        return originalFetch(url, init);
+      const axiosGetError = new Error('Request failed with status code 400');
+      Object.assign(axiosGetError, {
+        isAxiosError: true,
+        response: { status: 400, data: { error: 'invalid_token' } }
       });
+      const axiosSpy = vi.spyOn(axios, 'get').mockRejectedValue(axiosGetError);
 
       const res = await originalFetch(`${baseUrl}/google`, {
         method: 'POST',
@@ -406,26 +406,20 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(res.status).toBe(401);
       const data = await res.json();
       expect(data.error).toMatch(/Google could not verify/);
-      fetchSpy.mockRestore();
+      axiosSpy.mockRestore();
     });
 
     it('creates new user and signs in successfully with verified Google token', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
-        const urlStr = typeof url === 'string' ? url : url.url;
-        if (urlStr && urlStr.includes('tokeninfo')) {
-          return new Response(
-            JSON.stringify({
-              sub: 'google-sub-12345',
-              email: 'newgoogleuser@example.com',
-              email_verified: true,
-              name: 'Google Traveler',
-              picture: 'https://example.com/avatar.jpg',
-              aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-        return originalFetch(url, init);
+      const axiosSpy = vi.spyOn(axios, 'get').mockResolvedValue({
+        status: 200,
+        data: {
+          sub: 'google-sub-12345',
+          email: 'newgoogleuser@example.com',
+          email_verified: true,
+          name: 'Google Traveler',
+          picture: 'https://example.com/avatar.jpg',
+          aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
+        },
       });
 
       mockUserRepo.findByEmail.mockResolvedValue(null);
@@ -457,25 +451,19 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
           role: 'RIDER',
         })
       );
-      fetchSpy.mockRestore();
+      axiosSpy.mockRestore();
     });
 
     it('logs in existing user successfully when authenticated with Google', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
-        const urlStr = typeof url === 'string' ? url : url.url;
-        if (urlStr && urlStr.includes('tokeninfo')) {
-          return new Response(
-            JSON.stringify({
-              sub: 'google-sub-99999',
-              email: 'existinguser@example.com',
-              email_verified: 'true',
-              name: 'Existing Rider',
-              aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-        return originalFetch(url, init);
+      const axiosSpy = vi.spyOn(axios, 'get').mockResolvedValue({
+        status: 200,
+        data: {
+          sub: 'google-sub-99999',
+          email: 'existinguser@example.com',
+          email_verified: 'true',
+          name: 'Existing Rider',
+          aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
+        },
       });
 
       mockUserRepo.findByEmail.mockResolvedValue({
@@ -499,7 +487,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(body.success).toBe(true);
       expect(body.user.email).toBe('existinguser@example.com');
       expect(mockUserRepo.create).not.toHaveBeenCalled();
-      fetchSpy.mockRestore();
+      axiosSpy.mockRestore();
     });
   });
 

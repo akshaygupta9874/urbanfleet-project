@@ -10,6 +10,7 @@ import type { DispatchService } from '../services/dispatch.service.js';
 import { AuthenticatedSocket, AuthenticatedSocketUser } from './types.js';
 import { socketRegistry } from './registry/socket.registry.js';
 import { registerSocketHandlers, configureDriverHandlers, configureRiderHandlers } from './handlers/index.js';
+import { AuthPayload } from '../middlewares/auth.middleware.js';
 
 const logger = createLogger('ride-websocket-server');
 
@@ -70,7 +71,7 @@ export function initRideWebSocketServer(
         algorithms: ['RS256'],
         issuer: 'urbanfleet-auth',
         audience: 'urbanfleet-api',
-      }) as any;
+      }) as AuthPayload;
 
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request, decoded);
@@ -81,9 +82,8 @@ export function initRideWebSocketServer(
     }
   });
 
-  wss.on('connection', (ws: WebSocket, req: http.IncomingMessage, userPayload: any) => {
+  wss.on('connection', (ws: WebSocket, req: http.IncomingMessage, userPayload: AuthPayload) => {
     const authenticatedSocket = ws as AuthenticatedSocket;
-    const driverId = userPayload.driverId || userPayload.userId;
     const roles: string[] = Array.isArray(userPayload.role)
       ? userPayload.role
       : userPayload.role
@@ -91,8 +91,8 @@ export function initRideWebSocketServer(
       : ['RIDER'];
 
     const user: AuthenticatedSocketUser = {
-      userId: userPayload.userId,
-      driverId: roles.includes('DRIVER') ? driverId : undefined,
+      userId: userPayload.userId || '',
+      driverId: roles.includes('DRIVER') ? userPayload.userId : undefined,
       role: roles,
       sessionId: userPayload.sessionId,
     };

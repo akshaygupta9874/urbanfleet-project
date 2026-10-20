@@ -104,11 +104,11 @@ export class DocumentService {
     }
 
     const normalizedType = type.toUpperCase().trim();
-    const frontImage = params.frontImage || params.documentUrl;
-    const documentUrl = params.documentUrl || params.frontImage;
+    const documentUrl = params.documentUrl;
+    const frontImage = params.frontImage;
 
-    if (!documentUrl && !frontImage) {
-      throw new BadRequestError('Document URL or front image is required');
+    if (!documentUrl) {
+      throw new BadRequestError('Document URL is required');
     }
 
     // Parse and validate expiry date
@@ -138,7 +138,7 @@ export class DocumentService {
     if (existing && this.docRepo.update) {
       doc = await this.docRepo.update(existing.id, {
         documentUrl: documentUrl!,
-        frontImage: frontImage || documentUrl,
+        frontImage: frontImage,
         backImage: params.backImage || existing.backImage,
         number: number || existing.number,
         expiresAt: expiresAt !== undefined ? expiresAt : existing.expiresAt,
@@ -151,7 +151,7 @@ export class DocumentService {
         driverProfileId,
         type: normalizedType,
         documentUrl: documentUrl!,
-        frontImage: frontImage || documentUrl,
+        frontImage: frontImage,
         backImage: params.backImage,
         number,
         expiresAt,
@@ -176,10 +176,9 @@ export class DocumentService {
     status: VerificationStatus,
     rejectionReason?: string
   ): Promise<Document> {
-    let doc: Document | null = null;
-    if (typeof (this.docRepo as any).findById === 'function') {
-      doc = await this.docRepo.findById(documentId);
-    }
+    const doc = (this.docRepo && typeof this.docRepo.findById === 'function')
+      ? await this.docRepo.findById(documentId)
+      : null;
 
     if (status === VerificationStatus.REJECTED && !rejectionReason) {
       throw new BadRequestError('A rejection reason must be provided when rejecting a document');
@@ -370,17 +369,13 @@ export class DocumentService {
   }
 
   async deleteDocument(documentId: string): Promise<Document | null> {
-    const doc = typeof (this.docRepo as any).findById === 'function'
-      ? await this.docRepo.findById(documentId)
-      : null;
+    const doc = this.docRepo ? await this.docRepo.findById(documentId) : null;
 
-    if (!doc && typeof (this.docRepo as any).findById === 'function') {
+    if (!doc) {
       throw new NotFoundError(`Document with ID ${documentId} not found`);
     }
 
-    const deleted = typeof (this.docRepo as any).delete === 'function'
-      ? await this.docRepo.delete(documentId)
-      : doc;
+    const deleted = this.docRepo ? await this.docRepo.delete(documentId) : doc;
 
     const driverProfileId = doc?.driverProfileId;
     if (driverProfileId && this.driverRepo) {

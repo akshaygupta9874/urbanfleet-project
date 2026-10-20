@@ -14,11 +14,11 @@ export class GeoService {
     this.presenceService = presenceService;
   }
 
-  setPresenceService(presenceService: DriverPresenceService) {
+  setPresenceService(presenceService: DriverPresenceService): void {
     this.presenceService = presenceService;
   }
 
-  async updateDriverLocation(driverId: string, lat: number, lng: number) {
+  async updateDriverLocation(driverId: string, lat: number, lng: number): Promise<void> {
     // 1. Add/Update coordinate in Redis GEO
     await this.redis.geoAdd(GEO_KEY, {
       longitude: lng,
@@ -30,13 +30,13 @@ export class GeoService {
     await this.redis.set(`driver:heartbeat:${driverId}`, '1', { EX: 60 });
   }
 
-  async getDriverLocation(driverId: string) {
+  async getDriverLocation(driverId: string): Promise<{ lat: number; lng: number } | null> {
     const coords = await this.redis.geoPos(GEO_KEY, driverId);
     if (!coords || !coords[0]) return null;
     return { lat: Number(coords[0].latitude), lng: Number(coords[0].longitude) };
   }
 
-  async removeDriverLocation(driverId: string) {
+  async removeDriverLocation(driverId: string): Promise<void> {
     await this.redis.zRem(GEO_KEY, driverId);
     await this.redis.del(`driver:heartbeat:${driverId}`);
   }

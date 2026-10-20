@@ -1,6 +1,9 @@
-let prisma: any;
-let VerificationStatus: any;
-let pool: any;
+import type pg from 'pg';
+import type { PrismaClient, VerificationStatus as VerificationStatusEnum } from '../src/db/client.js';
+
+let prisma: PrismaClient;
+let VerificationStatus: typeof VerificationStatusEnum;
+let pool: pg.Pool;
 
 async function getClient() {
   try {

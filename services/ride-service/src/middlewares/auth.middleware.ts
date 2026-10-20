@@ -1,7 +1,7 @@
-import { NextFunction, Request, Response } from 'express';
+import { NextFunction, Request, Response, RequestHandler } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import crypto from 'crypto';
-import { AppError } from '@urbanfleet/common';
+import { AppError, AuthUser } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
 import { rideRedisClient } from '../redis/client.js';
 
@@ -9,7 +9,7 @@ export interface AuthenticatedRequest extends Request {
   userId?: string;
   role?: string[];
   driverId?: string;
-  user?: any;
+  user?: AuthUser;
 }
 
 export interface AuthPayload extends JwtPayload {
@@ -19,17 +19,18 @@ export interface AuthPayload extends JwtPayload {
   email?: string;
   role?: string | string[];
   roles?: string[];
+  tokenType?: string;
 }
 
-export const authMiddleware = asyncHandler(
-  async (request: AuthenticatedRequest, response: Response, next: NextFunction) => {
+export const authMiddleware: RequestHandler = asyncHandler(
+  async (req: AuthenticatedRequest, _response: Response, next: NextFunction) => {
     // If request already has authenticated user (test bypass / mock), proceed
-    if (request.userId && request.user) {
+    if (req.userId && req.user) {
       return next();
     }
 
     // Allow internal service communication (strictly requiring configured non-fallback key)
-    const internalKey = request.headers['x-internal-service-key'];
+    const internalKey = req.headers['x-internal-service-key'];
     const expectedKey = process.env.INTERNAL_SERVICE_KEY;
     if (
       expectedKey &&
@@ -38,17 +39,18 @@ export const authMiddleware = asyncHandler(
       internalKey.length === expectedKey.length &&
       crypto.timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
     ) {
-      request.userId = 'internal-service';
-      request.role = ['ADMIN'];
-      request.user = { id: 'internal-service', userId: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
+      req.userId = 'internal-service';
+      req.role = ['ADMIN'];
+      req.user = { id: 'internal-service', userId: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
       return next();
     }
 
     // 1. Extract Token from Authorization header or cookie
+    const cookies = (req.cookies || {}) as Record<string, string | undefined>;
     const token =
-      request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      request.cookies?.accessToken ||
-      (request as any).cookies?.token;
+      req.headers.authorization?.replace(/^Bearer\s+/i, '') ||
+      cookies.accessToken ||
+      cookies.token;
 
     if (!token) {
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');
@@ -71,7 +73,7 @@ export const authMiddleware = asyncHandler(
         const secret = process.env.JWT_ACCESS_SECRET || 'test-access-secret-only';
         decodedData = jwt.verify(token, secret) as AuthPayload;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof AppError) throw error;
       const secret = process.env.JWT_ACCESS_SECRET;
       if (secret && process.env.NODE_ENV !== 'production') {
@@ -86,11 +88,11 @@ export const authMiddleware = asyncHandler(
     }
 
     // Token Type Defense (reject refresh tokens used as bearer)
-    if ((decodedData as any).tokenType && (decodedData as any).tokenType !== 'ACCESS') {
+    if (decodedData.tokenType && decodedData.tokenType !== 'ACCESS') {
       throw new AppError('Invalid token type. Access token required.', 401, 'INVALID_TOKEN_TYPE');
     }
 
-    const userId = decodedData.userId || decodedData.id;
+    const userId = decodedData.userId;
     const sessionId = decodedData.sessionId;
 
     if (!userId) {
@@ -106,25 +108,25 @@ export const authMiddleware = asyncHandler(
         }
 
         if (storedSession) {
-          const parsed = JSON.parse(storedSession);
+          const parsed = JSON.parse(storedSession) as { userId?: string };
           if (parsed.userId && parsed.userId !== userId) {
             throw new AppError('Session mismatch. Please sign in again.', 401, 'SESSION_MISMATCH');
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (e instanceof AppError) throw e;
       }
     }
 
     // 4. Fetch User Data (Cache first)
-    let user: any = null;
+    let user: Record<string, unknown> | null = null;
     if (rideRedisClient.isOpen) {
       try {
         const userStr =
           (await rideRedisClient.get(`auth:user:${userId}`)) ||
           (await rideRedisClient.get(`user:${userId}`));
         if (userStr) {
-          user = JSON.parse(userStr);
+          user = JSON.parse(userStr) as Record<string, unknown>;
         }
       } catch (err) {}
     }
@@ -139,28 +141,31 @@ export const authMiddleware = asyncHandler(
     }
 
     // 5. Attach payload to Request and proceed
-    request.userId = userId;
-    request.role = Array.isArray(user.roles) ? user.roles : [user.role || 'RIDER'];
-    request.driverId = user.driver?.id || user.driverId;
-    const firstName = user.firstName || 'User';
-    const lastName = user.lastName || '';
+    req.userId = userId;
+    const userRoles = Array.isArray(user.roles) ? (user.roles as string[]) : [String(user.role || 'RIDER')];
+    req.role = userRoles;
+    const userDriver = user.driver as Record<string, unknown> | undefined;
+    const driverId = (userDriver?.id as string | undefined) || (user.driverId as string | undefined);
+    req.driverId = driverId;
+    const firstName = String(user.firstName || 'User');
+    const lastName = String(user.lastName || '');
 
-    request.user = {
+    req.user = {
       userId,
       id: userId,
-      email: user.email,
-      role: user.role,
-      roles: request.role,
+      email: typeof user.email === 'string' ? user.email : undefined,
+      role: typeof user.role === 'string' ? user.role : undefined,
+      roles: req.role,
       firstName,
       lastName,
-      driverId: request.driverId,
+      driverId: req.driverId,
     };
 
     next();
   }
 );
 
-export const requireRole = (...allowedRoles: string[]) => {
+export const requireRole = (...allowedRoles: string[]): RequestHandler => {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     if (!req.userId && !req.user) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));

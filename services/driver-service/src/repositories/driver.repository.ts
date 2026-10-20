@@ -1,4 +1,4 @@
-import { PrismaClient, DriverProfile, Vehicle } from '../db/client.js';
+import { PrismaClient, DriverProfile, Vehicle, Document, Prisma } from '../db/client.js';
 
 export class DriverRepository {
   private prisma: PrismaClient;
@@ -28,11 +28,11 @@ export class DriverRepository {
     return this.prisma.driverProfile.create({ data });
   }
 
-  async update(id: string, data: any): Promise<DriverProfile> {
+  async update(id: string, data: Prisma.DriverProfileUpdateInput): Promise<DriverProfile> {
     return this.prisma.driverProfile.update({ where: { id }, data });
   }
 
-  async createVehicle(driverProfileId: string, vehicleData: any): Promise<Vehicle> {
+  async createVehicle(driverProfileId: string, vehicleData: Prisma.VehicleCreateWithoutDriverProfileInput): Promise<Vehicle> {
     return this.prisma.vehicle.create({
       data: {
         driverProfileId,
@@ -41,14 +41,14 @@ export class DriverRepository {
     });
   }
 
-  async updateVehicle(id: string, vehicleData: any): Promise<Vehicle> {
+  async updateVehicle(id: string, vehicleData: Prisma.VehicleUpdateInput): Promise<Vehicle> {
     return this.prisma.vehicle.update({ where: { id }, data: vehicleData });
   }
 
   async createFullProfile(data: {
     userId: string;
     licenseNumber: string;
-    profilePhoto?: any;
+    profilePhoto?: Prisma.InputJsonValue;
     vehicle: {
       type: string;
       brand: string;
@@ -56,7 +56,7 @@ export class DriverRepository {
       color: string;
       registrationNumber: string;
       registrationYear: number;
-      images?: any;
+      images?: Prisma.InputJsonValue;
     };
     documents: Array<{
       type: string;
@@ -65,7 +65,7 @@ export class DriverRepository {
       frontImage: string;
       backImage?: string;
     }>;
-  }): Promise<DriverProfile & { vehicles: Vehicle[]; documents: any[] }> {
+  }): Promise<DriverProfile & { vehicles: Vehicle[]; documents: Document[] }> {
     return this.prisma.driverProfile.create({
       data: {
         userId: data.userId,
@@ -108,7 +108,7 @@ export class DriverRepository {
     id: string,
     data: {
       licenseNumber: string;
-      profilePhoto?: any;
+      profilePhoto?: Prisma.InputJsonValue;
       vehicle: {
         type: string;
         brand: string;
@@ -116,7 +116,7 @@ export class DriverRepository {
         color: string;
         registrationNumber: string;
         registrationYear: number;
-        images?: any;
+        images?: Prisma.InputJsonValue;
       };
       documents: Array<{
         type: string;
@@ -126,7 +126,7 @@ export class DriverRepository {
         backImage?: string;
       }>;
     }
-  ): Promise<DriverProfile & { vehicles: Vehicle[]; documents: any[] }> {
+  ): Promise<DriverProfile & { vehicles: Vehicle[]; documents: Document[] }> {
     return this.prisma.$transaction(async (tx) => {
       // 1. Update the placeholder driver profile
       await tx.driverProfile.update({

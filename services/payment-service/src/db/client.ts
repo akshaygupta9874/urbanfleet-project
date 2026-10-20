@@ -36,24 +36,34 @@ pool.on('error', (err) => {
 
 const adapter = new PrismaPg(pool);
 
+export interface RidePrismaExtension {
+  findUnique: (args: { where: { id: string } }) => Promise<unknown>;
+  update: (args: { where: { id: string }; data: { paymentStatus?: string } }) => Promise<unknown>;
+  updateMany: (args: { where: { id?: string }; data: { paymentStatus?: string } }) => Promise<{ count: number }>;
+}
+
+export interface UserPrismaExtension {
+  findUnique: (args: { where: { id: string }; select?: Record<string, boolean> }) => Promise<{ id: string; roles: string[] } | null>;
+}
+
 export type PaymentPrismaClient = PrismaClient & {
-  ride: any;
-  user: any;
+  ride: RidePrismaExtension;
+  user: UserPrismaExtension;
 };
 
-export const prisma: PaymentPrismaClient = new PrismaClient({
+const defaultPrisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-}) as any;
+});
 
-(prisma as any).ride = (prisma as any).ride || {
-  findUnique: async (args: any) => {
+const defaultRideExtension: RidePrismaExtension = {
+  findUnique: async (args: { where: { id: string } }) => {
     const id = args?.where?.id;
     if (!id) return null;
     const { rideClient } = await import('../clients/ride.client.js');
     return rideClient.getRideById(id);
   },
-  update: async (args: any) => {
+  update: async (args: { where: { id: string }; data: { paymentStatus?: string } }) => {
     const id = args?.where?.id;
     const { rideClient } = await import('../clients/ride.client.js');
     if (id && args?.data?.paymentStatus) {
@@ -61,7 +71,7 @@ export const prisma: PaymentPrismaClient = new PrismaClient({
     }
     return id ? rideClient.getRideById(id) : null;
   },
-  updateMany: async (args: any) => {
+  updateMany: async (args: { where: { id?: string }; data: { paymentStatus?: string } }) => {
     const id = args?.where?.id;
     const { rideClient } = await import('../clients/ride.client.js');
     if (id && args?.data?.paymentStatus) {
@@ -72,8 +82,8 @@ export const prisma: PaymentPrismaClient = new PrismaClient({
   },
 };
 
-(prisma as any).user = (prisma as any).user || {
-  findUnique: async (args: any) => {
+const defaultUserExtension: UserPrismaExtension = {
+  findUnique: async (args: { where: { id: string }; select?: Record<string, boolean> }) => {
     const id = args?.where?.id;
     if (!id) return null;
     try {
@@ -81,34 +91,49 @@ export const prisma: PaymentPrismaClient = new PrismaClient({
       if (redisClient.isOpen) {
         const cached = await redisClient.get(`auth:user:${id}`);
         if (cached) {
-          const u = JSON.parse(cached);
-          return { id: u.id || id, roles: u.roles || (u.role ? [u.role] : ['RIDER']) };
+          const u = JSON.parse(cached) as { id?: string; roles?: string[] };
+          return { id: u.id || id, roles: u.roles || ['RIDER'] };
         }
       }
     } catch {}
     const { authClient } = await import('../clients/auth.client.js');
     const u = await authClient.getUserById(id);
-    return u ? { id: u.id, roles: u.roles || (u.role ? [u.role] : ['RIDER']) } : null;
+    return u ? { id: u.id, roles: u.roles || ['RIDER'] } : null;
   },
 };
 
+export const prisma: PaymentPrismaClient = Object.assign(defaultPrisma, {
+  ride: defaultRideExtension,
+  user: defaultUserExtension,
+});
+
 const originalTransaction = prisma.$transaction.bind(prisma);
-prisma.$transaction = (async (arg: any, options?: any) => {
+prisma.$transaction = (async <T>(
+  arg: ((tx: PaymentPrismaClient) => Promise<T>) | Promise<T>[],
+  options?: unknown
+): Promise<T | T[]> => {
   if (process.env.NODE_ENV === "test") {
     if (typeof arg === "function") {
-      return await arg(prisma);
+      return await (arg as (tx: PaymentPrismaClient) => Promise<T>)(prisma);
     }
     if (Array.isArray(arg)) {
       return await Promise.all(arg);
     }
-    return arg;
+    return arg as unknown as T;
   }
   if (typeof arg === "function") {
-    return await originalTransaction(async (tx: any) => {
-      if (!tx.ride) tx.ride = (prisma as any).ride;
-      if (!tx.user) tx.user = (prisma as any).user;
-      return await arg(tx);
-    }, options);
+    return (await originalTransaction(
+      async (tx: unknown) => {
+        const txExtended = tx as PaymentPrismaClient;
+        if (!txExtended.ride) txExtended.ride = prisma.ride;
+        if (!txExtended.user) txExtended.user = prisma.user;
+        return await (arg as (tx: PaymentPrismaClient) => Promise<T>)(txExtended);
+      },
+      options as Parameters<typeof originalTransaction>[1]
+    )) as unknown as T;
   }
-  return await originalTransaction(arg, options);
-}) as any;
+  return (await originalTransaction(
+    arg as unknown as Parameters<typeof originalTransaction>[0],
+    options as Parameters<typeof originalTransaction>[1]
+  )) as unknown as T[];
+}) as unknown as typeof prisma.$transaction;

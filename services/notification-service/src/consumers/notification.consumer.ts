@@ -24,7 +24,7 @@ export async function initNotificationConsumer(
     await consumer.run({
       eachMessage: async ({ message }) => {
         if (!message.value) return;
-        const envelope: KafkaEnvelope<any> = JSON.parse(message.value.toString());
+        const envelope: KafkaEnvelope<unknown> = JSON.parse(message.value.toString());
 
         await prisma.$transaction(async (tx) => {
           // Idempotency check
@@ -67,8 +67,8 @@ export async function initNotificationConsumer(
               logger.info(`User registered event received for ${payload.email}; verification triggered via dedicated event.`);
             }
           } else if (envelope.eventType === 'PAYMENT_CAPTURED') {
-            const payload = envelope.payload as PaymentCapturedPayload & { email?: string; riderEmail?: string };
-            let recipientEmail = payload.email || payload.riderEmail || null;
+            const payload = envelope.payload as PaymentCapturedPayload & { email?: string };
+            let recipientEmail = payload.email || null;
 
             if (!recipientEmail && payload.riderId) {
               try {

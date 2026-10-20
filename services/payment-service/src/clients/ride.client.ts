@@ -1,4 +1,6 @@
+import axios, { AxiosInstance, isAxiosError } from 'axios';
 import { prisma } from "../db/client.js";
+import type { IFareBreakdown } from "../payment/types/payment.types.js";
 
 export interface IRide {
   id: string;
@@ -7,16 +9,32 @@ export interface IRide {
   status: string;
   paymentStatus?: string;
   farePaise?: number;
-  [key: string]: any;
+  totalFarePaise?: number;
+  totalFare?: number;
+  baseFarePaise?: number;
+  fareBreakdown?: IFareBreakdown;
+  fare?: { breakdown?: IFareBreakdown; [key: string]: unknown };
+  [key: string]: unknown;
 }
 
-export function formatRide(ride: any): any {
+function extractEntityId(val: unknown): string | undefined {
+  if (!val) return undefined;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && 'id' in val && (val as { id?: unknown }).id) {
+    return String((val as { id: unknown }).id);
+  }
+  return undefined;
+}
+
+type Mockable<T> = T & { mock?: unknown };
+
+export function formatRide(ride: IRide | Record<string, unknown> | null | undefined): IRide | null {
   if (!ride) return null;
-  const riderId = ride.riderId ?? ride.rider_id ?? (typeof ride.rider === "object" ? ride.rider?.id : ride.rider);
-  const driverId = ride.driverId ?? ride.driver_id ?? (typeof ride.driver === "object" ? ride.driver?.id : ride.driver);
-  let fareBreakdown = ride.fareBreakdown || ride.fare?.breakdown;
-  if (!fareBreakdown && (ride.totalFarePaise !== undefined || ride.totalFare !== undefined)) {
-    const total = Number(ride.totalFarePaise ?? ride.totalFare);
+  const riderId = String(ride.riderId ?? '');
+  const driverId = ride.driverId ? String(ride.driverId) : null;
+  let fareBreakdown = ride.fareBreakdown;
+  if (!fareBreakdown && ride.totalFarePaise !== undefined) {
+    const total = Number(ride.totalFarePaise);
     const platform = Math.round(total * 0.10);
     const driver = total - platform;
     fareBreakdown = {
@@ -31,108 +49,118 @@ export function formatRide(ride: any): any {
   }
   return {
     ...ride,
-    id: ride.id,
-    riderId: riderId ? String(riderId) : undefined,
-    driverId: driverId ? String(driverId) : null,
-    rider: riderId ? String(riderId) : undefined,
-    driver: driverId ? String(driverId) : null,
-    fareBreakdown,
+    id: String(ride.id),
+    riderId: riderId ?? '',
+    driverId,
+    rider: riderId,
+    driver: driverId,
+    status: String(ride.status || ''),
+    fareBreakdown: fareBreakdown as IFareBreakdown | undefined,
   };
 }
 
 export class RideClient {
-  private baseUrl: string;
+  private client: AxiosInstance;
 
   constructor(
     baseUrl: string = process.env.RIDE_SERVICE_URL || 'http://localhost:4004'
   ) {
-    this.baseUrl = baseUrl;
+    this.client = axios.create({
+      baseURL: baseUrl,
+      timeout: 5000,
+      headers: {
+        Accept: 'application/json',
+        'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
+      },
+    });
   }
 
-  async getRideById(id: string): Promise<any> {
-    // In unit test environments where prisma.ride is mocked/spied on, delegate for compatibility
-    if (typeof (prisma as any).ride?.findUnique === 'function' && (prisma as any).ride.findUnique.mock) {
-      return (prisma as any).ride.findUnique({ where: { id } });
+  async getRideById(id: string): Promise<IRide | null> {
+    const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<IRide | null>> };
+    if (typeof pRide?.findUnique === 'function' && pRide.findUnique.mock) {
+      return pRide.findUnique({ where: { id } });
     }
 
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
-    };
-
     try {
-      let res = await fetch(`${this.baseUrl}/api/rides/${id}`, {
-        headers,
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (res.status === 404) {
-        res = await fetch(`${this.baseUrl}/api/ride/${id}`, {
-          headers,
-          signal: AbortSignal.timeout(5000),
-        });
+      let res;
+      try {
+        res = await this.client.get<{ success: boolean; data: IRide }>(`/api/rides/${id}`);
+      } catch (err: unknown) {
+        if (isAxiosError(err) && err.response?.status === 404) {
+          res = await this.client.get<{ success: boolean; data: IRide }>(`/api/ride/${id}`);
+        } else {
+          throw err;
+        }
       }
 
-      if (res.status === 404) return null;
-      if (!res.ok) {
-        throw new Error(`Ride Service returned HTTP ${res.status}`);
-      }
-
-      const body = (await res.json()) as { success: boolean; data: any };
-      return body.data;
-    } catch (err: any) {
-      if (typeof (prisma as any).ride?.findUnique === 'function' && (prisma as any).ride.findUnique.mock) {
+      return res.data?.data ?? null;
+    } catch (err: unknown) {
+      const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<IRide | null>> };
+      if (typeof pRide?.findUnique === 'function' && pRide.findUnique.mock) {
         try {
-          return await (prisma as any).ride.findUnique({ where: { id } });
+          return await pRide.findUnique({ where: { id } });
         } catch {
           // ignore fallback error
+        }
+      }
+
+      if (isAxiosError(err)) {
+        if (err.response?.status === 404) return null;
+        if (err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'))) {
+          throw new Error('Ride Service timed out');
+        }
+        if (err.response) {
+          throw new Error(`Ride Service returned HTTP ${err.response.status}`);
         }
       }
       throw err;
     }
   }
 
-  async updatePaymentStatus(id: string, paymentStatus: string, currentStatus?: string): Promise<any> {
-    if (typeof (prisma as any).ride?.updateMany === 'function' && (prisma as any).ride.updateMany.mock) {
-      const where: any = { id };
+  async updatePaymentStatus(id: string, paymentStatus: string, currentStatus?: string): Promise<unknown> {
+    const pRide = prisma.ride as unknown as { updateMany?: Mockable<(args: { where: { id: string; paymentStatus?: string }; data: { paymentStatus: string } }) => Promise<unknown>> };
+    if (typeof pRide?.updateMany === 'function' && pRide.updateMany.mock) {
+      const where: { id: string; paymentStatus?: string } = { id };
       if (currentStatus) where.paymentStatus = currentStatus;
-      return (prisma as any).ride.updateMany({ where, data: { paymentStatus } });
+      return pRide.updateMany({ where, data: { paymentStatus } });
     }
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
-    };
-
     try {
-      let res = await fetch(`${this.baseUrl}/api/rides/${id}/payment-status`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ paymentStatus, currentStatus }),
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (res.status === 404) {
-        res = await fetch(`${this.baseUrl}/api/ride/${id}/payment-status`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ paymentStatus, currentStatus }),
-          signal: AbortSignal.timeout(5000),
-        });
+      let res;
+      const payload = { paymentStatus, currentStatus };
+      try {
+        res = await this.client.patch<{ success: boolean; data: unknown }>(
+          `/api/rides/${id}/payment-status`,
+          payload
+        );
+      } catch (err: unknown) {
+        if (isAxiosError(err) && err.response?.status === 404) {
+          res = await this.client.patch<{ success: boolean; data: unknown }>(
+            `/api/ride/${id}/payment-status`,
+            payload
+          );
+        } else {
+          throw err;
+        }
       }
 
-      if (!res.ok) {
-        throw new Error(`Ride Service returned HTTP ${res.status}`);
-      }
-
-      const body = (await res.json()) as { success: boolean; data: any };
-      return body.data;
-    } catch (err: any) {
-      if (typeof (prisma as any).ride?.updateMany === 'function' && (prisma as any).ride.updateMany.mock) {
+      return res.data?.data;
+    } catch (err: unknown) {
+      const pRide = prisma.ride as unknown as { updateMany?: Mockable<(args: { where: { id: string; paymentStatus?: string }; data: { paymentStatus: string } }) => Promise<unknown>> };
+      if (typeof pRide?.updateMany === 'function' && pRide.updateMany.mock) {
         try {
-          return await (prisma as any).ride.updateMany({ where: { id }, data: { paymentStatus } });
+          return await pRide.updateMany({ where: { id }, data: { paymentStatus } });
         } catch {
           // ignore fallback error
+        }
+      }
+
+      if (isAxiosError(err)) {
+        if (err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'))) {
+          throw new Error('Ride Service timed out');
+        }
+        if (err.response) {
+          throw new Error(`Ride Service returned HTTP ${err.response.status}`);
         }
       }
       throw err;

@@ -1,7 +1,9 @@
 import crypto from 'crypto';
+import type pg from 'pg';
+import type { PrismaClient } from '../src/db/client.js';
 
-let prisma: any;
-let pool: any;
+let prisma: PrismaClient;
+let pool: pg.Pool;
 
 async function getClient() {
   try {

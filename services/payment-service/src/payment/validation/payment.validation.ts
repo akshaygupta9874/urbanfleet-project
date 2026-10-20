@@ -63,9 +63,10 @@ export function validate(schema : z.ZodType) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const result = schema.safeParse({ body: req.body, params: req.params, query: req.query });
     if (!result.success) {
+      const zWithTreeify = z as typeof z & { treeifyError?: (err: z.ZodError) => unknown };
       res.status(422).json({
         message: 'Validation failed',
-        errors: (z as any).treeifyError ? (z as any).treeifyError(result.error) : result.error.flatten(),
+        errors: typeof zWithTreeify.treeifyError === 'function' ? zWithTreeify.treeifyError(result.error) : result.error.flatten(),
       });
       return;
     }

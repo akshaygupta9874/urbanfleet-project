@@ -1,4 +1,4 @@
-import { PrismaClient, OutboxEvent } from '../db/client.js';
+import { PrismaClient, OutboxEvent, Prisma } from '../db/client.js';
 
 export class OutboxRepository {
   private prisma: PrismaClient;
@@ -8,7 +8,7 @@ export class OutboxRepository {
   }
 
   async stageEvent(
-    tx: any,
+    tx: Prisma.TransactionClient | PrismaClient | null | undefined,
     data: {
       topic: string;
       partitionKey: string;
@@ -16,7 +16,7 @@ export class OutboxRepository {
       aggregateType: string;
       aggregateId: string;
       aggregateSequence: number;
-      payload: any;
+      payload: Prisma.InputJsonValue;
     }
   ): Promise<OutboxEvent> {
     const client = tx || this.prisma;

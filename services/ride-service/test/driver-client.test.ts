@@ -25,20 +25,14 @@ describe('DriverClient Inter-Service HTTP Communication in ride-service', () => 
       totalTrips: 150,
     };
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
+    const getSpy = vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockResolvedValue({
       status: 200,
-      json: async () => ({ success: true, data: mockDriver }),
-    } as any);
+      data: { success: true, data: mockDriver },
+    });
 
     const result = await client.getDriverById('drv-uuid-1');
     expect(result).toEqual(mockDriver);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://test-driver-service:4002/api/drivers/drv-uuid-1',
-      expect.objectContaining({
-        headers: { Accept: 'application/json' },
-      })
-    );
+    expect(getSpy).toHaveBeenCalledWith('/api/drivers/drv-uuid-1');
   });
 
   it('fetches driver profile by userId over HTTP GET API', async () => {
@@ -52,27 +46,21 @@ describe('DriverClient Inter-Service HTTP Communication in ride-service', () => 
       totalTrips: 80,
     };
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
+    const getSpy = vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockResolvedValue({
       status: 200,
-      json: async () => ({ success: true, data: mockDriver }),
-    } as any);
+      data: { success: true, data: mockDriver },
+    });
 
     const result = await client.getDriverByUserId('usr-uuid-2');
     expect(result).toEqual(mockDriver);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://test-driver-service:4002/api/drivers/by-user/usr-uuid-2',
-      expect.objectContaining({
-        headers: { Accept: 'application/json' },
-      })
-    );
+    expect(getSpy).toHaveBeenCalledWith('/api/drivers/by-user/usr-uuid-2');
   });
 
   it('returns null when driver is not found (404)', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-    } as any);
+    const notFoundError = new Error('Request failed with status code 404');
+    Object.assign(notFoundError, { isAxiosError: true, response: { status: 404 } });
+
+    vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockRejectedValue(notFoundError);
 
     const result = await client.getDriverById('non-existent');
     expect(result).toBeNull();

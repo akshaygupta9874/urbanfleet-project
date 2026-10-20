@@ -12,7 +12,7 @@ export const rideRedisClient: RedisClientType = createClient({
   name: 'ride-service',
 });
 
-rideRedisClient.on('error', (err: any) => {
+rideRedisClient.on('error', (err: unknown) => {
   logger.error('Ride Redis Client Error:', err);
 });
 

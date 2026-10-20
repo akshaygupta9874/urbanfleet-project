@@ -88,7 +88,7 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
     it('rejects state-changing request if CSRF header is missing', async () => {
       const req: any = {
         method: 'POST',
-        user: { userId: 'user-123' },
+        userId: 'user-123',
         headers: {},
       };
       const res: any = {};
@@ -109,7 +109,7 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
 
       const req: any = {
         method: 'POST',
-        user: { userId: 'user-123' },
+        userId: 'user-123',
         headers: { 'x-csrf-token': 'wrong-token' },
       };
       const res: any = {};
@@ -131,7 +131,7 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
 
       const req: any = {
         method: 'POST',
-        user: { userId: 'user-123' },
+        userId: 'user-123',
         headers: { 'x-csrf-token': 'some-expired-token' },
       };
       const res: any = {};
@@ -154,7 +154,7 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
 
       const req: any = {
         method: 'POST',
-        user: { userId: 'user-123' },
+        userId: 'user-123',
         headers: { 'x-csrf-token': validToken },
       };
       const res: any = {};
@@ -165,21 +165,26 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
       getSpy.mockRestore();
     });
 
-    it('accepts alternative header names x-xsrf-token and csrf-token', async () => {
+    it('enforces canonical x-csrf-token and rejects legacy csrf-token header', async () => {
       const validToken = 'valid-matched-token-67890';
       const getSpy = vi.spyOn(authRedisClient, 'get').mockResolvedValue(validToken as any);
       vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
 
       const req: any = {
         method: 'PUT',
-        user: { userId: 'user-123' },
+        userId: 'user-123',
         headers: { 'csrf-token': validToken },
       };
       const res: any = {};
       const next = vi.fn();
 
       await verifyCsrfToken(req, res, next);
-      expect(next).toHaveBeenCalledWith();
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'CSRF_TOKEN_MISSING',
+          statusCode: 403,
+        })
+      );
       getSpy.mockRestore();
     });
   });

@@ -12,7 +12,7 @@ export const authRedisClient: RedisClientType = createClient({
   name: 'auth-service',
 });
 
-authRedisClient.on('error', (err: any) => {
+authRedisClient.on('error', (err: unknown) => {
   logger.error('Auth Redis Client Error:', err);
 });
 

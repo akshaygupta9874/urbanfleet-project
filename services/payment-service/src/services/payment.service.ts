@@ -26,7 +26,7 @@ export class PaymentService {
   }
 
   async createOrder(
-    rideIdOrInput: string | { ride?: string; rider?: string; rideId?: string; riderId?: string; idempotencyKey?: string },
+    rideIdOrInput: string | { rideId: string; riderId: string; idempotencyKey?: string },
     riderIdParam?: string,
     amountPaiseParam?: number,
     driverIdParam?: string
@@ -37,8 +37,8 @@ export class PaymentService {
     let driverId: string | undefined = driverIdParam;
 
     if (typeof rideIdOrInput === 'object' && rideIdOrInput !== null) {
-      rideId = (rideIdOrInput.ride || rideIdOrInput.rideId)!;
-      riderId = (rideIdOrInput.rider || rideIdOrInput.riderId)!;
+      rideId = rideIdOrInput.rideId;
+      riderId = rideIdOrInput.riderId;
     } else {
       rideId = rideIdOrInput;
       riderId = riderIdParam!;
@@ -61,8 +61,9 @@ export class PaymentService {
         }
       });
       gatewayOrderId = order.id;
-    } catch (err: any) {
-      throw new AppError(`Gateway order creation failed: ${err.message}`, 502, 'GATEWAY_ERROR');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new AppError(`Gateway order creation failed: ${message}`, 502, 'GATEWAY_ERROR');
     }
 
     return this.paymentRepo.create({
@@ -198,8 +199,9 @@ export class PaymentService {
             notes: { reason: reason || 'Ride refund' }
           });
           gatewayRefundId = refundResult.id;
-        } catch (err: any) {
-          throw new AppError(`Razorpay refund failed: ${err.message}`, 502, 'GATEWAY_ERROR');
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          throw new AppError(`Razorpay refund failed: ${message}`, 502, 'GATEWAY_ERROR');
         }
       } else {
         throw new AppError('Payment has no gateway payment ID to refund', 400);

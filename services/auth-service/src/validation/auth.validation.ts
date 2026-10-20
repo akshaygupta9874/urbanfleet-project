@@ -22,28 +22,21 @@ export const verifyOtpSchema = z.union([
   z
     .object({
       challengeToken: z.string().min(1, 'Challenge token is required'),
-      token: z.string().min(4).max(8).optional(),
       code: z.string().min(4).max(8).optional(),
-      otp: z.string().min(4).max(8).optional(),
       recoveryCode: z.string().min(6).optional(),
     })
-    .refine((data) => !!(data.token || data.code || data.otp || data.recoveryCode), {
+    .refine((data) => Boolean(data.code || data.recoveryCode), {
       message: 'Either a TOTP verification code or recovery code must be provided',
       path: ['code'],
     }),
-  z
-    .object({
-      email: z.string().email('Invalid email address format').optional(),
-      userId: z.string().optional(),
-      otp: z.string().min(4, 'OTP must be at least 4 digits').max(8).optional(),
-      token: z.string().min(4).max(8).optional(),
-      code: z.string().min(4).max(8).optional(),
-      recoveryCode: z.string().min(6).optional(),
-    })
-    .refine((data) => !!(data.otp || data.token || data.code || data.recoveryCode), {
-      message: 'Verification code, OTP, or recovery code is required',
-      path: ['code'],
-    }),
+  z.object({
+    userId: z.string().min(1, 'User ID is required'),
+    code: z.string().min(4, 'Code must be at least 4 digits').max(8),
+  }),
+  z.object({
+    email: z.string().email('Invalid email address format'),
+    otp: z.string().min(4, 'OTP must be at least 4 digits').max(8),
+  }),
 ]);
 
 export const verify2FASchema = z.object({

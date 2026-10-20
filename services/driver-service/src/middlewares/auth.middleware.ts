@@ -6,11 +6,34 @@ import { driverRedisClient } from '../redis/client.js';
 import { authClient } from '../clients/auth.client.js';
 import { prisma } from '../db/client.js';
 
+export interface DriverUserContext {
+  id: string;
+  userId: string;
+  email?: string;
+  role?: string | string[];
+  roles?: string[];
+  firstName?: string;
+  lastName?: string;
+  driverId?: string;
+}
+
+export interface DriverUserRecord {
+  id: string;
+  email?: string;
+  role?: string;
+  roles?: string[];
+  firstName?: string;
+  lastName?: string;
+  driverId?: string;
+  driver?: { id: string };
+  [key: string]: unknown;
+}
+
 export interface AuthenticatedRequest extends Request {
   userId?: string;
   role?: string[];
   driverId?: string;
-  user?: any;
+  user?: DriverUserContext;
 }
 
 export interface AuthPayload extends JwtPayload {
@@ -30,10 +53,11 @@ export const authMiddleware = asyncHandler(
     }
 
     // 1. Extract Token from Authorization header or cookie
+    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
     const token =
       request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      request.cookies?.accessToken ||
-      (request as any).cookies?.token;
+      cookies?.accessToken ||
+      cookies?.token;
 
     if (!token) {
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');
@@ -57,7 +81,7 @@ export const authMiddleware = asyncHandler(
         const secret = process.env.JWT_ACCESS_SECRET || 'test-access-secret-only';
         decodedData = jwt.verify(token, secret) as AuthPayload;
       }
-    } catch (error: any) {
+    } catch (_error: unknown) {
       // Secret fallback
       const secret = process.env.JWT_ACCESS_SECRET;
       if (secret) {
@@ -71,7 +95,7 @@ export const authMiddleware = asyncHandler(
       }
     }
 
-    const userId = decodedData.userId || decodedData.id;
+    const userId = decodedData.userId;
     const sessionId = decodedData.sessionId;
 
     if (!userId) {
@@ -87,46 +111,50 @@ export const authMiddleware = asyncHandler(
         ]);
 
         if (storedSession) {
-          const parsed = JSON.parse(storedSession);
+          const parsed = JSON.parse(storedSession) as { userId?: string };
           if (parsed.userId && parsed.userId !== userId) {
             throw new AppError('Session mismatch. Please sign in again.', 401, 'SESSION_MISMATCH');
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (e instanceof AppError) throw e;
       }
     }
 
     // 4. Fetch User Data (Cache first, then authClient / DB)
-    let user: any = null;
+    let user: DriverUserRecord | null = null;
     if (driverRedisClient.isOpen) {
       try {
         const userStr =
           (await driverRedisClient.get(`auth:user:${userId}`)) ||
           (await driverRedisClient.get(`user:${userId}`));
         if (userStr) {
-          user = JSON.parse(userStr);
+          user = JSON.parse(userStr) as DriverUserRecord;
         }
       } catch (err) {}
     }
 
     if (!user) {
       try {
-        user = await authClient.getUserById(userId);
-      } catch (err) {
-        // Fallback to token payload
-        user = {
-          id: userId,
-          email: decodedData.email || '',
-          role: decodedData.role || 'DRIVER',
-          roles: decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [decodedData.role || 'DRIVER']),
-        };
-      }
-      if (user && driverRedisClient.isOpen) {
-        try {
-          await driverRedisClient.setEx(`auth:user:${userId}`, 15 * 60, JSON.stringify(user));
-        } catch (err) {}
-      }
+        user = (await authClient.getUserById(userId)) as DriverUserRecord | null;
+      } catch (err) {}
+    }
+
+    if (!user) {
+      // Fallback to token payload
+      const roles = decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [typeof decodedData.role === 'string' ? decodedData.role : 'DRIVER']);
+      user = {
+        id: userId,
+        email: decodedData.email || '',
+        role: typeof decodedData.role === 'string' ? decodedData.role : 'DRIVER',
+        roles,
+      };
+    }
+
+    if (driverRedisClient.isOpen) {
+      try {
+        await driverRedisClient.setEx(`auth:user:${userId}`, 15 * 60, JSON.stringify(user));
+      } catch (err) {}
     }
 
     // 5. Look up driver profile ID if present
@@ -144,15 +172,16 @@ export const authMiddleware = asyncHandler(
     }
 
     // Attach to Request
+    const userRoles = Array.isArray(user.roles) ? user.roles : [user.role || 'DRIVER'];
     request.userId = userId;
-    request.role = Array.isArray(user.roles) ? user.roles : [user.role || 'DRIVER'];
+    request.role = userRoles;
     request.driverId = driverId;
     request.user = {
       userId,
       id: userId,
       email: user.email,
       role: user.role,
-      roles: request.role,
+      roles: userRoles,
       firstName: user.firstName,
       lastName: user.lastName,
       driverId,
@@ -164,11 +193,11 @@ export const authMiddleware = asyncHandler(
 
 export const requireRole = (...allowedRoles: string[]) => {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (!req.userId && !req.user) {
+    if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.role || (req.user?.role ? [req.user.role] : []);
-    const hasRole = roles.some((r) => allowedRoles.includes(r)) || (req.user?.role && allowedRoles.includes(req.user.role));
+    const roles: string[] = req.role || [];
+    const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(
         new AppError(`Forbidden: Requires one of roles: ${allowedRoles.join(', ')}`, 403, 'FORBIDDEN')

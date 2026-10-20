@@ -105,13 +105,13 @@ app.use('/api/admin', adminRouter);
 app.use('/v1/admin', adminRouter);
 
 // 5. Global Error Handler
-app.use((err: any, req: express.Request, res: express.Response, next: NextFunction) => {
+app.use((err: unknown, req: express.Request, res: express.Response, next: NextFunction) => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       success: false,
       code: err.code,
       message: err.message,
-      errors: (err as any).errors
+      errors: (err as { errors?: unknown }).errors
     });
   }
   logger.error('Unhandled internal error:', err);

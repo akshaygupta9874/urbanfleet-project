@@ -73,7 +73,7 @@ export class RideSocketClient {
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: 'ping' }));
+        this.ws.send(JSON.stringify({ event: 'ping' }));
       }
     }, 25000); // 25s keepalive ping
   }

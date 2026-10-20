@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { createLogger, AppError } from '@urbanfleet/common';
+import { createLogger, AppError, configureBigIntSerialization } from '@urbanfleet/common';
 import { DriverRepository } from './repositories/driver.repository.js';
 import { DocumentRepository } from './repositories/document.repository.js';
 import { DriverService } from './services/driver.service.js';
@@ -12,18 +12,16 @@ import { createDriverRouter } from './routes/driver.routes.js';
 import { initDriverConsumer } from './consumers/driver.consumer.js';
 
 const logger = createLogger('driver-service');
+import { Consumer } from 'kafkajs';
 import { prisma } from './db/client.js';
 
-(BigInt.prototype as any).toJSON = function () {
-  return Number(this);
-};
-
 const app = express();
+configureBigIntSerialization(app);
 
 const port = process.env.PORT || 4002;
 
 // Initialize Consumer
-let driverConsumer: any = null;
+let driverConsumer: Consumer | null = null;
 initDriverConsumer(prisma).then(c => {
   driverConsumer = c;
 }).catch(err => logger.error('Consumer startup error:', err));
@@ -79,7 +77,7 @@ app.use('/v1/driver', driverRouter);
 app.use('/v1/drivers', driverRouter);
 
 // Global Error Handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       success: false,

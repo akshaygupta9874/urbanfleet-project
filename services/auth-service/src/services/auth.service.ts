@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import axios, { isAxiosError } from 'axios';
 import { UserRepository } from '../repositories/user.repository.js';
 import { SessionRepository } from '../repositories/session.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
@@ -146,7 +147,7 @@ export class AuthService {
               firstName: user.firstName,
               lastName: user.lastName,
               phone: user.phone || undefined,
-              role: user.role as any,
+              role: user.role,
               verifyToken,
             },
           },
@@ -189,7 +190,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phone: user.phone || undefined,
-        role: user.role as any,
+        role: user.role,
       },
       registrationEventId
     );
@@ -235,8 +236,8 @@ export class AuthService {
       };
     }
 
-    const firstName = (user as any).firstName || 'User';
-    const lastName = (user as any).lastName || '';
+    const firstName = user.firstName || 'User';
+    const lastName = user.lastName || '';
 
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
@@ -511,7 +512,7 @@ export class AuthService {
     let userId = userIdOrData;
     try {
       const parsed = JSON.parse(userIdOrData);
-      if (parsed.userId || parsed.id) userId = parsed.userId || parsed.id;
+      if (parsed.userId) userId = parsed.userId;
     } catch (_) {}
 
     const user = await this.userRepo.findById(userId);
@@ -560,8 +561,9 @@ export class AuthService {
     try {
       const decoded = verifyToken(token);
       return { valid: true, payload: decoded };
-    } catch (err: any) {
-      throw new UnauthorizedError(`Invalid access token: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new UnauthorizedError(`Invalid access token: ${msg}`);
     }
   }
 
@@ -573,8 +575,9 @@ export class AuthService {
         throw new UnauthorizedError('Session has expired or was revoked');
       }
       return { valid: true, payload: decoded, session };
-    } catch (err: any) {
-      throw new UnauthorizedError(`Invalid refresh token: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new UnauthorizedError(`Invalid refresh token: ${msg}`);
     }
   }
 
@@ -584,20 +587,38 @@ export class AuthService {
     }
 
     // 1. Verify Google ID token via Google TokenInfo API
-    let payload: any;
+    let payload: {
+      sub: string;
+      email: string;
+      email_verified: boolean | string;
+      name?: string;
+      given_name?: string;
+      family_name?: string;
+      picture?: string;
+      aud?: string;
+    };
     try {
-      const response = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`
+      const response = await axios.get<{
+        sub: string;
+        email: string;
+        email_verified: boolean | string;
+        name?: string;
+        given_name?: string;
+        family_name?: string;
+        picture?: string;
+        aud?: string;
+      }>(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`,
+        { timeout: 5000 }
       );
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        logger.warn(`Google token verification failed with status ${response.status}: ${errText}`);
-        throw new UnauthorizedError('Google could not verify this account');
-      }
-      payload = await response.json();
-    } catch (err: any) {
+      payload = response.data;
+    } catch (err: unknown) {
       if (err instanceof UnauthorizedError || err instanceof BadRequestError) {
         throw err;
+      }
+      if (isAxiosError(err)) {
+        logger.warn(`Google token verification failed with status ${err.response?.status}: ${JSON.stringify(err.response?.data || err.message)}`);
+        throw new UnauthorizedError('Google could not verify this account');
       }
       logger.error('Error contacting Google OAuth service:', err);
       throw new UnauthorizedError('Google authentication failed');
@@ -666,7 +687,7 @@ export class AuthService {
                 firstName: user.firstName,
                 lastName: user.lastName,
                 phone: user.phone || undefined,
-                role: user.role as any,
+                role: user.role,
               },
             },
           });
@@ -683,7 +704,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           phone: user.phone || undefined,
-          role: user.role as any,
+          role: user.role,
         },
         registrationEventId
       );

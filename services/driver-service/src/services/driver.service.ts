@@ -1,5 +1,6 @@
 import { DriverRepository } from '../repositories/driver.repository.js';
 import { NotFoundError, ConflictError } from '@urbanfleet/common';
+import { DriverProfile, Vehicle, Prisma } from '../db/client.js';
 
 export class DriverService {
   private driverRepo: DriverRepository;
@@ -22,8 +23,13 @@ export class DriverService {
     }
     try {
       return await this.driverRepo.create({ userId, licenseNumber });
-    } catch (err: any) {
-      if (err.code === 'P2002') {
+    } catch (err: unknown) {
+      const isPrismaP2002 =
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: unknown }).code === 'P2002';
+      if (isPrismaP2002) {
         const raceExisting = await this.driverRepo.findByUserId(userId);
         if (raceExisting) {
           return this.driverRepo.update(raceExisting.id, {
@@ -48,16 +54,19 @@ export class DriverService {
     return profile;
   }
 
-  sanitizePublicProfile(profile: any) {
+  sanitizePublicProfile(profile: (DriverProfile & { vehicles?: Vehicle[] }) | null) {
     if (!profile) return null;
-    const sanitizedVehicles = (profile.vehicles || []).map((v: any) => ({
-      id: v.id,
-      type: v.type,
-      brand: v.brand,
-      model: v.model,
-      color: v.color,
-      registrationYear: v.registrationYear,
-    }));
+    const sanitizedVehicles = (profile.vehicles || []).map((v) => {
+      const vObj = v as Record<string, unknown>;
+      return {
+        id: (typeof vObj.id === 'string' ? vObj.id : undefined) as string | undefined,
+        type: String(vObj.category || 'SEDAN'),
+        brand: String(vObj.make || ''),
+        model: String(vObj.model || ''),
+        color: String(vObj.color || ''),
+        registrationYear: Number(vObj.year ?? 0),
+      };
+    });
 
     return {
       id: profile.id,
@@ -65,7 +74,7 @@ export class DriverService {
       rating: Number(profile.rating || 5.0),
       totalTrips: profile.totalTrips || 0,
       isAvailable: Boolean(profile.isAvailable),
-      isOnline: Boolean(profile.isOnline),
+      isOnline: Boolean((profile as unknown as { isOnline?: boolean }).isOnline ?? profile.isAvailable),
       verificationStatus: profile.verificationStatus,
       profilePhoto: profile.profilePhoto,
       vehicles: sanitizedVehicles,
@@ -73,27 +82,27 @@ export class DriverService {
     };
   }
 
-  async updateProfile(userId: string, data: any) {
+  async updateProfile(userId: string, data: Record<string, unknown>) {
     const profile = await this.getDriverByUserId(userId);
     const { userId: _strippedUserId, id: _strippedId, vehicle, vehicles: _v, ...cleanData } = data || {};
 
-    if (vehicle) {
-      await this.updateVehicleInfo(userId, vehicle);
+    if (vehicle && typeof vehicle === 'object') {
+      await this.updateVehicleInfo(userId, vehicle as Prisma.VehicleUpdateInput);
     }
 
     if (Object.keys(cleanData).length > 0) {
-      await this.driverRepo.update(profile.id, cleanData);
+      await this.driverRepo.update(profile.id, cleanData as Prisma.DriverProfileUpdateInput);
     }
 
     return this.getDriverByUserId(userId);
   }
 
-  async updateVehicleInfo(userId: string, vehicleData: any) {
+  async updateVehicleInfo(userId: string, vehicleData: Prisma.VehicleUpdateInput) {
     const profile = await this.getDriverByUserId(userId);
     if (profile.vehicles && profile.vehicles.length > 0) {
       return this.driverRepo.updateVehicle(profile.vehicles[0].id, vehicleData);
     }
-    return this.driverRepo.createVehicle(profile.id, vehicleData);
+    return this.driverRepo.createVehicle(profile.id, vehicleData as Prisma.VehicleCreateWithoutDriverProfileInput);
   }
 
   async setAvailability(userId: string, isAvailable: boolean) {
@@ -114,7 +123,7 @@ export class DriverService {
   async registerFullDriver(data: {
     userId: string;
     licenseNumber: string;
-    profilePhoto?: any;
+    profilePhoto?: Prisma.InputJsonValue;
     vehicle: {
       type: string;
       brand: string;
@@ -122,7 +131,7 @@ export class DriverService {
       color: string;
       registrationNumber: string;
       registrationYear: number;
-      images?: any;
+      images?: Prisma.InputJsonValue;
     };
     documents: Array<{
       type: string;
@@ -145,8 +154,13 @@ export class DriverService {
     }
     try {
       return await this.driverRepo.createFullProfile(data);
-    } catch (err: any) {
-      if (err.code === 'P2002') {
+    } catch (err: unknown) {
+      const isPrismaP2002 =
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: unknown }).code === 'P2002';
+      if (isPrismaP2002) {
         const raceExisting = await this.driverRepo.findByUserId(data.userId);
         if (raceExisting) {
           return this.driverRepo.updateFullProfile(raceExisting.id, data);

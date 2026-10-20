@@ -1,4 +1,4 @@
-import { PrismaClient, AuditLog } from '../db/client.js';
+import { PrismaClient, AuditLog, Prisma } from '../db/client.js';
 
 export class AuditRepository {
   private prisma: PrismaClient;
@@ -11,7 +11,7 @@ export class AuditRepository {
     userId?: string;
     action: string;
     ipAddress?: string;
-    metadata?: any;
+    metadata?: Prisma.InputJsonValue;
   }): Promise<AuditLog> {
     return this.prisma.auditLog.create({ data });
   }

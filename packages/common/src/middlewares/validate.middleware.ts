@@ -1,11 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
-import { ZodType, ZodError } from 'zod';
+import { ZodError, ZodSchema } from 'zod';
 
 export interface RequestValidationSchemas {
-  body?: ZodType<any>;
-  query?: ZodType<any>;
-  params?: ZodType<any>;
-  headers?: ZodType<any>;
+  body?: ZodSchema;
+  query?: ZodSchema;
+  params?: ZodSchema;
+  headers?: ZodSchema;
+}
+
+function isZodSchema(value: unknown): value is ZodSchema {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'safeParse' in value &&
+    typeof (value as { safeParse: unknown }).safeParse === 'function'
+  );
 }
 
 export function formatZodError(error: ZodError): Record<string, string[]> {
@@ -22,13 +31,13 @@ export function formatZodError(error: ZodError): Record<string, string[]> {
  * Accepts either a field-mapped schema object ({ body, query, params, headers })
  * or a single unified Zod schema.
  */
-export function validateRequest(schemas: RequestValidationSchemas | ZodType<any>) {
+export function validateRequest(schemas: RequestValidationSchemas | ZodSchema) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const errors: Record<string, string[]> = {};
     const locations = ['body', 'query', 'params', 'headers'] as const;
 
-    if ('safeParse' in schemas && typeof (schemas as any).safeParse === 'function') {
-      const result = (schemas as ZodType<any>).safeParse({
+    if (isZodSchema(schemas)) {
+      const result = schemas.safeParse({
         body: req.body,
         query: req.query,
         params: req.params,

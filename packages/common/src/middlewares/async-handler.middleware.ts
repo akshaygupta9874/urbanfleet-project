@@ -8,7 +8,7 @@ export type AsyncRequestHandler<
   Req extends Request = Request,
   Res extends Response = Response,
   Next extends NextFunction = NextFunction,
-  Return = any
+  Return = unknown
 > = (req: Req, res: Res, next: Next) => Promise<Return> | Return;
 
 /**
@@ -19,11 +19,19 @@ export interface AsyncHandlerOptions {
    * Optional custom error transformer to convert thrown non-Error values
    * into domain-specific AppError instances before passing to next().
    */
-  errorTransformer?: (error: unknown, req: Request, res: Response) => any;
+  errorTransformer?: (error: unknown, req: Request, res: Response) => unknown;
   /**
    * Custom handler name override for tracing and Express stack inspection.
    */
   name?: string;
+}
+
+function isResponseDestroyed(res: Response): boolean {
+  return 'destroyed' in res && Boolean((res as unknown as { destroyed?: boolean }).destroyed);
+}
+
+function isRequestAborted(req: Request): boolean {
+  return 'aborted' in req && Boolean((req as unknown as { aborted?: boolean }).aborted);
 }
 
 /**
@@ -39,7 +47,8 @@ export function normalizeError(err: unknown): Error {
   }
   if (typeof err === 'object' && err !== null) {
     try {
-      const message = (err as any).message || JSON.stringify(err);
+      const errObj = err as Record<string, unknown>;
+      const message = typeof errObj.message === 'string' ? errObj.message : JSON.stringify(err);
       const error = new Error(message);
       Object.assign(error, err);
       return error;
@@ -60,7 +69,7 @@ export function normalizeError(err: unknown): Error {
  * 4. Guards against duplicate response transmissions when headers or streams are already closed.
  * 5. Preserves function arity and descriptor names for OpenTelemetry, APM, and Express middleware inspectability.
  *
- * @param fn Asynchronous controller function: (req, res, next) => Promise<any>
+ * @param fn Asynchronous controller function: (req, res, next) => Promise<unknown>
  * @param options Optional configuration for custom error transformation or naming
  * @returns Standard Express RequestHandler: (req, res, next) => void
  */
@@ -74,7 +83,7 @@ export function asyncHandler<
 ): RequestHandler {
   const handler: RequestHandler = (req: Request, res: Response, next: NextFunction): void => {
     // Immediate circuit-breaker: if client aborted or stream already ended, skip execution
-    if (res.headersSent || res.writableEnded || (res as any).destroyed || (req as any).aborted) {
+    if (res.headersSent || res.writableEnded || isResponseDestroyed(res) || isRequestAborted(req)) {
       return;
     }
 
@@ -82,9 +91,9 @@ export function asyncHandler<
       // Execute the handler and ensure Promise resolution
       const result = fn(req as Req, res as Res, next as Next);
 
-      return Promise.resolve(result).catch((err: unknown) => {
+      return (Promise.resolve(result).catch((err: unknown) => {
         // If response headers have already been transmitted, delegate directly to Express default handler
-        if (res.headersSent || res.writableEnded || (res as any).destroyed) {
+        if (res.headersSent || res.writableEnded || isResponseDestroyed(res)) {
           return next(err);
         }
 
@@ -93,10 +102,10 @@ export function asyncHandler<
           : normalizeError(err);
 
         next(normalized);
-      }) as any;
+      }) as unknown) as void;
     } catch (syncErr: unknown) {
       // Catch synchronous errors thrown before any async await yields
-      if (res.headersSent || res.writableEnded || (res as any).destroyed) {
+      if (res.headersSent || res.writableEnded || isResponseDestroyed(res)) {
         return next(syncErr);
       }
 

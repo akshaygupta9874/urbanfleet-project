@@ -11,10 +11,8 @@ import {
 } from "./payment.types.js";
 
 export interface CreateOrderInput {
-    ride?: string;
-    rider?: string;
-    rideId?: string;
-    riderId?: string;
+    rideId: string;
+    riderId: string;
     idempotencyKey: string;
     amountPaise?: number;
 }

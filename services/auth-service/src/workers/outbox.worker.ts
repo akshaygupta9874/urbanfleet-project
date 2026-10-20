@@ -52,8 +52,8 @@ export class OutboxWorker {
       return 0; // Kafka not connected yet; events remain safely staged in DB
     }
 
-    const events = typeof (this.outboxRepo as any).claimPendingEvents === 'function'
-      ? await (this.outboxRepo as any).claimPendingEvents(this.workerId, 20)
+    const events = (this.outboxRepo && typeof this.outboxRepo.claimPendingEvents === 'function')
+      ? await this.outboxRepo.claimPendingEvents(this.workerId, 20)
       : await this.outboxRepo.getPendingEvents(20);
 
     if (!events || events.length === 0) return 0;
@@ -68,19 +68,27 @@ export class OutboxWorker {
           } catch (_) {}
         }
 
+        const evObj = event as unknown as Record<string, unknown>;
+        const eventType = String(event.eventType || evObj.event_type || '');
+        const partitionKey = String(event.partitionKey || evObj.partition_key || '');
+        const aggregateType = String(event.aggregateType || evObj.aggregate_type || 'USER');
+        const aggregateId = String(event.aggregateId || evObj.aggregate_id || '');
+        const aggregateSequence = Number(event.aggregateSequence || evObj.aggregate_sequence || 1);
+
         // Ensure payload is enveloped
-        const envelope = (envelopePayload && envelopePayload.eventType && envelopePayload.id)
+        const payloadObj = envelopePayload as Record<string, unknown> | null;
+        const envelope = (payloadObj && payloadObj.eventType && payloadObj.id)
           ? envelopePayload
           : {
               id: event.id,
               version: 1,
-              eventType: event.eventType || (event as any).event_type,
+              eventType,
               producer: 'auth-service',
               timestamp: event.createdAt ? new Date(event.createdAt).toISOString() : new Date().toISOString(),
-              partitionKey: event.partitionKey || (event as any).partition_key,
-              aggregateType: event.aggregateType || (event as any).aggregate_type || 'USER',
-              aggregateId: event.aggregateId || (event as any).aggregate_id,
-              aggregateSequence: Number(event.aggregateSequence || (event as any).aggregate_sequence || 1),
+              partitionKey,
+              aggregateType,
+              aggregateId,
+              aggregateSequence,
               payload: envelopePayload,
             };
 
@@ -88,7 +96,7 @@ export class OutboxWorker {
           topic: event.topic,
           messages: [
             {
-              key: event.partitionKey || (event as any).partition_key,
+              key: partitionKey,
               value: JSON.stringify(envelope),
             },
           ],
@@ -96,9 +104,10 @@ export class OutboxWorker {
 
         await this.outboxRepo.markPublished(event.id);
         processedCount++;
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
         logger.error(`Failed to publish outbox event ${event.id}:`, err);
-        await this.outboxRepo.markFailed(event.id, err.message || String(err));
+        await this.outboxRepo.markFailed(event.id, errorMsg);
       }
     }
 

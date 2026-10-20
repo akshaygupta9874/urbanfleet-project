@@ -1,5 +1,6 @@
 import multer from 'multer';
 import path from 'path';
+import { AppError } from '@urbanfleet/common';
 
 // Configuration Constants preserved from previous project
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -27,11 +28,11 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, cb) => {
   if (isMimeTypeValid && isExtensionValid) {
     cb(null, true);
   } else {
-    const error: any = new Error(
-      'Invalid file type. Only JPG, JPEG, PNG, and WEBP images are allowed.'
+    const error = new AppError(
+      'Invalid file type. Only JPG, JPEG, PNG, and WEBP images are allowed.',
+      400,
+      'INVALID_FILE_TYPE'
     );
-    error.statusCode = 400;
-    error.code = 'INVALID_FILE_TYPE';
     cb(error);
   }
 };

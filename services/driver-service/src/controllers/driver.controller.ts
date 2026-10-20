@@ -27,7 +27,56 @@ export interface DriverUploadFiles {
   pollutionCertificate?: Express.Multer.File[];
 }
 
-export function formatDriverProfileForFrontend(profile: any) {
+export interface RawDriverProfile {
+  id?: string;
+  userId?: string;
+  licenseNumber?: string;
+  rating?: number | { average?: number; totalRatings?: number } | unknown;
+  totalTrips?: number;
+  totalEarningsPaise?: number | bigint;
+  statistics?: {
+    totalTrips?: number;
+    completedTrips?: number;
+    cancelledTrips?: number;
+    totalEarnings?: number;
+    totalDistance?: number;
+  };
+  vehicles?: Array<{
+    type?: string;
+    brand?: string;
+    model?: string;
+    color?: string;
+    registrationNumber?: string;
+    registrationYear?: number;
+    category?: string;
+    make?: string;
+    year?: number;
+    plateNumber?: string;
+  }>;
+  vehicle?: {
+    type?: string;
+    brand?: string;
+    model?: string;
+    color?: string;
+    registrationNumber?: string;
+    registrationYear?: number;
+  };
+  user?: {
+    id?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  };
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  profilePhoto?: unknown;
+  vehicleImages?: Record<string, string>;
+  documents?: unknown[];
+  [key: string]: unknown;
+}
+
+export function formatDriverProfileForFrontend(profile: RawDriverProfile | null | undefined) {
   if (!profile) return null;
   const vehicle = profile.vehicles?.[0] || profile.vehicle || {
     type: 'CAR',
@@ -38,7 +87,8 @@ export function formatDriverProfileForFrontend(profile: any) {
     registrationYear: 2022,
   };
 
-  const ratingAvg = Number(profile.rating?.average ?? profile.rating ?? 5.0);
+  const ratingObj = typeof profile.rating === 'object' && profile.rating !== null ? (profile.rating as { average?: number; totalRatings?: number }) : null;
+  const ratingAvg = Number(ratingObj?.average ?? profile.rating ?? 5.0);
   const totalTrips = Number(profile.statistics?.totalTrips ?? profile.totalTrips ?? 0);
   const completedTrips = Number(profile.statistics?.completedTrips ?? totalTrips);
   const totalEarningsPaise = Number(profile.statistics?.totalEarnings ?? profile.totalEarningsPaise ?? 0);
@@ -78,7 +128,7 @@ export function formatDriverProfileForFrontend(profile: any) {
     isVerified: Boolean(profile.isVerified ?? true),
     rating: {
       average: ratingAvg,
-      totalRatings: Number(profile.rating?.totalRatings ?? 10),
+      totalRatings: Number(ratingObj?.totalRatings ?? 10),
     },
     statistics: {
       totalTrips,
@@ -96,7 +146,7 @@ export class DriverController {
   private cloudinaryService: CloudinaryService;
 
   private getAuthenticatedUserId(req: AuthenticatedRequest): string {
-    const userId = req.userId || req.user?.userId || req.user?.id;
+    const userId = req.userId;
     if (!userId) {
       throw new AppError('Unauthorized: User ID required', 401, 'UNAUTHORIZED');
     }
@@ -115,14 +165,7 @@ export class DriverController {
 
   registerDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const files = (req.files as DriverUploadFiles) || {};
-    const userId = req.userId || req.user?.userId || req.user?.id || req.body?.userId;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: 'Unauthorized: Driver registration requires authenticated user ID',
-      });
-    }
+    const userId = this.getAuthenticatedUserId(req);
 
     // Case 1: JSON body registration (supports both simple license and full driver registration)
     if (!req.files || Object.keys(files).length === 0) {
@@ -370,13 +413,13 @@ export class DriverController {
   uploadDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = this.getAuthenticatedUserId(req);
     const profile = await this.driverService.getDriverByUserId(userId);
-    const { type, documentUrl, fileUrl, number, documentNumber, expiresAt, frontImage, backImage } = req.body;
+    const { type, fileUrl, documentNumber, expiresAt, backImage } = req.body;
     const doc = await this.documentService.uploadDocument({
       driverProfileId: profile.id,
       type,
-      documentUrl: documentUrl || fileUrl || frontImage,
-      number: number || documentNumber,
-      frontImage: frontImage || documentUrl || fileUrl,
+      documentUrl: fileUrl,
+      number: documentNumber,
+      frontImage: fileUrl,
       backImage,
       expiresAt: expiresAt ? new Date(expiresAt) : undefined,
     });
@@ -398,10 +441,8 @@ export class DriverController {
   });
 
   verifyDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const role = req.role || req.user?.role || req.user?.roles;
-    const isVerifier = Array.isArray(role)
-      ? role.includes('ADMIN') || role.includes('VERIFIER')
-      : role === 'ADMIN' || role === 'VERIFIER';
+    const roles = req.role || [];
+    const isVerifier = roles.includes('ADMIN') || roles.includes('VERIFIER');
 
     if (!isVerifier) {
       throw new AppError('Forbidden: Only administrators or verifiers can verify documents', 403, 'FORBIDDEN');
@@ -417,16 +458,10 @@ export class DriverController {
     res.status(200).json({ success: true, data: { isExpired } });
   });
 
-
   toggleAvailability = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const isAvailable =
-      req.body?.isAvailable !== undefined
-        ? req.body.isAvailable
-        : req.body?.isOnline !== undefined
-        ? req.body.isOnline
-        : true;
+    const isAvailable = req.body?.isAvailable !== undefined ? Boolean(req.body.isAvailable) : true;
     const userId = this.getAuthenticatedUserId(req);
-    const profile = await this.driverService.setAvailability(userId, Boolean(isAvailable));
+    const profile = await this.driverService.setAvailability(userId, isAvailable);
     res.status(200).json({ success: true, data: profile });
   });
 
@@ -436,12 +471,14 @@ export class DriverController {
     res.status(200).json({ success: true, data: earnings });
   });
 
-  getDriverById = asyncHandler(async (req: Request, res: Response) => {
+  getDriverById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const profile = await this.driverService.getDriverById(req.params.id);
-    const authReq = req as AuthenticatedRequest;
-    const callerId = authReq.userId || authReq.user?.userId || authReq.user?.id;
-    const callerRole = authReq.role || authReq.user?.role || authReq.user?.roles;
-    const isAdmin = Array.isArray(callerRole) ? callerRole.includes('ADMIN') : callerRole === 'ADMIN';
+    if (!profile) {
+      throw new AppError('Driver not found', 404, 'NOT_FOUND');
+    }
+    const callerId = req.userId;
+    const roles = req.role || [];
+    const isAdmin = roles.includes('ADMIN');
     const isOwner = Boolean(callerId && profile.userId === callerId);
     const isPrivileged = isAdmin || isOwner;
 
@@ -449,12 +486,14 @@ export class DriverController {
     res.status(200).json({ success: true, data });
   });
 
-  getDriverByUserId = asyncHandler(async (req: Request, res: Response) => {
+  getDriverByUserId = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const profile = await this.driverService.getDriverByUserId(req.params.userId);
-    const authReq = req as AuthenticatedRequest;
-    const callerId = authReq.userId || authReq.user?.userId || authReq.user?.id;
-    const callerRole = authReq.role || authReq.user?.role || authReq.user?.roles;
-    const isAdmin = Array.isArray(callerRole) ? callerRole.includes('ADMIN') : callerRole === 'ADMIN';
+    if (!profile) {
+      throw new AppError('Driver not found', 404, 'NOT_FOUND');
+    }
+    const callerId = req.userId;
+    const roles = req.role || [];
+    const isAdmin = roles.includes('ADMIN');
     const isOwner = Boolean(callerId && profile.userId === callerId);
     const isPrivileged = isAdmin || isOwner;
 

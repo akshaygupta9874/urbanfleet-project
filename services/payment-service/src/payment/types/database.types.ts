@@ -1,4 +1,4 @@
-import type { Prisma } from "../../db/client.js";
+import type { Prisma, PrismaClient } from "../../db/client.js";
 
-export type DbClient = Prisma.TransactionClient | { tx: Prisma.TransactionClient } | any;
-export type ClientSession = DbClient;
+export type DbClient = Prisma.TransactionClient | PrismaClient;
+export type ClientSession = DbClient | { tx?: Prisma.TransactionClient | PrismaClient };

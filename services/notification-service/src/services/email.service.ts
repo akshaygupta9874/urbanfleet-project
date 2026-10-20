@@ -200,19 +200,17 @@ export interface RideReceiptEmailParams {
   email?: string;
   rideId: string;
   paymentId?: string;
-  amountPaise?: number;
   totalFarePaise?: number;
   pickupAddress?: string;
   dropoffAddress?: string;
-  destinationAddress?: string;
   driverName?: string;
   date?: string;
 }
 
 export const getRideReceiptHtml = (params: RideReceiptEmailParams): string => {
-  const fare = ((params.totalFarePaise ?? params.amountPaise ?? 0) / 100).toFixed(2);
+  const fare = ((params.totalFarePaise ?? 0) / 100).toFixed(2);
   const pickup = params.pickupAddress || 'Pickup Point';
-  const dropoff = params.dropoffAddress || params.destinationAddress || 'Dropoff Point';
+  const dropoff = params.dropoffAddress || 'Dropoff Point';
   const rideDate = params.date || new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' });
 
   return `<!DOCTYPE html>

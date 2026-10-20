@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import axios, { isAxiosError } from 'axios';
 
 export const APP_NAME = process.env.APP_NAME || "UrbanFleet";
 export const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -19,31 +20,38 @@ export const sendSendGridEmail = async ({ to, subject, html }: SendEmailParams) 
     }
     console.warn(`[SendGrid] Notice: SENDGRID_API_KEY not configured. Email to ${to} (${subject}) recorded.`);
     return {
-      ok: true,
       status: 202,
-      headers: new Headers({ 'x-message-id': `sg_${Date.now()}` }),
-      text: async () => 'Simulated'
+      data: 'Simulated',
+      headers: {},
     };
   }
 
-  const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${SENDGRID_API_KEY}`,
-    },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: FROM_EMAIL, name: APP_NAME },
-      subject: subject,
-      content: [{ type: "text/html", value: html }],
-    }),
-  });
+  try {
+    const response = await axios.post(
+      "https://api.sendgrid.com/v3/mail/send",
+      {
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: FROM_EMAIL, name: APP_NAME },
+        subject: subject,
+        content: [{ type: "text/html", value: html }],
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SENDGRID_API_KEY}`,
+        },
+        timeout: 5000,
+      }
+    );
 
-  if (!response.ok) {
-    const errorData = await response.text();
-    throw new Error(`Failed to send email via SendGrid: ${errorData}`);
+    return response;
+  } catch (error: unknown) {
+    if (isAxiosError(error)) {
+      const errorData = typeof error.response?.data === 'string'
+        ? error.response.data
+        : JSON.stringify(error.response?.data || error.message);
+      throw new Error(`Failed to send email via SendGrid: ${errorData}`);
+    }
+    throw error;
   }
-
-  return response;
 };

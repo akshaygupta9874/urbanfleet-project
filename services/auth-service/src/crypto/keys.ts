@@ -69,11 +69,20 @@ export function getPublicKey(): string {
   return publicKey;
 }
 
-export function verifyToken(token: string): any {
+export interface AuthTokenPayload extends jwt.JwtPayload {
+  userId?: string;
+  email?: string;
+  role?: string;
+  roles?: string[];
+  sessionId?: string;
+  tokenType?: string;
+}
+
+export function verifyToken(token: string): AuthTokenPayload {
   if (!publicKey) initAsymmetricKeys();
   return jwt.verify(token, publicKey, {
     algorithms: ['RS256'],
     issuer: 'urbanfleet-auth',
     audience: 'urbanfleet-api'
-  });
+  }) as AuthTokenPayload;
 }

@@ -21,8 +21,8 @@ export function registerDispatcher(socket: AuthenticatedSocket): void {
         return;
       }
 
-      // Normalize event name from either 'event' or 'type'
-      const eventName = parsed.event || parsed.type;
+      // Canonical event name
+      const eventName = parsed.event;
       const eventData = parsed.data !== undefined ? parsed.data : parsed;
 
       const result = SocketMessageSchema.safeParse({

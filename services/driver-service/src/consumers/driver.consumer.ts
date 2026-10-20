@@ -19,7 +19,7 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
     await consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
         if (!message.value) return;
-        const envelope: KafkaEnvelope<any> = JSON.parse(message.value.toString());
+        const envelope: KafkaEnvelope<unknown> = JSON.parse(message.value.toString());
 
         logger.info(`Received event ${envelope.eventType} on ${topic}`);
 

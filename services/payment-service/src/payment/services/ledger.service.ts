@@ -164,7 +164,7 @@ class LedgerService {
         }));
 
         const insert = async (
-            activeSession: ClientSession
+            activeSession?: ClientSession
         ): Promise<void> => {
             try {
                 await ledgerRepository.insertEntries(

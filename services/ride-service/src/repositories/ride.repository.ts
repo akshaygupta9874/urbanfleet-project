@@ -1,4 +1,4 @@
-import { PrismaClient, Ride } from '../db/client.js';
+import { PrismaClient, Ride, Prisma } from '../db/client.js';
 
 export class RideRepository {
   private prisma: PrismaClient;
@@ -7,7 +7,7 @@ export class RideRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string, tx?: any): Promise<Ride | null> {
+  async findById(id: string, tx?: Prisma.TransactionClient): Promise<Ride | null> {
     const client = tx || this.prisma;
     return client.ride.findUnique({ where: { id }, include: { ratings: true } });
   }
@@ -48,12 +48,12 @@ export class RideRepository {
     });
   }
 
-  async create(data: any, tx?: any): Promise<Ride> {
+  async create(data: Prisma.RideCreateInput, tx?: Prisma.TransactionClient): Promise<Ride> {
     const client = tx || this.prisma;
     return client.ride.create({ data });
   }
 
-  async update(id: string, data: any, tx?: any): Promise<Ride> {
+  async update(id: string, data: Prisma.RideUpdateInput, tx?: Prisma.TransactionClient): Promise<Ride> {
     const client = tx || this.prisma;
     return client.ride.update({ where: { id }, data });
   }
@@ -62,7 +62,7 @@ export class RideRepository {
     return this.findActiveRide(riderId);
   }
 
-  async executeTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+  async executeTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return this.prisma.$transaction(fn);
   }
 }

@@ -1,4 +1,5 @@
-import { prisma } from "../../db/client.js";
+import { prisma, type Prisma } from "../../db/client.js";
+import { ClientSession } from "../types/database.types.js";
 import { ILedgerEntry } from "../types/payment.models.js";
 import {
     CurrencyType,
@@ -34,41 +35,43 @@ export interface UnbalancedTransaction {
     creditPaise: Paise;
 }
 
-function formatLedgerEntry(row: any): ILedgerEntry {
+function formatLedgerEntry(row: Record<string, unknown>): ILedgerEntry {
     return {
-        id: row.id,
-        transactionId: row.transactionId,
+        id: String(row.id),
+        transactionId: String(row.transactionId),
         account: row.account as LedgerAccount,
-        ownerId: row.ownerId,
+        ownerId: (row.ownerId as string | null) ?? null,
         entryType: row.entryType as LedgerEntryType,
         amountPaise: Number(row.amountPaise),
-        currency: row.currency as CurrencyType,
+        currency: (row.currency as CurrencyType) || "INR",
         referenceType: row.referenceType as LedgerReferenceType,
-        referenceId: row.referenceId,
-        idempotencyKey: row.idempotencyKey ?? undefined,
-        legIndex: row.legIndex ?? undefined,
-        description: row.description ?? "",
+        referenceId: (row.referenceId as string | null) ?? null,
+        idempotencyKey: (row.idempotencyKey as string | undefined) ?? undefined,
+        legIndex: (row.legIndex as number | undefined) ?? undefined,
+        description: (row.description as string | undefined) ?? "",
         metadata: (row.metadata as Record<string, unknown>) ?? {},
-        createdAt: row.createdAt,
+        createdAt: row.createdAt as Date,
     } as unknown as ILedgerEntry;
 }
 
 class LedgerRepository {
     async insertEntries(
         entries: InsertableEntry[],
-        session?: any
+        session?: ClientSession
     ): Promise<ILedgerEntry[]> {
         if (entries.length === 0) {
             return [];
         }
 
-        const client = session?.tx ?? session ?? prisma;
+        const client = (session && typeof session === "object" && "tx" in session && session.tx)
+            ? session.tx
+            : ((session as Prisma.TransactionClient | undefined) ?? prisma);
 
         const data = entries.map((e) => ({
             transactionId: e.transactionId,
-            account: e.account as any,
+            account: e.account as unknown as Prisma.LedgerEntryCreateManyInput["account"],
             ownerId: e.ownerId ? e.ownerId.toString() : null,
-            entryType: e.entryType as any,
+            entryType: e.entryType as unknown as Prisma.LedgerEntryCreateManyInput["entryType"],
             amountPaise: BigInt(e.amountPaise),
             currency: e.currency,
             referenceType: e.referenceType.toString(),
@@ -76,7 +79,7 @@ class LedgerRepository {
             idempotencyKey: e.idempotencyKey ?? null,
             legIndex: e.legIndex ?? null,
             description: e.description,
-            metadata: (e.metadata as any) ?? undefined,
+            metadata: (e.metadata as Prisma.InputJsonValue) ?? undefined,
         }));
 
         await client.ledgerEntry.createMany({
@@ -156,8 +159,8 @@ class LedgerRepository {
         },
         ownerId?: string
     ): Promise<AccountTotals> {
-        const where: any = {
-            account: account as any,
+        const where: Prisma.LedgerEntryWhereInput = {
+            account: account as unknown as Prisma.EnumLedgerAccountFilter["equals"],
         };
 
         if (ownerId) {
@@ -218,7 +221,7 @@ class LedgerRepository {
     }
 
     private async totalsFor(
-        where: any
+        where: Prisma.LedgerEntryWhereInput
     ): Promise<AccountTotals> {
         const groups = await prisma.ledgerEntry.groupBy({
             by: ["entryType"],

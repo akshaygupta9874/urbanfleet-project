@@ -45,7 +45,7 @@ export class OutboxWorker {
       aggregate_type: string;
       aggregate_id: string;
       aggregate_sequence: number;
-      payload: any;
+      payload: unknown;
       created_at: Date;
       retry_count: number;
     }>>`
@@ -94,7 +94,7 @@ export class OutboxWorker {
           timestamp: event.created_at ? new Date(event.created_at).toISOString() : new Date().toISOString(),
           partitionKey: event.partition_key,
           aggregateType: event.aggregate_type || 'PAYMENT',
-          aggregateId: event.aggregate_id || event.partition_key,
+          aggregateId: event.aggregate_id,
           aggregateSequence: Number(event.aggregate_sequence || 1),
           payload: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload,
         };
@@ -110,7 +110,8 @@ export class OutboxWorker {
           WHERE id = ${event.id}::uuid;
         `;
         logger.info(`Payment outbox published event ${event.id} to ${event.topic}`);
-      } catch (publishErr: any) {
+      } catch (publishErr: unknown) {
+        const errorMessage = publishErr instanceof Error ? publishErr.message : String(publishErr);
         logger.error(`Failed to publish payment event ${event.id}:`, publishErr);
         const nextRetry = (event.retry_count || 0) + 1;
         const newStatus = nextRetry >= 5 ? 'FAILED' : 'PENDING';
@@ -119,7 +120,7 @@ export class OutboxWorker {
           UPDATE outbox_events
           SET status = ${newStatus}::"OutboxStatus",
               retry_count = ${nextRetry},
-              last_error = ${publishErr.message}
+              last_error = ${errorMessage}
           WHERE id = ${event.id}::uuid;
         `;
       }

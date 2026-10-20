@@ -68,7 +68,7 @@ export async function publishPasswordResetRequested(payload: { userId: string; e
     return;
   }
 
-  const envelope: KafkaEnvelope<any> = {
+  const envelope: KafkaEnvelope<{ userId: string; email: string; resetToken: string }> = {
     id: crypto.randomUUID(),
     version: 1,
     eventType: 'USER_PASSWORD_RESET_REQUESTED',
@@ -98,7 +98,7 @@ export async function publishEmailVerificationRequested(payload: { userId: strin
     return;
   }
 
-  const envelope: KafkaEnvelope<any> = {
+  const envelope: KafkaEnvelope<{ userId: string; email: string; verifyToken: string }> = {
     id: crypto.randomUUID(),
     version: 1,
     eventType: 'USER_EMAIL_VERIFICATION_REQUESTED',

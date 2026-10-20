@@ -2,8 +2,10 @@ import { ServerEvents } from '../event.constants.js';
 import { socketRegistry } from '../registry/socket.registry.js';
 import { RideCancelledPayload, PaymentCapturedPayload } from '../types.js';
 
+import { Ride } from '../../db/client.js';
+
 export interface NewRideRequestPayload {
-  ride: any;
+  ride: Ride | Record<string, unknown>;
 }
 
 export type { RideCancelledPayload, PaymentCapturedPayload };

@@ -24,30 +24,21 @@ describe('AuthClient Inter-Service HTTP Communication in notification-service', 
       isEmailVerified: true,
     };
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
+    const getSpy = vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockResolvedValue({
       status: 200,
-      json: async () => ({ success: true, data: mockUser }),
-    } as any);
+      data: { success: true, data: mockUser },
+    });
 
     const user = await client.getUserById('rider-123');
     expect(user).toEqual(mockUser);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://test-auth-service:4001/api/auth/users/rider-123',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Accept: 'application/json',
-          'x-internal-service-key': expect.any(String),
-        }),
-      })
-    );
+    expect(getSpy).toHaveBeenCalledWith('/api/auth/users/rider-123');
   });
 
   it('handles 404 gracefully by returning null', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-    } as any);
+    const notFoundError = new Error('Request failed with status code 404');
+    Object.assign(notFoundError, { isAxiosError: true, response: { status: 404 } });
+
+    vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockRejectedValue(notFoundError);
 
     const user = await client.getUserById('missing');
     expect(user).toBeNull();

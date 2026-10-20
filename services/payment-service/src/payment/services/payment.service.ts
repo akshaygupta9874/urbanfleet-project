@@ -38,7 +38,7 @@ import {
   isDuplicateKeyError,
 } from "../errors/payment.errors.js";
 
-import { paymentRepository } from "../repositories/payment.repository.js";
+import { paymentRepository, ListPaymentsFilter } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
 import { refundService } from "./refund.service.js";
 
@@ -51,7 +51,7 @@ import {
   VerifyCheckoutInput,
 } from "../types/payment.dto.js";
 
-import { formatRide, rideClient } from "../../clients/ride.client.js";
+import { formatRide, rideClient, type IRide } from "../../clients/ride.client.js";
 import { RidePaymentStatus, RideStatus } from "../types/payment.types.js";
 export { RidePaymentStatus, RideStatus };
 import { UserRole } from "../../db/client.js";
@@ -175,8 +175,8 @@ class PaymentService {
   async createOrder(
     input: CreateOrderInput
   ): Promise<CreateOrderResult> {
-    const rideIdStr = (input.ride ?? (input as any).rideId)?.toString();
-    const riderIdStr = (input.rider ?? (input as any).riderId)?.toString();
+    const rideIdStr = input.rideId?.toString();
+    const riderIdStr = input.riderId?.toString();
 
     if (!rideIdStr || !riderIdStr) {
       throw new AppError("Ride and rider are required.", 400, "INVALID_INPUT");
@@ -193,9 +193,16 @@ class PaymentService {
     }
 
     const ride = formatRide(rawRide);
+    if (!ride) {
+      throw new AppError(
+        "Ride not found.",
+        404,
+        "RIDE_NOT_FOUND"
+      );
+    }
 
     // Ownership first: never reveal the state of somebody else's ride.
-    const rideRiderId = (ride.riderId ?? ride.rider)?.toString();
+    const rideRiderId = ride.riderId?.toString();
     if (
       !rideRiderId || rideRiderId !== riderIdStr
     ) {
@@ -239,15 +246,22 @@ class PaymentService {
     if (existing) {
       return this.resumeOrder(
         existing,
-        ride.fare?.breakdown?.totalPaise ?? ride.fareBreakdown?.totalPaise
+        ride.fareBreakdown?.totalPaise
       );
     }
 
     // Pre-check ride details before calling the external gateway
     const checkRows = await paymentRepository.queryRideRaw(rideIdStr);
     const latestRide = (checkRows && checkRows.length > 0) ? formatRide(checkRows[0]) : ride;
+    if (!latestRide) {
+      throw new AppError(
+        "Ride not found.",
+        404,
+        "RIDE_NOT_FOUND"
+      );
+    }
 
-    const latestDriverId = (latestRide.driverId ?? latestRide.driver)?.toString();
+    const latestDriverId = latestRide.driverId?.toString();
     if (!latestDriverId && !isCancelled) {
       throw new AppError(
         "Driver not assigned.",
@@ -256,7 +270,7 @@ class PaymentService {
       );
     }
 
-    const fareBreakdown = latestRide.fareBreakdown || latestRide.fare?.breakdown;
+    const fareBreakdown = latestRide.fareBreakdown as IFareBreakdown | undefined;
 
     if (!fareBreakdown) {
       throw new AppError(
@@ -302,6 +316,9 @@ class PaymentService {
           }
 
           const lockedRide = formatRide(rows[0]);
+          if (!lockedRide) {
+            throw new AppError("Ride not found.", 404, "RIDE_NOT_FOUND");
+          }
           if (
             !PAYABLE_RIDE_PAYMENT_STATUSES.includes(
               lockedRide.paymentStatus as RidePaymentStatus
@@ -316,15 +333,15 @@ class PaymentService {
 
           const existingForRide = await paymentRepository.findByRide(
             rideIdStr,
-            { tx } as any
+            { tx }
           );
           if (existingForRide.length > 0) {
             return { payment: existingForRide[0]!, alreadyExists: true };
           }
 
-          const lockedFare = lockedRide.fareBreakdown || lockedRide.fare?.breakdown;
-          const lockedRiderId = (lockedRide.riderId ?? lockedRide.rider)?.toString();
-          const lockedDriverId = (lockedRide.driverId ?? lockedRide.driver)?.toString() || (isCancelled ? lockedRiderId : undefined);
+          const lockedFare = lockedRide.fareBreakdown as IFareBreakdown | undefined;
+          const lockedRiderId = lockedRide.riderId?.toString();
+          const lockedDriverId = lockedRide.driverId?.toString() || (isCancelled ? lockedRiderId : undefined);
           if (!lockedDriverId || !lockedFare) {
             throw new AppError(
               "Ride payment details are incomplete.",
@@ -336,9 +353,9 @@ class PaymentService {
 
           const payment = await paymentRepository.create(
             {
-              ride: lockedRide.id as any,
-              rider: lockedRiderId as any,
-              driver: lockedDriverId as any,
+              ride: String(lockedRide.id),
+              rider: lockedRiderId,
+              driver: lockedDriverId,
               gateway: PaymentGateway.RAZORPAY,
               amountPaise: lockedFare.totalPaise,
               currency: CURRENCY.INR,
@@ -354,7 +371,7 @@ class PaymentService {
                 orderCreationPending: true,
               },
             },
-            { tx } as any
+            { tx }
           );
           return { payment, alreadyExists: false };
         });
@@ -589,7 +606,7 @@ class PaymentService {
 
     if (
       input.requesterId &&
-      (payment.riderId ?? payment.rider)?.toString() !== input.requesterId.toString()
+      payment.riderId?.toString() !== input.requesterId.toString()
     ) {
       throw new AppError(
         "Not authorized to verify this payment.",
@@ -729,7 +746,7 @@ class PaymentService {
       );
     }
 
-    let updatedRide: any = null;
+    let updatedRide: IRide | null = null;
 
     const transactionId = randomUUID();
 
@@ -788,7 +805,7 @@ class PaymentService {
       return; // another request already recorded this capture
     }
 
-    updatedRide = formatRide(captureResult.updatedRideRecord);
+    updatedRide = formatRide(captureResult.updatedRideRecord as Record<string, unknown> | null | undefined);
 
     if (updatedRide) {
       paymentLog.info("payment.captured", {
@@ -800,18 +817,19 @@ class PaymentService {
       // Sync payment status with authoritative ride-service
       try {
         await rideClient.updatePaymentStatus(payment.ride.toString(), RidePaymentStatus.CAPTURED);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         paymentLog.warn("payment.ride_service_sync_failed", {
           paymentId: payment.id.toString(),
           rideId: payment.ride.toString(),
-          error: err.message,
+          error: message,
         });
       }
 
       // Notifications are best-effort: the money is already safely recorded.
       try {
-        const driverId = (updatedRide.driverId ?? updatedRide.driver)?.toString();
-        const riderId = (updatedRide.riderId ?? updatedRide.rider)?.toString();
+        const driverId = updatedRide.driverId?.toString();
+        const riderId = updatedRide.riderId?.toString();
 
         if (driverId) {
           emitPaymentCaptured(
@@ -880,7 +898,7 @@ class PaymentService {
             failureReason: entity.error_description ?? undefined,
             failureCode: entity.error_code ?? undefined,
           },
-          { tx } as any
+          { tx }
         );
 
       if (!updatedPayment) {
@@ -910,11 +928,12 @@ class PaymentService {
         RidePaymentStatus.FAILED,
         RidePaymentStatus.PENDING
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       paymentLog.warn("payment.ride_service_failed_sync_error", {
         paymentId: payment.id.toString(),
         rideId: payment.ride.toString(),
-        error: err.message,
+        error: message,
       });
     }
 
@@ -973,7 +992,7 @@ class PaymentService {
     if (!user) {
       throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
-    const roles = Array.isArray(user.roles) ? user.roles : [user.role || (user as any).roles || "RIDER"];
+    const roles = Array.isArray(user.roles) ? user.roles : ["RIDER"];
     return {
       isAdmin: roles.includes(UserRole.ADMIN) || roles.includes("ADMIN"),
     };
@@ -988,7 +1007,7 @@ class PaymentService {
   }
 
   async listPaymentsPaginated(
-    filter: any,
+    filter: ListPaymentsFilter,
     page = 1,
     limit = 20
   ): Promise<{ items: IPayment[]; total: number }> {

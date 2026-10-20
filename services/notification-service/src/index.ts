@@ -17,13 +17,15 @@ app.use(express.json());
 
 import { createNotificationRouter } from './routes/notification.routes.js';
 
+import { Consumer } from 'kafkajs';
+
 const notifRepo = new NotificationRepository(prisma);
 const notifService = new NotificationService(notifRepo);
 
 const dispatcher = new NotificationDispatcher(notifRepo);
 dispatcher.start();
 
-let notifConsumer: any = null;
+let notifConsumer: Consumer | null = null;
 initNotificationConsumer(prisma, notifService).then(c => {
   notifConsumer = c;
 }).catch(err => logger.error('Consumer error:', err));

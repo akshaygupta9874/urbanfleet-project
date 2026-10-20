@@ -13,6 +13,7 @@ import type { GeoService } from '../../services/geo.service.js';
 import type { DriverPresenceService } from '../../services/driver-presence.service.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
+import { Ride } from '../../db/client.js';
 
 export interface DriverHandlerDeps {
   geoService: GeoService;
@@ -267,8 +268,9 @@ async function handleAcceptRide(
       if (deps.presenceService) {
         await deps.presenceService.setDriverBusy(driverId);
       }
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to accept ride.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to accept ride.';
+      sendSocketError(socket, message);
     }
   }
 }
@@ -286,13 +288,13 @@ async function handleRejectRide(
 
   const driverId = socket.user.driverId || socket.user.userId;
   if (deps?.dispatchService) {
-    let ride: any = null;
+    let ride: Ride | null = null;
     if (deps.rideService) {
       try {
         ride = await deps.rideService.getRideById(result.data.rideId);
       } catch {}
     }
-    await deps.dispatchService.handleDriverResponse(result.data.rideId, driverId, false, ride);
+    await deps.dispatchService.handleDriverResponse(result.data.rideId, driverId, false, ride || undefined);
   }
 
   // Acknowledge rejection
@@ -324,8 +326,9 @@ async function handleArrived(
       });
       emitDriverArrived(ride.riderId, { rideId: ride.id });
       socket.send(JSON.stringify({ event: ServerEvents.DRIVER_ARRIVED, data: { ride } }));
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to record arrival.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to record arrival.';
+      sendSocketError(socket, message);
     }
   }
 }
@@ -355,8 +358,9 @@ async function handleArrivedAtDestination(
       });
       emitArrivedAtDestination(ride.riderId, { rideId: ride.id });
       socket.send(JSON.stringify({ event: ServerEvents.ARRIVED_AT_DESTINATION, data: { ride } }));
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to record destination arrival.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to record destination arrival.';
+      sendSocketError(socket, message);
     }
   }
 }
@@ -387,8 +391,9 @@ async function handleStartRide(
       );
       emitRideStarted(ride.riderId, { rideId: ride.id });
       socket.send(JSON.stringify({ event: ServerEvents.RIDE_STARTED, data: { ride } }));
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to start ride.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to start ride.';
+      sendSocketError(socket, message);
     }
   }
 }
@@ -418,8 +423,9 @@ async function handleCompleteRide(
       if (deps.presenceService) {
         await deps.presenceService.setDriverAvailable(driverId, true);
       }
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to complete ride.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to complete ride.';
+      sendSocketError(socket, message);
     }
   }
 }
@@ -462,8 +468,9 @@ async function handleCancelRideByDriver(
       if (deps.presenceService) {
         await deps.presenceService.setDriverAvailable(driverId, true);
       }
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to cancel ride.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to cancel ride.';
+      sendSocketError(socket, message);
     }
   }
 }

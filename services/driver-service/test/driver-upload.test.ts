@@ -72,6 +72,7 @@ describe('Driver Cloudinary Multi-File Registration & Upload Workflow', () => {
     it('successfully uploads all 11 driver/vehicle assets to Cloudinary and registers profile', async () => {
       const files = createFullFiles();
       const req: any = {
+        userId: 'd1111111-1111-1111-1111-111111111111',
         user: { userId: 'd1111111-1111-1111-1111-111111111111' },
         files,
         body: {
@@ -133,6 +134,7 @@ describe('Driver Cloudinary Multi-File Registration & Upload Workflow', () => {
     it('rolls back all uploaded Cloudinary images if driver creation fails', async () => {
       const files = createFullFiles();
       const req: any = {
+        userId: 'd2222222-2222-2222-2222-222222222222',
         user: { userId: 'd2222222-2222-2222-2222-222222222222' },
         files,
         body: {
@@ -173,6 +175,7 @@ describe('Driver Cloudinary Multi-File Registration & Upload Workflow', () => {
       delete files.pollutionCertificate;
 
       const req: any = {
+        userId: 'd3333333-3333-3333-3333-333333333333',
         user: { userId: 'd3333333-3333-3333-3333-333333333333' },
         files,
         body: {

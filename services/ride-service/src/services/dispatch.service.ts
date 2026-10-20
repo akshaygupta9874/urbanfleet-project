@@ -1,6 +1,7 @@
 import { GeoService } from './geo.service.js';
 import { createLogger } from '@urbanfleet/common';
 import { emitNewRideRequest } from '../websocket/emitters/driver.emitter.js';
+import { Ride } from '../db/client.js';
 
 const logger = createLogger('dispatch-service');
 
@@ -12,7 +13,7 @@ export class DispatchService {
     this.geoService = geoService;
   }
 
-  async recordDriverRejection(rideId: string, driverId: string) {
+  async recordDriverRejection(rideId: string, driverId: string): Promise<void> {
     let rejections = this.rejectedOffers.get(rideId);
     if (!rejections) {
       rejections = new Set();
@@ -22,14 +23,14 @@ export class DispatchService {
     logger.info(`Recorded rejection for ride ${rideId} by driver ${driverId}`);
   }
 
-  async findNearbyDrivers(lat: number, lng: number, radiusKm = 5.0, excludeDriverIds: string[] = []) {
+  async findNearbyDrivers(lat: number, lng: number, radiusKm = 5.0, excludeDriverIds: string[] = []): Promise<string[]> {
     const nearby = await this.geoService.searchNearbyDrivers(lat, lng, radiusKm);
     if (excludeDriverIds.length === 0) return nearby;
     const excludedSet = new Set(excludeDriverIds);
     return nearby.filter((id) => !excludedSet.has(id));
   }
 
-  async dispatchRideOffer(rideId: string, driverIds: string[], ride?: any) {
+  async dispatchRideOffer(rideId: string, driverIds: string[], ride?: Ride | Record<string, unknown>): Promise<{ rideId: string; candidates: string[] }> {
     logger.info(`Dispatching ride ${rideId} offer to ${driverIds.length} candidate drivers.`);
     if (ride) {
       for (const driverId of driverIds) {
@@ -39,7 +40,7 @@ export class DispatchService {
     return { rideId, candidates: driverIds };
   }
 
-  async broadcastRideRequest(ride: any) {
+  async broadcastRideRequest(ride: Ride | { id: string; pickupLat: unknown; pickupLng: unknown; [key: string]: unknown }): Promise<{ rideId: string; candidates: string[] }> {
     const rejections = Array.from(this.rejectedOffers.get(ride.id) || []);
     const nearby = await this.findNearbyDrivers(
       Number(ride.pickupLat),
@@ -50,7 +51,12 @@ export class DispatchService {
     return this.dispatchRideOffer(ride.id, nearby, ride);
   }
 
-  async handleDriverResponse(rideId: string, driverId: string, accepted: boolean, ride?: any) {
+  async handleDriverResponse(
+    rideId: string,
+    driverId: string,
+    accepted: boolean,
+    ride?: Ride | { id: string; pickupLat: unknown; pickupLng: unknown; [key: string]: unknown }
+  ): Promise<{ rideId: string; driverId: string; accepted: boolean }> {
     if (!accepted) {
       await this.recordDriverRejection(rideId, driverId);
       if (ride) {
@@ -69,7 +75,7 @@ export class DispatchService {
     return { rideId, driverId, accepted };
   }
 
-  async expireStaleOffers(rideId: string) {
+  async expireStaleOffers(rideId: string): Promise<void> {
     this.rejectedOffers.delete(rideId);
     logger.info(`Expiring stale dispatch offers for ride ${rideId}`);
   }

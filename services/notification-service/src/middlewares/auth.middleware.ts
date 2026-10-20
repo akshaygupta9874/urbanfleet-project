@@ -4,10 +4,18 @@ import crypto from 'crypto';
 import { AppError } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
 
+export interface UserContext {
+  id: string;
+  userId: string;
+  email?: string;
+  role?: string | string[];
+  roles?: string[];
+}
+
 export interface AuthenticatedRequest extends Request {
   userId?: string;
   role?: string[];
-  user?: any;
+  user?: UserContext;
 }
 
 export interface AuthPayload extends JwtPayload {
@@ -37,14 +45,15 @@ export const authMiddleware = asyncHandler(
     ) {
       request.userId = 'internal-service';
       request.role = ['ADMIN'];
-      request.user = { id: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
+      request.user = { id: 'internal-service', userId: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
       return next();
     }
 
+    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
     const token =
       request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      request.cookies?.accessToken ||
-      (request as any).cookies?.token;
+      cookies?.accessToken ||
+      cookies?.token;
 
     if (!token) {
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');
@@ -67,7 +76,7 @@ export const authMiddleware = asyncHandler(
         const secret = process.env.JWT_ACCESS_SECRET || 'test-access-secret-only';
         decodedData = jwt.verify(token, secret) as AuthPayload;
       }
-    } catch (error: any) {
+    } catch (_error: unknown) {
       const secret = process.env.JWT_ACCESS_SECRET;
       if (secret) {
         try {
@@ -80,7 +89,7 @@ export const authMiddleware = asyncHandler(
       }
     }
 
-    const userId = decodedData.userId || decodedData.id;
+    const userId = decodedData.userId;
     if (!userId) {
       throw new AppError('Your session is invalid. Please sign in again.', 401, 'INVALID_SESSION');
     }
@@ -104,8 +113,8 @@ export const requireRole = (...allowedRoles: string[]) => {
     if (!req.userId && !req.user) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.role || (req.user?.role ? [req.user.role] : []);
-    const hasRole = roles.some((r) => allowedRoles.includes(r)) || (req.user?.role && allowedRoles.includes(req.user.role));
+    const roles: string[] = req.role || (req.user?.roles ? req.user.roles : []);
+    const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(
         new AppError(`Forbidden: Requires one of roles: ${allowedRoles.join(', ')}`, 403, 'FORBIDDEN')

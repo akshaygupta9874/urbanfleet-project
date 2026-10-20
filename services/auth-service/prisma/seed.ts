@@ -1,7 +1,10 @@
 import bcrypt from 'bcryptjs';
 
-let prisma: any;
-let pool: any;
+import type pg from 'pg';
+import type { PrismaClient } from '../src/db/client.js';
+
+let prisma: PrismaClient;
+let pool: pg.Pool;
 
 async function getClient() {
   try {

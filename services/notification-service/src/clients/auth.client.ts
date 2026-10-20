@@ -1,3 +1,5 @@
+import axios, { AxiosInstance, isAxiosError } from 'axios';
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -9,35 +11,36 @@ export interface AuthUser {
 }
 
 export class AuthClient {
-  private baseUrl: string;
+  private client: AxiosInstance;
 
   constructor(
     baseUrl: string = process.env.AUTH_SERVICE_URL || 'http://localhost:4001'
   ) {
-    this.baseUrl = baseUrl;
+    this.client = axios.create({
+      baseURL: baseUrl,
+      timeout: 5000,
+      headers: {
+        Accept: 'application/json',
+        'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
+      },
+    });
   }
 
   async getUserById(userId: string): Promise<AuthUser | null> {
     try {
-      const internalKey = process.env.INTERNAL_SERVICE_KEY || '';
-      const res = await fetch(`${this.baseUrl}/api/auth/users/${userId}`, {
-        headers: {
-          Accept: 'application/json',
-          'x-internal-service-key': internalKey,
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (res.status === 404) return null;
-      if (!res.ok) {
-        throw new Error(`Auth Service returned HTTP ${res.status}`);
-      }
-
-      const body = (await res.json()) as { success: boolean; data: AuthUser };
-      return body.data;
-    } catch (err: any) {
-      if (err.name === 'TimeoutError') {
-        throw new Error('Auth Service timed out');
+      const res = await this.client.get<{ success: boolean; data: AuthUser }>(
+        `/api/auth/users/${userId}`
+      );
+      return res.data?.data ?? null;
+    } catch (err: unknown) {
+      if (isAxiosError(err)) {
+        if (err.response?.status === 404) return null;
+        if (err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'))) {
+          throw new Error('Auth Service timed out');
+        }
+        if (err.response) {
+          throw new Error(`Auth Service returned HTTP ${err.response.status}`);
+        }
       }
       throw err;
     }

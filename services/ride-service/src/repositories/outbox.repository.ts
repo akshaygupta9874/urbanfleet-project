@@ -1,4 +1,14 @@
-import { PrismaClient, OutboxEvent } from '../db/client.js';
+import { PrismaClient, OutboxEvent, Prisma } from '../db/client.js';
+
+export interface StageEventData {
+  topic: string;
+  partitionKey: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  aggregateSequence: number;
+  payload: Record<string, unknown> | unknown;
+}
 
 export class OutboxRepository {
   private prisma: PrismaClient;
@@ -8,16 +18,8 @@ export class OutboxRepository {
   }
 
   async stageEvent(
-    tx: any,
-    data: {
-      topic: string;
-      partitionKey: string;
-      eventType: string;
-      aggregateType: string;
-      aggregateId: string;
-      aggregateSequence: number;
-      payload: any;
-    }
+    tx: Prisma.TransactionClient,
+    data: StageEventData
   ): Promise<OutboxEvent> {
     return tx.outboxEvent.create({
       data: {
@@ -27,7 +29,7 @@ export class OutboxRepository {
         aggregateType: data.aggregateType,
         aggregateId: data.aggregateId,
         aggregateSequence: data.aggregateSequence,
-        payload: data.payload,
+        payload: data.payload as Prisma.InputJsonValue,
         status: 'PENDING'
       }
     });

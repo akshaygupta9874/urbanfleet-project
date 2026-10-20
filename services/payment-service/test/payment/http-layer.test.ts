@@ -96,7 +96,7 @@ describe("controllers", () => {
     const { res } = await call(controller.createOrder, { userId: riderId, body: { rideId, idempotencyKey: "client-chosen" } });
     const arg = create.mock.calls[0]![0];
     expect(arg.idempotencyKey).toBe(createHash("sha256").update(`${rideId}:${riderId}`).digest("hex"));
-    expect(typeof arg.ride).toBe('string');
+    expect(typeof arg.rideId).toBe('string');
     expect(res.statusCode).toBe(201);
   });
 

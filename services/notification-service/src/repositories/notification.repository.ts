@@ -1,4 +1,4 @@
-import { PrismaClient, NotificationRecord } from '../db/client.js';
+import { Prisma, PrismaClient, NotificationRecord } from '../db/client.js';
 
 export class NotificationRepository {
   private prisma: PrismaClient;
@@ -7,8 +7,22 @@ export class NotificationRepository {
     this.prisma = prisma;
   }
 
-  async create(data: any): Promise<NotificationRecord> {
+  async create(data: Prisma.NotificationRecordCreateInput): Promise<NotificationRecord> {
     return this.prisma.notificationRecord.create({ data });
+  }
+
+  async findById(id: string): Promise<NotificationRecord | null> {
+    return this.prisma.notificationRecord.findUnique({ where: { id } });
+  }
+
+  async findByRecipients(recipients: string[], limit = 50): Promise<NotificationRecord[]> {
+    if (recipients.length === 0) return [];
+    const conditions = recipients.map((r) => ({ recipient: r }));
+    return this.prisma.notificationRecord.findMany({
+      where: conditions.length === 1 ? conditions[0] : { OR: conditions },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
   }
 
   async findPending(limit = 20): Promise<NotificationRecord[]> {

@@ -51,7 +51,7 @@ export class OutboxWorker {
       aggregate_type: string;
       aggregate_id: string;
       aggregate_sequence: number;
-      payload: any;
+      payload: unknown;
       created_at: Date;
       retry_count: number;
     }>>`
@@ -92,7 +92,7 @@ export class OutboxWorker {
           throw new Error('Kafka producer is not connected');
         }
 
-        const envelope: KafkaEnvelope<any> = {
+        const envelope: KafkaEnvelope<unknown> = {
           id: event.id,
           version: 1,
           eventType: event.event_type,
@@ -116,16 +116,17 @@ export class OutboxWorker {
           WHERE id = ${event.id}::uuid;
         `;
         logger.info(`Outbox published event ${event.id} [${event.event_type}] to ${event.topic}`);
-      } catch (publishErr: any) {
+      } catch (publishErr: unknown) {
         logger.error(`Failed to publish event ${event.id}:`, publishErr);
         const nextRetry = (event.retry_count || 0) + 1;
         const newStatus = nextRetry >= 5 ? 'FAILED' : 'PENDING';
+        const errorMessage = publishErr instanceof Error ? publishErr.message : typeof publishErr === 'string' ? publishErr : 'Unknown publication failure';
 
         await this.prisma.$executeRaw`
           UPDATE outbox_events
           SET status = ${newStatus}::"OutboxStatus",
               retry_count = ${nextRetry},
-              last_error = ${publishErr.message || 'Unknown publication failure'}
+              last_error = ${errorMessage}
           WHERE id = ${event.id}::uuid;
         `;
       }

@@ -9,14 +9,14 @@ export function createPaymentRouter(controller: PaymentController): Router {
   router.post('/webhook', controller.handleRazorpayWebhook);
 
   // Authenticated Endpoints
-  router.use(authMiddleware as any);
+  router.use(authMiddleware);
 
   router.post('/order', controller.createPaymentOrder);
   router.post('/verify', controller.verifyPayment);
   router.get('/ride/:rideId', controller.getPaymentByRideId);
 
   // Driver Payouts
-  router.post('/payout', requireRole('DRIVER') as any, controller.requestPayout);
+  router.post('/payout', requireRole('DRIVER'), controller.requestPayout);
 
   return router;
 }

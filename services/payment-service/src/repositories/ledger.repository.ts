@@ -1,4 +1,4 @@
-import { PrismaClient, LedgerEntry } from '../db/client.js';
+import { PrismaClient, LedgerEntry, Prisma, LedgerAccount } from '../db/client.js';
 
 export class LedgerRepository {
   private prisma: PrismaClient;
@@ -7,14 +7,17 @@ export class LedgerRepository {
     this.prisma = prisma;
   }
 
-  async insertLegs(tx: any, entries: any[]): Promise<LedgerEntry[]> {
+  async insertLegs(
+    tx: Prisma.TransactionClient | PrismaClient,
+    entries: Prisma.LedgerEntryCreateInput[]
+  ): Promise<LedgerEntry[]> {
     return Promise.all(
       entries.map(entry => tx.ledgerEntry.create({ data: entry }))
     );
   }
 
-  async getAccountBalance(account: any, ownerId?: string): Promise<bigint> {
-    const where: any = { account };
+  async getAccountBalance(account: LedgerAccount | string, ownerId?: string): Promise<bigint> {
+    const where: Prisma.LedgerEntryWhereInput = { account: account as LedgerAccount };
     if (ownerId) where.ownerId = ownerId;
 
     const entries = await this.prisma.ledgerEntry.findMany({ where });

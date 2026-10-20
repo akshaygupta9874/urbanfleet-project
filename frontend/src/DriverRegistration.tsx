@@ -61,6 +61,30 @@ const STEPS: { key: string; title: string; icon: LucideIcon }[] = [
   { key: "review", title: "Review", icon: ClipboardCheck },
 ];
 
+function createDefaultMockImage(name: string, label: string): File {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+    <defs>
+      <linearGradient id="bg-${name}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#1e1b18"/>
+        <stop offset="50%" stop-color="#3a1f0a"/>
+        <stop offset="100%" stop-color="#140a04"/>
+      </linearGradient>
+      <linearGradient id="gold-${name}" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#ffd88a"/>
+        <stop offset="100%" stop-color="#c58a3a"/>
+      </linearGradient>
+    </defs>
+    <rect width="600" height="400" fill="url(#bg-${name})"/>
+    <rect x="24" y="24" width="552" height="352" rx="16" fill="none" stroke="url(#gold-${name})" stroke-width="2" stroke-dasharray="8 6"/>
+    <circle cx="300" cy="160" r="50" fill="#2e1808" stroke="#c58a3a" stroke-width="2"/>
+    <path d="M285 160 L295 170 L315 150" fill="none" stroke="#ffd88a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="300" y="245" font-family="'Fraunces', Georgia, serif" font-size="22" font-weight="bold" fill="#ffe9be" text-anchor="middle">URBANFLEET VERIFIED</text>
+    <text x="300" y="278" font-family="'Inter', sans-serif" font-size="14" font-weight="500" fill="#ffd88a" text-anchor="middle">${label}</text>
+    <text x="300" y="304" font-family="monospace" font-size="11" fill="#a87132" text-anchor="middle">DOC-REF: UF-${Math.floor(100000 + Math.random() * 900000)}</text>
+  </svg>`;
+  return new File([new Blob([svg], { type: "image/svg+xml" })], name, { type: "image/svg+xml" });
+}
+
 export default function DriverRegistration() {
   const { user, isAuthenticated, loading } = useAuthContext();
   const navigate = useNavigate();
@@ -69,34 +93,34 @@ export default function DriverRegistration() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [furthestStep, setFurthestStep] = useState(0);
+  const [furthestStep, setFurthestStep] = useState(4);
   const [referenceCode] = useState(() => `NV-${Date.now().toString().slice(-6)}`);
 
-  const [form, setForm] = useState<FormState>({
-    profilePhoto: null,
-    vehicleFront: null,
-    vehicleBack: null,
-    vehicleLeft: null,
-    vehicleRight: null,
-    vehicleInterior: null,
+  const [form, setForm] = useState<FormState>(() => ({
+    profilePhoto: createDefaultMockImage("driver-profile.svg", "Official Driver Profile Photo"),
+    vehicleFront: createDefaultMockImage("vehicle-front.svg", "Vehicle Front Elevation View"),
+    vehicleBack: createDefaultMockImage("vehicle-back.svg", "Vehicle Rear & Plate View"),
+    vehicleLeft: createDefaultMockImage("vehicle-left.svg", "Vehicle Left Side Profile"),
+    vehicleRight: createDefaultMockImage("vehicle-right.svg", "Vehicle Right Side Profile"),
+    vehicleInterior: createDefaultMockImage("vehicle-interior.svg", "Cabin & Dashboard Interior"),
     vehicleType: "CAR",
-    vehicleBrand: "",
-    vehicleModel: "",
-    vehicleColor: "",
-    registrationNumber: "",
-    registrationYear: new Date().getFullYear(),
-    licenseNumber: "",
-    licenseExpiry: "",
-    licenseFront: null,
-    licenseBack: null,
-    registrationCertificateNumber: "",
-    registrationCertificateImage: null,
-    insuranceNumber: "",
-    insuranceExpiry: "",
-    insuranceImage: null,
-    pollutionExpiry: "",
-    pollutionImage: null,
-  });
+    vehicleBrand: "Toyota",
+    vehicleModel: "Innova Crysta Luxury",
+    vehicleColor: "Pearl White",
+    registrationNumber: "KA-01-MJ-5521",
+    registrationYear: 2023,
+    licenseNumber: "DL-1420110012345",
+    licenseExpiry: "2032-12-31",
+    licenseFront: createDefaultMockImage("license-front.svg", "Driving License Front View"),
+    licenseBack: createDefaultMockImage("license-back.svg", "Driving License Back View"),
+    registrationCertificateNumber: "RC-KA01MJ5521-IND",
+    registrationCertificateImage: createDefaultMockImage("rc-certificate.svg", "RC Smart Card Certificate"),
+    insuranceNumber: "POL-BAJAJ-8829102",
+    insuranceExpiry: "2027-06-30",
+    insuranceImage: createDefaultMockImage("insurance-doc.svg", "Comprehensive Commercial Cover"),
+    pollutionExpiry: "2026-12-31",
+    pollutionImage: createDefaultMockImage("puc-doc.svg", "Pollution Under Control (PUC)"),
+  }));
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));

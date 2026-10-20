@@ -47,8 +47,10 @@ export interface RideCancelledPayload {
   reason?: string;
 }
 
+import { Ride } from '../db/client.js';
+
 export interface PaymentCapturedPayload {
-  ride: any;
+  ride: Ride | Record<string, unknown>;
 }
 
 export interface HeartbeatPayload {

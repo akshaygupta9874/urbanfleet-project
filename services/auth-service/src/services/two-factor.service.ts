@@ -5,6 +5,7 @@ import qrcode from 'qrcode';
 import { UserRepository } from '../repositories/user.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
+import { User } from '../db/client.js';
 import {
   NotFoundError,
   UnauthorizedError,
@@ -223,7 +224,7 @@ export class TwoFactorService {
    * Validates the 6-digit TOTP against the user's active secret.
    * Tracks failed attempts; locks out the challenge after 5 failed attempts.
    */
-  async verifyLoginChallenge(challengeToken: string, code: string, ipAddress?: string): Promise<any> {
+  async verifyLoginChallenge(challengeToken: string, code: string, ipAddress?: string): Promise<User> {
     if (!challengeToken) {
       throw new BadRequestError('2FA challenge token is required');
     }
@@ -319,7 +320,7 @@ export class TwoFactorService {
    * Allows emergency account access when authenticator is unavailable.
    * Single-use: once verified, the recovery code is permanently removed from the user's account.
    */
-  async verifyRecoveryCode(challengeToken: string, recoveryCode: string, ipAddress?: string): Promise<{ user: any; remainingRecoveryCodes: number }> {
+  async verifyRecoveryCode(challengeToken: string, recoveryCode: string, ipAddress?: string): Promise<{ user: User; remainingRecoveryCodes: number }> {
     if (!challengeToken || !recoveryCode) {
       throw new BadRequestError('Challenge token and recovery code are required');
     }
@@ -356,10 +357,10 @@ export class TwoFactorService {
 
     const inputHash = this.hashRecoveryCode(recoveryCode);
     let remainingCodesCount = 0;
-    let resultUser: any = null;
+    let resultUser: User | null = null;
 
-    if (typeof (this.userRepo as any).consumeRecoveryCode === 'function') {
-      const consumed = await (this.userRepo as any).consumeRecoveryCode(challengeData.userId, inputHash);
+    if (this.userRepo && typeof this.userRepo.consumeRecoveryCode === 'function') {
+      const consumed = await this.userRepo.consumeRecoveryCode(challengeData.userId, inputHash);
       if (!consumed) {
         challengeData.attempts += 1;
         try {

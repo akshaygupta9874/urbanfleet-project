@@ -8,9 +8,19 @@ import crypto from 'crypto';
 const logger = createLogger('payment-event-consumer');
 const consumerGroup = 'payment-service-group';
 
+export interface PaymentOrderCreator {
+  createOrder(
+    rideIdOrInput: string | { ride?: string; rider?: string; rideId?: string; riderId?: string; amountPaise?: number; idempotencyKey?: string },
+    riderIdParam?: string,
+    amountPaiseParam?: number,
+    driverIdParam?: string
+  ): Promise<unknown>;
+  issueRefund?(paymentId: string, amountPaise: number, reason?: string): Promise<unknown>;
+}
+
 export async function initPaymentConsumer(
   prisma: PrismaClient,
-  paymentService: PaymentService
+  paymentService: PaymentService | PaymentOrderCreator
 ): Promise<Consumer | null> {
   const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
   const kafka = new Kafka({ clientId: 'payment-service', brokers });
@@ -24,18 +34,20 @@ export async function initPaymentConsumer(
       eachMessage: async ({ message }) => {
         if (!message.value) return;
 
-        let raw: any;
+        let raw: Record<string, unknown>;
         try {
-          raw = JSON.parse(message.value.toString());
-        } catch (parseErr: any) {
-          logger.warn('Failed to parse Kafka message JSON', { error: String(parseErr?.message || parseErr) });
+          raw = JSON.parse(message.value.toString()) as Record<string, unknown>;
+        } catch (parseErr: unknown) {
+          const parseErrorMessage = parseErr instanceof Error ? parseErr.message : String(parseErr);
+          logger.warn('Failed to parse Kafka message JSON', { error: parseErrorMessage });
           return;
         }
 
-        // Resilient envelope unwrapping: handles KafkaEnvelope<T>, eventId alias, or unwrapped payloads
-        const eventId = String(raw.id || raw.eventId || (message.key ? message.key.toString() : '') || crypto.randomUUID());
-        const eventType = raw.eventType || raw.event || raw.type || (raw.status === 'COMPLETED' ? 'RIDE_COMPLETED' : undefined);
-        const payload = raw.payload || raw;
+        if (!raw || typeof raw !== 'object') return;
+
+        const eventId = String(raw.id || (message.key ? message.key.toString() : '') || crypto.randomUUID());
+        const eventType = raw.eventType as string | undefined;
+        const payload = (typeof raw.payload === 'object' && raw.payload !== null ? raw.payload : raw) as Record<string, unknown>;
 
         await prisma.$transaction(async (tx) => {
           // Idempotency check
@@ -48,11 +60,13 @@ export async function initPaymentConsumer(
             data: { eventId, consumerGroup }
           });
 
+          const creator = paymentService as unknown as PaymentOrderCreator;
+
           if (eventType === 'RIDE_ARRIVED_AT_DESTINATION') {
-            const rideId = payload.rideId || payload.id;
-            let riderId = payload.riderId || payload.rider;
-            let totalFarePaise = payload.totalFarePaise || payload.amountPaise || payload.fare;
-            let driverId = payload.driverId || payload.driver;
+            const rideId = String(payload.rideId || '');
+            let riderId = String(payload.riderId || '');
+            let totalFarePaise = Number(payload.totalFarePaise || 0);
+            let driverId = payload.driverId ? String(payload.driverId) : undefined;
 
             // If riderId or totalFarePaise missing, fetch authoritative details from rideClient
             if ((!riderId || !totalFarePaise) && rideId) {
@@ -60,28 +74,26 @@ export async function initPaymentConsumer(
                 const { rideClient } = await import('../clients/ride.client.js');
                 const rideDetails = await rideClient.getRideById(rideId);
                 if (rideDetails) {
-                  riderId = riderId || rideDetails.riderId || rideDetails.rider;
-                  totalFarePaise = totalFarePaise || rideDetails.totalFarePaise || rideDetails.estimatedFarePaise || rideDetails.fare?.breakdown?.totalPaise;
-                  driverId = driverId || rideDetails.driverId || rideDetails.driver;
+                  riderId = riderId || String(rideDetails.riderId || '');
+                  totalFarePaise = totalFarePaise || Number(rideDetails.totalFarePaise || 0);
+                  driverId = driverId || (rideDetails.driverId ? String(rideDetails.driverId) : undefined);
                 }
-              } catch (err: any) {
-                logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${err.message}`);
+              } catch (err: unknown) {
+                const fetchErrMessage = err instanceof Error ? err.message : String(err);
+                logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${fetchErrMessage}`);
               }
             }
 
-            if (typeof (paymentService as any).createOrder === 'function') {
-              if (paymentService.createOrder.length <= 1) {
-                // Pass both ride/rider and rideId/riderId for universal compatibility
-                await (paymentService as any).createOrder({
-                  ride: rideId,
-                  rider: riderId,
+            if (typeof creator.createOrder === 'function') {
+              if (creator.createOrder.length <= 1) {
+                await creator.createOrder({
                   rideId,
                   riderId,
                   idempotencyKey: `ride-order-${rideId}`,
                 });
               } else {
                 // Legacy signature: createOrder(rideId, riderId, amountPaise, driverId)
-                await (paymentService as any).createOrder(
+                await creator.createOrder(
                   rideId,
                   riderId,
                   totalFarePaise,
@@ -91,10 +103,10 @@ export async function initPaymentConsumer(
             }
             logger.info(`Initialized payment order for ride ${rideId} at arrival stage`);
           } else if (eventType === 'RIDE_COMPLETED') {
-            const rideId = payload.rideId || payload.id;
-            let riderId = payload.riderId || payload.rider;
-            let totalFarePaise = payload.totalFarePaise || payload.amountPaise || payload.fare;
-            let driverId = payload.driverId || payload.driver;
+            const rideId = String(payload.rideId || '');
+            let riderId = String(payload.riderId || '');
+            let totalFarePaise = Number(payload.totalFarePaise || 0);
+            let driverId = payload.driverId ? String(payload.driverId) : undefined;
 
             // Check if payment already exists for this ride
             const existingPayment = await tx.payment.findUnique({ where: { rideId } });
@@ -107,27 +119,25 @@ export async function initPaymentConsumer(
                   const { rideClient } = await import('../clients/ride.client.js');
                   const rideDetails = await rideClient.getRideById(rideId);
                   if (rideDetails) {
-                    riderId = riderId || rideDetails.riderId || rideDetails.rider;
-                    totalFarePaise = totalFarePaise || rideDetails.totalFarePaise || rideDetails.estimatedFarePaise || rideDetails.fare?.breakdown?.totalPaise;
-                    driverId = driverId || rideDetails.driverId || rideDetails.driver;
+                    riderId = riderId || String(rideDetails.riderId || '');
+                    totalFarePaise = totalFarePaise || Number(rideDetails.totalFarePaise || 0);
+                    driverId = driverId || (rideDetails.driverId ? String(rideDetails.driverId) : undefined);
                   }
-                } catch (err: any) {
-                  logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${err.message}`);
+                } catch (err: unknown) {
+                  const fetchErrMessage = err instanceof Error ? err.message : String(err);
+                  logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${fetchErrMessage}`);
                 }
               }
 
-              if (typeof (paymentService as any).createOrder === 'function') {
-                if (paymentService.createOrder.length <= 1) {
-                  // Pass both ride/rider and rideId/riderId for universal compatibility
-                  await (paymentService as any).createOrder({
-                    ride: rideId,
-                    rider: riderId,
+              if (typeof creator.createOrder === 'function') {
+                if (creator.createOrder.length <= 1) {
+                  await creator.createOrder({
                     rideId,
                     riderId,
                     idempotencyKey: `ride-order-${rideId}`,
                   });
                 } else {
-                  await (paymentService as any).createOrder(
+                  await creator.createOrder(
                     rideId,
                     riderId,
                     totalFarePaise,
@@ -138,19 +148,19 @@ export async function initPaymentConsumer(
               logger.info(`Initialized fallback payment order for completed ride ${rideId}`);
             }
           } else if (eventType === 'RIDE_CANCELLED') {
-            const rideId = payload.rideId || payload.id;
-            const riderId = payload.riderId || payload.rider;
+            const rideId = String(payload.rideId || '');
+            const riderId = String(payload.riderId || '');
             const cancellationFeePaise = Number(payload.cancellationFeePaise || 0);
             const existingPayment = await tx.payment.findUnique({ where: { rideId } });
 
             // Compensating Saga: If payment was captured, issue partial refund deducting cancellation fee
             if (existingPayment && existingPayment.status === 'CAPTURED') {
               const refundAmount = existingPayment.amountPaise - cancellationFeePaise;
-              if (refundAmount > 0 && typeof (paymentService as any).issueRefund === 'function') {
-                await (paymentService as any).issueRefund(
+              if (refundAmount > 0 && typeof creator.issueRefund === 'function') {
+                await creator.issueRefund(
                   existingPayment.id,
                   refundAmount,
-                  `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${payload.cancellationReason || 'Rider Cancelled'}`
+                  `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${String(payload.cancellationReason || 'Rider Cancelled')}`
                 );
                 logger.info(`Compensating partial refund of ${refundAmount} paise executed for cancelled ride ${rideId}`);
               } else {
@@ -161,9 +171,9 @@ export async function initPaymentConsumer(
                 where: { id: existingPayment.id },
                 data: { status: 'CANCELLED' }
               });
-              if (cancellationFeePaise > 0 && typeof (paymentService as any).createOrder === 'function') {
-                if (paymentService.createOrder.length <= 1) {
-                  await (paymentService as any).createOrder({
+              if (cancellationFeePaise > 0 && typeof creator.createOrder === 'function') {
+                if (creator.createOrder.length <= 1) {
+                  await creator.createOrder({
                     ride: rideId,
                     rider: riderId,
                     rideId,
@@ -172,19 +182,19 @@ export async function initPaymentConsumer(
                     idempotencyKey: `cancellation-fee-${rideId}`,
                   });
                 } else {
-                  await (paymentService as any).createOrder(
+                  await creator.createOrder(
                     rideId,
                     riderId,
                     cancellationFeePaise,
-                    payload.driverId
+                    payload.driverId ? String(payload.driverId) : undefined
                   );
                 }
                 logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on cancelled ride ${rideId}`);
               }
             } else if (!existingPayment && cancellationFeePaise > 0) {
-              if (typeof (paymentService as any).createOrder === 'function') {
-                if (paymentService.createOrder.length <= 1) {
-                  await (paymentService as any).createOrder({
+              if (typeof creator.createOrder === 'function') {
+                if (creator.createOrder.length <= 1) {
+                  await creator.createOrder({
                     ride: rideId,
                     rider: riderId,
                     rideId,
@@ -193,11 +203,11 @@ export async function initPaymentConsumer(
                     idempotencyKey: `cancellation-fee-${rideId}`,
                   });
                 } else {
-                  await (paymentService as any).createOrder(
+                  await creator.createOrder(
                     rideId,
                     riderId,
                     cancellationFeePaise,
-                    payload.driverId
+                    payload.driverId ? String(payload.driverId) : undefined
                   );
                 }
                 logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on unbilled cancelled ride ${rideId}`);
@@ -210,7 +220,7 @@ export async function initPaymentConsumer(
 
     logger.info('Payment Kafka Consumer initialized.');
     return consumer;
-  } catch (err) {
+  } catch (err: unknown) {
     logger.error('Failed to initialize Payment Consumer:', err);
     return null;
   }

@@ -33,7 +33,7 @@ export class PayoutService {
     });
   }
 
-  async handlePayoutWebhook(payload: any) {
+  async handlePayoutWebhook(payload: Record<string, unknown>) {
     return { received: true };
   }
 

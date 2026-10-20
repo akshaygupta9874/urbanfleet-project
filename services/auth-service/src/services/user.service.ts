@@ -1,7 +1,8 @@
 import { UserRepository } from '../repositories/user.repository.js';
 import { NotFoundError } from '@urbanfleet/common';
+import { User } from '../db/client.js';
 
-function sanitizeUser(user: any) {
+function sanitizeUser(user: User) {
   const {
     passwordHash,
     twoFactorSecret,

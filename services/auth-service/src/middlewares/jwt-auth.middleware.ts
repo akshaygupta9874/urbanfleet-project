@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { RequestHandler, Request, Response, NextFunction } from 'express';
 import { UnauthorizedError, ForbiddenError } from '@urbanfleet/common';
 import { getPublicKey } from '../crypto/keys.js';
 
@@ -7,15 +8,12 @@ export interface AuthenticatedUserPayload {
   email: string;
   role: 'RIDER' | 'DRIVER' | 'ADMIN';
   sessionId?: string;
+  tokenType?: string;
   iss?: string;
   aud?: string;
 }
 
-export interface AuthRequestLike {
-  headers: {
-    authorization?: string;
-    [key: string]: any;
-  };
+export interface AuthRequestLike extends Request {
   user?: AuthenticatedUserPayload;
 }
 
@@ -23,7 +21,7 @@ export interface AuthRequestLike {
  * Validates RS256 JWT using injected Public Key or auth-service runtime key.
  * Enforces algorithm pinning, issuer, and audience.
  */
-export function createAuthMiddleware(publicKeyBase64?: string) {
+export function createAuthMiddleware(publicKeyBase64?: string): RequestHandler {
   let publicKeyPem: string;
   if (publicKeyBase64) {
     publicKeyPem = Buffer.from(publicKeyBase64, 'base64').toString('utf-8');
@@ -33,8 +31,9 @@ export function createAuthMiddleware(publicKeyBase64?: string) {
     publicKeyPem = getPublicKey();
   }
 
-  return (req: AuthRequestLike, _res: any, next: (err?: any) => void) => {
-    const authHeader = req.headers.authorization;
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const authReq = req as AuthRequestLike;
+    const authHeader = authReq.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return next(new UnauthorizedError('Missing or malformed Authorization header'));
     }
@@ -48,14 +47,14 @@ export function createAuthMiddleware(publicKeyBase64?: string) {
         audience: 'urbanfleet-api',
       }) as AuthenticatedUserPayload;
 
-      if ((decoded as any).tokenType && (decoded as any).tokenType !== 'ACCESS') {
+      if (decoded.tokenType && decoded.tokenType !== 'ACCESS') {
         return next(new UnauthorizedError('Invalid token type. Access token required.', 'INVALID_TOKEN_TYPE'));
       }
 
-      req.user = decoded;
+      authReq.user = decoded;
       next();
-    } catch (err: any) {
-      if (err.name === 'TokenExpiredError') {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'TokenExpiredError') {
         return next(new UnauthorizedError('Token has expired', 'TOKEN_EXPIRED'));
       }
       return next(new UnauthorizedError('Invalid token signature or payload', 'INVALID_TOKEN'));
@@ -63,12 +62,13 @@ export function createAuthMiddleware(publicKeyBase64?: string) {
   };
 }
 
-export function requireRole(...allowedRoles: string[]) {
-  return (req: AuthRequestLike, _res: any, next: (err?: any) => void) => {
-    if (!req.user) {
+export function requireRole(...allowedRoles: string[]): RequestHandler {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const authReq = req as AuthRequestLike;
+    if (!authReq.user) {
       return next(new UnauthorizedError('User unauthenticated'));
     }
-    if (!allowedRoles.includes(req.user.role)) {
+    if (!allowedRoles.includes(authReq.user.role)) {
       return next(new ForbiddenError(`Forbidden: Requires one of roles: ${allowedRoles.join(', ')}`));
     }
     next();

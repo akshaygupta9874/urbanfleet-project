@@ -1,3 +1,5 @@
+import axios, { AxiosInstance, isAxiosError } from 'axios';
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -10,43 +12,48 @@ export interface AuthUser {
 }
 
 export class AuthClient {
-  private baseUrl: string;
+  private client: AxiosInstance;
 
   constructor(
     baseUrl: string = process.env.AUTH_SERVICE_URL || 'http://localhost:4001'
   ) {
-    this.baseUrl = baseUrl;
+    this.client = axios.create({
+      baseURL: baseUrl,
+      timeout: 5000,
+      headers: {
+        Accept: 'application/json',
+        'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
+      },
+    });
   }
 
   async getUserById(userId: string): Promise<AuthUser | null> {
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
-    };
-
     try {
-      let res = await fetch(`${this.baseUrl}/api/auth/users/${userId}`, {
-        headers,
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (res.status === 404) {
-        res = await fetch(`${this.baseUrl}/v1/auth/users/${userId}`, {
-          headers,
-          signal: AbortSignal.timeout(5000),
-        });
+      let res;
+      try {
+        res = await this.client.get<{ success: boolean; data: AuthUser }>(
+          `/api/auth/users/${userId}`
+        );
+      } catch (err: unknown) {
+        if (isAxiosError(err) && err.response?.status === 404) {
+          res = await this.client.get<{ success: boolean; data: AuthUser }>(
+            `/v1/auth/users/${userId}`
+          );
+        } else {
+          throw err;
+        }
       }
 
-      if (res.status === 404) return null;
-      if (!res.ok) {
-        throw new Error(`Auth Service returned HTTP ${res.status}`);
-      }
-
-      const body = (await res.json()) as { success: boolean; data: AuthUser };
-      return body.data;
-    } catch (err: any) {
-      if (err.name === 'TimeoutError') {
-        throw new Error('Auth Service timed out');
+      return res?.data?.data ?? null;
+    } catch (err: unknown) {
+      if (isAxiosError(err)) {
+        if (err.response?.status === 404) return null;
+        if (err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'))) {
+          throw new Error('Auth Service timed out');
+        }
+        if (err.response) {
+          throw new Error(`Auth Service returned HTTP ${err.response.status}`);
+        }
       }
       return null;
     }

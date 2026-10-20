@@ -6,6 +6,7 @@ import { initNotificationConsumer } from '../src/consumers/notification.consumer
 import { NotificationRepository } from '../src/repositories/notification.repository.js';
 import { createNotificationRouter } from '../src/routes/notification.routes.js';
 import { getRideReceiptHtml } from '../src/services/email.service.js';
+import { authClient } from '../src/clients/auth.client.js';
 
 const { mockKafkaConsumer, getCapturedHandler } = vi.hoisted(() => {
   let capturedHandler: any = null;
@@ -215,13 +216,8 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         },
       };
 
-      const originalFetch = globalThis.fetch;
+      const authSpy = vi.spyOn(authClient, 'getUserById').mockResolvedValue(null);
       try {
-        globalThis.fetch = vi.fn().mockResolvedValue({
-          ok: false,
-          status: 404,
-        } as any);
-
         await handler({
           message: {
             key: Buffer.from('pay-uuid-999'),
@@ -235,7 +231,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
           expect.anything()
         );
       } finally {
-        globalThis.fetch = originalFetch;
+        authSpy.mockRestore();
       }
     });
   });
@@ -263,7 +259,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
       const html = getRideReceiptHtml({
         rideId: 'ride-9999',
         paymentId: 'pay-8888',
-        amountPaise: 45000,
+        totalFarePaise: 45000,
         pickupAddress: 'Connaught Place, New Delhi',
         dropoffAddress: 'Cyber City, Gurugram',
       });

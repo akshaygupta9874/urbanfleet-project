@@ -39,7 +39,7 @@ async function loadRequester(
   userId: string,
   req?: AuthenticatedRequest
 ): Promise<{ isAdmin: boolean }> {
-  const roles = req?.role || (req?.user?.roles ? req.user.roles : (req?.user?.role ? [req.user.role] : null));
+  const roles = req?.role;
   if (roles && Array.isArray(roles) && roles.length > 0) {
     return { isAdmin: roles.includes("ADMIN") || roles.includes("admin") };
   }
@@ -50,8 +50,8 @@ function isParticipant(
   payment: IPayment,
   userId: string
 ): boolean {
-  const riderId = (payment.riderId ?? payment.rider)?.toString();
-  const driverId = (payment.driverId ?? payment.driver)?.toString();
+  const riderId = payment.riderId?.toString();
+  const driverId = payment.driverId?.toString();
   return (
     riderId === userId ||
     driverId === userId
@@ -66,8 +66,9 @@ function toPaymentView(
   payment: IPayment,
   isAdmin: boolean
 ): Record<string, unknown> {
-  const base = typeof (payment as any).toObject === "function"
-    ? (payment as any).toObject()
+  const pRecord = payment as IPayment & { toObject?: () => Record<string, unknown> };
+  const base = typeof pRecord.toObject === "function"
+    ? pRecord.toObject()
     : { ...payment };
   const view: Record<string, unknown> = { ...base };
 
@@ -107,8 +108,8 @@ export const createOrder =
 
     const result =
       await paymentService.createOrder({
-        ride: rideId,
-        rider: req.userId,
+        rideId,
+        riderId: req.userId,
         idempotencyKey:
           deriveIdempotencyKey(rideId, req.userId),
       });
@@ -366,9 +367,9 @@ export const getDriverBalance =
     req: AuthenticatedRequest,
     res: Response
   ) => {
-    const driverId = req.driverId || req.userId;
+    const driverId = req.driverId;
     if (!driverId) {
-      throw unauthenticated();
+      throw new AppError("Driver identity required", 403, "FORBIDDEN");
     }
 
     const balance = await payoutService.getDriverBalance(driverId);
@@ -384,9 +385,9 @@ export const requestPayout =
     req: AuthenticatedRequest,
     res: Response
   ) => {
-    const driverId = req.driverId || req.userId;
+    const driverId = req.driverId;
     if (!driverId) {
-      throw unauthenticated();
+      throw new AppError("Driver identity required", 403, "FORBIDDEN");
     }
 
     const { amountPaise, rideId, paymentId } = req.body;
@@ -428,11 +429,21 @@ export const listPayouts =
     }
 
     const { isAdmin } = await loadRequester(userId, req);
-    const driverId = req.driverId || userId;
+    if (isAdmin && typeof req.query.driverId === "string") {
+      const payouts = await payoutRepository.findByDriver(req.query.driverId);
+      return res.status(200).json({ success: true, data: payouts });
+    }
+    if (isAdmin) {
+      const payouts = await payoutRepository.findPending();
+      return res.status(200).json({ success: true, data: payouts });
+    }
 
-    const payouts = isAdmin && !req.query.driverId
-      ? await payoutRepository.findPending()
-      : await payoutRepository.findByDriver(String(req.query.driverId || driverId));
+    const driverId = req.driverId;
+    if (!driverId) {
+      throw new AppError("Driver identity required", 403, "FORBIDDEN");
+    }
+
+    const payouts = await payoutRepository.findByDriver(driverId);
 
     res.status(200).json({
       success: true,

@@ -25,12 +25,12 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
     vehicles: [
       {
         id: 'veh-1',
-        type: 'CAR',
-        brand: 'Honda',
+        category: 'CAR',
+        make: 'Honda',
         model: 'City',
         color: 'White',
-        registrationNumber: 'DL-01-AB-1234',
-        registrationYear: 2022,
+        plateNumber: 'DL-01-AB-1234',
+        year: 2022,
       },
     ],
     createdAt: new Date('2026-01-01'),

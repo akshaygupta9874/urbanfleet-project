@@ -9,8 +9,9 @@ export const redisClient = createClient({
   name: "payment-service",
 });
 
-redisClient.on("error", (err: any) => {
-  logger.error("Redis Client Error", { error: err?.message || err });
+redisClient.on("error", (err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  logger.error("Redis Client Error", { error: message });
 });
 
 export const paymentRedisKey = (key: string) => `payment:${key}`;
@@ -24,8 +25,9 @@ export async function connectRedis(): Promise<void> {
     try {
       await redisClient.connect();
       logger.info("Connected to Redis for payment locks & caching.");
-    } catch (e: any) {
-      logger.warn("Redis connection failed. Distributed locks will fail open or retry.", { error: e.message });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn("Redis connection failed. Distributed locks will fail open or retry.", { error: message });
       if (process.env.NODE_ENV === "production") {
         throw e;
       }
@@ -38,8 +40,9 @@ export async function disconnectRedis(): Promise<void> {
     try {
       await redisClient.disconnect();
       logger.info("Redis connection disconnected.");
-    } catch (e: any) {
-      logger.warn("Error disconnecting Redis:", { error: e.message });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn("Error disconnecting Redis:", { error: message });
     }
   }
 }

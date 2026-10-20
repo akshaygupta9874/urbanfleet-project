@@ -1,40 +1,43 @@
 import { ClientSession } from "../types/database.types.js";
-import { prisma } from "../../db/client.js";
+import { prisma, type Prisma } from "../../db/client.js";
 import { IPayout } from "../types/payment.models.js";
 import { PayoutMode, PayoutStatus } from "../types/payment.types.js";
 import { LIVE_PAYOUT_STATUSES } from "../constants/payment.constants.js";
 import { AppError } from "../../utils/AppError.js";
 
-function formatPayout(row: any): IPayout {
-    if (!row) return null as any;
+function formatPayout(row: Record<string, unknown> | null | undefined): IPayout {
+    if (!row) return null as unknown as IPayout;
     return {
-        id: row.id,
-        payment: row.paymentId,
-        paymentId: row.paymentId,
-        ride: row.rideId,
-        rideId: row.rideId,
-        driver: row.driverId,
-        driverId: row.driverId,
-        amountPaise: row.amountPaise !== undefined && row.amountPaise !== null ? Number(row.amountPaise) : row.amountPaise,
-        currency: row.currency as any,
+        id: String(row.id),
+        payment: row.paymentId ? String(row.paymentId) : undefined,
+        paymentId: row.paymentId ? String(row.paymentId) : undefined,
+        ride: row.rideId ? String(row.rideId) : undefined,
+        rideId: row.rideId ? String(row.rideId) : undefined,
+        driver: row.driverId ? String(row.driverId) : undefined,
+        driverId: row.driverId ? String(row.driverId) : undefined,
+        amountPaise: row.amountPaise !== undefined && row.amountPaise !== null ? Number(row.amountPaise) : 0,
+        currency: (row.currency as "INR") || "INR",
         status: row.status as PayoutStatus,
         mode: row.mode as PayoutMode,
-        gatewayPayoutId: row.gatewayPayoutId ?? undefined,
-        utr: row.utr ?? undefined,
-        ledgerTransactionId: row.ledgerTransactionId ?? undefined,
-        reversalLedgerTransactionId: row.reversalLedgerTransactionId ?? undefined,
-        processedAt: row.processedAt ?? undefined,
-        failedAt: row.failedAt ?? undefined,
-        reversedAt: row.reversedAt ?? undefined,
-        failureReason: row.failureReason ?? undefined,
+        gatewayPayoutId: (row.gatewayPayoutId as string | undefined) ?? undefined,
+        utr: (row.utr as string | undefined) ?? undefined,
+        ledgerTransactionId: (row.ledgerTransactionId as string | undefined) ?? undefined,
+        reversalLedgerTransactionId: (row.reversalLedgerTransactionId as string | undefined) ?? undefined,
+        processedAt: (row.processedAt as Date | undefined) ?? undefined,
+        failedAt: (row.failedAt as Date | undefined) ?? undefined,
+        reversedAt: (row.reversedAt as Date | undefined) ?? undefined,
+        failureReason: (row.failureReason as string | undefined) ?? undefined,
         metadata: (row.metadata as Record<string, unknown>) ?? {},
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
+        createdAt: row.createdAt as Date,
+        updatedAt: row.updatedAt as Date,
     } as unknown as IPayout;
 }
 
 function getClient(session?: ClientSession) {
-    return (session as any)?.tx ?? session ?? prisma;
+    if (session && typeof session === "object" && "tx" in session && session.tx) {
+        return session.tx;
+    }
+    return (session as Prisma.TransactionClient | undefined) ?? prisma;
 }
 
 class PayoutRepository {
@@ -50,14 +53,14 @@ class PayoutRepository {
                 rideId: data.ride ? data.ride.toString() : "",
                 amountPaise: data.amountPaise ?? 0,
                 currency: data.currency ?? "INR",
-                status: data.status ?? "PENDING",
+                status: (data.status ?? "PENDING") as unknown as Prisma.EnumPayoutStatusFilter["equals"],
                 mode: data.mode ?? "IMPS",
                 gatewayPayoutId: data.gatewayPayoutId ?? null,
                 utr: data.utr ?? null,
                 ledgerTransactionId: data.ledgerTransactionId ?? null,
                 reversalLedgerTransactionId: data.reversalLedgerTransactionId ?? null,
                 failureReason: data.failureReason ?? null,
-                metadata: (data.metadata as any) ?? undefined,
+                metadata: (data.metadata as Prisma.InputJsonValue) ?? undefined,
             },
         });
 
@@ -104,10 +107,10 @@ class PayoutRepository {
         const updated = await client.payout.updateMany({
             where: {
                 id: payoutId,
-                status: { in: [...fromStatuses] as any },
+                status: { in: [...fromStatuses] as unknown as Prisma.EnumPayoutStatusFilter["in"] },
             },
             data: {
-                ...(update.status ? { status: update.status } : {}),
+                ...(update.status ? { status: update.status as unknown as Prisma.EnumPayoutStatusFilter["equals"] } : {}),
                 ...(update.gatewayPayoutId ? { gatewayPayoutId: update.gatewayPayoutId } : {}),
                 ...(update.utr ? { utr: update.utr } : {}),
                 ...(update.ledgerTransactionId ? { ledgerTransactionId: update.ledgerTransactionId } : {}),
@@ -134,7 +137,7 @@ class PayoutRepository {
         const row = await client.payout.findFirst({
             where: {
                 paymentId: payment.toString(),
-                status: { in: [...LIVE_PAYOUT_STATUSES] },
+                status: { in: [...LIVE_PAYOUT_STATUSES] as unknown as Prisma.EnumPayoutStatusFilter["in"] },
             },
         });
         return row ? formatPayout(row) : null;
@@ -147,7 +150,7 @@ class PayoutRepository {
         const result = await prisma.payout.aggregate({
             where: {
                 driverId: driver.toString(),
-                status: { in: [...statuses] as any },
+                status: { in: [...statuses] as unknown as Prisma.EnumPayoutStatusFilter["in"] },
             },
             _sum: {
                 amountPaise: true,
@@ -166,7 +169,7 @@ class PayoutRepository {
         const updated = await client.payout.update({
             where: { id: payoutId },
             data: {
-                status,
+                status: status as unknown as Prisma.EnumPayoutStatusFilter["equals"],
                 ...(update.gatewayPayoutId ? { gatewayPayoutId: update.gatewayPayoutId } : {}),
                 ...(update.utr ? { utr: update.utr } : {}),
                 ...(update.failureReason ? { failureReason: update.failureReason } : {}),
@@ -184,7 +187,7 @@ class PayoutRepository {
         const updated = await client.payout.update({
             where: { id: payoutId },
             data: {
-                ...(update.status ? { status: update.status } : {}),
+                ...(update.status ? { status: update.status as unknown as Prisma.EnumPayoutStatusFilter["equals"] } : {}),
                 ...(update.gatewayPayoutId ? { gatewayPayoutId: update.gatewayPayoutId } : {}),
                 ...(update.utr ? { utr: update.utr } : {}),
                 ...(update.failureReason ? { failureReason: update.failureReason } : {}),
@@ -198,7 +201,7 @@ class PayoutRepository {
             where: {
                 driverId: driver.toString(),
                 status: {
-                    in: [PayoutStatus.PENDING as any, PayoutStatus.PROCESSING as any],
+                    in: [PayoutStatus.PENDING, PayoutStatus.PROCESSING] as unknown as Prisma.EnumPayoutStatusFilter["in"],
                 },
             },
             orderBy: {
@@ -267,8 +270,8 @@ class PayoutRepository {
         return rows.map(formatPayout);
     }
 
-    async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
-        return prisma.$transaction(fn);
+    async transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+        return prisma.$transaction(fn as unknown as Parameters<typeof prisma.$transaction>[0]) as Promise<T>;
     }
 }
 

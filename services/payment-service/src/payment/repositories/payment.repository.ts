@@ -1,15 +1,16 @@
 import { ClientSession } from "../types/database.types.js";
-import { prisma, UserRole } from "../../db/client.js";
+import { prisma, UserRole, type Prisma } from "../../db/client.js";
 import { IPayment, IRefundRecord } from "../types/payment.models.js";
 import {
     Paise,
     PaymentGateway,
     PaymentStatus,
     RefundStatus,
+    PaymentMethod,
     IFareBreakdown,
 } from "../types/payment.types.js";
 import { AppError } from "../../utils/AppError.js";
-import { rideClient } from "../../clients/ride.client.js";
+import { rideClient, type IRide } from "../../clients/ride.client.js";
 import { authClient } from "../../clients/auth.client.js";
 import { redisClient } from "../../redis/client.js";
 
@@ -25,53 +26,56 @@ export interface FailureInfo {
     failureCode?: string | undefined;
 }
 
-function formatPayment(row: any): IPayment {
-    if (!row) return null as any;
+function formatPayment(row: Record<string, unknown> | null | undefined): IPayment {
+    if (!row) return null as unknown as IPayment;
     let refunds: IRefundRecord[] = [];
     if (Array.isArray(row.refunds)) {
-        refunds = row.refunds;
+        refunds = row.refunds as IRefundRecord[];
     } else if (typeof row.refunds === "string") {
         try {
-            refunds = JSON.parse(row.refunds);
+            refunds = JSON.parse(row.refunds) as IRefundRecord[];
         } catch {
             refunds = [];
         }
     }
 
     return {
-        id: row.id,
-        ride: row.rideId,
-        rideId: row.rideId,
-        rider: row.riderId,
-        riderId: row.riderId,
-        driver: row.driverId,
-        driverId: row.driverId,
+        id: String(row.id),
+        ride: String(row.rideId),
+        rideId: String(row.rideId),
+        rider: String(row.riderId),
+        riderId: String(row.riderId),
+        driver: row.driverId ? String(row.driverId) : undefined,
+        driverId: row.driverId ? String(row.driverId) : undefined,
         gateway: (row.gateway as PaymentGateway) || PaymentGateway.RAZORPAY,
-        gatewayOrderId: row.gatewayOrderId,
-        gatewayPaymentId: row.gatewayPaymentId ?? undefined,
-        amountPaise: row.amountPaise,
-        currency: row.currency,
+        gatewayOrderId: (row.gatewayOrderId as string | null) ?? null,
+        gatewayPaymentId: (row.gatewayPaymentId as string | undefined) ?? undefined,
+        amountPaise: Number(row.amountPaise),
+        currency: (row.currency as "INR") || "INR",
         status: row.status as PaymentStatus,
-        method: row.method ?? undefined,
+        method: (row.method as PaymentMethod | undefined) ?? undefined,
         fareBreakdown: row.fareBreakdown as IFareBreakdown,
-        idempotencyKey: row.idempotencyKey,
-        attemptNumber: row.attemptNumber ?? 1,
-        failureReason: row.failureReason ?? undefined,
-        failureCode: row.failureCode ?? undefined,
-        lastFailedGatewayPaymentId: row.lastFailedGatewayPaymentId ?? undefined,
-        refundedAmountPaise: row.refundedAmountPaise ?? 0,
+        idempotencyKey: (row.idempotencyKey as string | null) ?? null,
+        attemptNumber: Number(row.attemptNumber ?? 1),
+        failureReason: (row.failureReason as string | undefined) ?? undefined,
+        failureCode: (row.failureCode as string | undefined) ?? undefined,
+        lastFailedGatewayPaymentId: (row.lastFailedGatewayPaymentId as string | undefined) ?? undefined,
+        refundedAmountPaise: Number(row.refundedAmountPaise ?? 0),
         refunds,
-        ledgerTransactionId: row.ledgerTransactionId ?? undefined,
+        ledgerTransactionId: (row.ledgerTransactionId as string | undefined) ?? undefined,
         metadata: (row.metadata as Record<string, unknown>) ?? {},
-        capturedAt: row.capturedAt ?? undefined,
-        refundedAt: row.refundedAt ?? undefined,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
+        capturedAt: (row.capturedAt as Date | undefined) ?? undefined,
+        refundedAt: (row.refundedAt as Date | undefined) ?? undefined,
+        createdAt: row.createdAt as Date,
+        updatedAt: row.updatedAt as Date,
     } as unknown as IPayment;
 }
 
 function getClient(session?: ClientSession) {
-    return (session as any)?.tx ?? session ?? prisma;
+    if (session && typeof session === "object" && "tx" in session && session.tx) {
+        return session.tx;
+    }
+    return (session as Prisma.TransactionClient | undefined) ?? prisma;
 }
 
 class PaymentRepository {
@@ -94,18 +98,18 @@ class PaymentRepository {
                 gatewayPaymentId: data.gatewayPaymentId ?? null,
                 amountPaise: data.amountPaise ?? 0,
                 currency: data.currency ?? "INR",
-                status: (data.status as any) ?? "CREATED",
+                status: data.status ?? "CREATED",
                 method: data.method ?? null,
-                fareBreakdown: (data.fareBreakdown as any) ?? undefined,
+                fareBreakdown: (data.fareBreakdown as unknown as Prisma.InputJsonValue) ?? undefined,
                 idempotencyKey: data.idempotencyKey ?? null,
                 attemptNumber: data.attemptNumber ?? 1,
                 failureReason: data.failureReason ?? null,
                 failureCode: data.failureCode ?? null,
                 lastFailedGatewayPaymentId: data.lastFailedGatewayPaymentId ?? null,
                 refundedAmountPaise: data.refundedAmountPaise ?? 0,
-                refunds: (data.refunds as any) ?? [],
+                refunds: (data.refunds as unknown as Prisma.InputJsonValue) ?? [],
                 ledgerTransactionId: data.ledgerTransactionId ?? null,
-                metadata: (data.metadata as any) ?? undefined,
+                metadata: (data.metadata as unknown as Prisma.InputJsonValue) ?? undefined,
             },
         });
 
@@ -186,7 +190,7 @@ class PaymentRepository {
         const rows = (await client.$queryRawUnsafe(
             `SELECT * FROM payments WHERE refunds::jsonb @> $1::jsonb LIMIT 1`,
             JSON.stringify([{ gatewayRefundId }])
-        )) as any[];
+        )) as Record<string, unknown>[];
         return rows && rows.length > 0 ? formatPayment(rows[0]) : null;
     }
 
@@ -198,7 +202,7 @@ class PaymentRepository {
         const rows = (await client.$queryRawUnsafe(
             `SELECT * FROM payments WHERE refunds::jsonb @> $1::jsonb LIMIT 1`,
             JSON.stringify([{ id: refundId }])
-        )) as any[];
+        )) as Record<string, unknown>[];
         return rows && rows.length > 0 ? formatPayment(rows[0]) : null;
     }
 
@@ -226,10 +230,10 @@ class PaymentRepository {
         const updated = await client.payment.updateMany({
             where: {
                 id: paymentId,
-                status: { in: statuses as any },
+                status: { in: statuses as unknown as Prisma.EnumPaymentStatusFilter["in"] },
             },
             data: {
-                ...(update.status ? { status: update.status as any } : {}),
+                ...(update.status ? { status: update.status as unknown as Prisma.EnumPaymentStatusFilter["equals"] } : {}),
                 ...(update.gatewayPaymentId ? { gatewayPaymentId: update.gatewayPaymentId } : {}),
                 ...(update.method ? { method: update.method } : {}),
                 ...(update.ledgerTransactionId ? { ledgerTransactionId: update.ledgerTransactionId } : {}),
@@ -256,14 +260,14 @@ class PaymentRepository {
         const updated = await client.payment.updateMany({
             where: {
                 id: paymentId,
-                status: { in: [...fromStatuses] as any },
+                status: { in: [...fromStatuses] as unknown as Prisma.EnumPaymentStatusFilter["in"] },
                 OR: [
                     { lastFailedGatewayPaymentId: null },
                     { lastFailedGatewayPaymentId: { not: gatewayPaymentId } },
                 ],
             },
             data: {
-                status: PaymentStatus.FAILED as any,
+                status: PaymentStatus.FAILED as unknown as Prisma.EnumPaymentStatusFilter["equals"],
                 lastFailedGatewayPaymentId: gatewayPaymentId,
                 failureReason: failure.failureReason ?? null,
                 failureCode: failure.failureCode ?? null,
@@ -300,11 +304,11 @@ class PaymentRepository {
         const updated = await client.payment.update({
             where: { id: paymentId },
             data: {
-                ...(update.status ? { status: update.status as any } : {}),
+                ...(update.status ? { status: update.status as unknown as Prisma.EnumPaymentStatusFilter["equals"] } : {}),
                 ...(update.refundedAmountPaise !== undefined
                     ? { refundedAmountPaise: update.refundedAmountPaise }
                     : {}),
-                ...(update.refunds ? { refunds: update.refunds as any } : {}),
+                ...(update.refunds ? { refunds: update.refunds as unknown as Prisma.InputJsonValue } : {}),
             },
         });
         return formatPayment(updated);
@@ -332,10 +336,10 @@ class PaymentRepository {
         const updated = await client.payment.update({
             where: { id: paymentId },
             data: {
-                status: next.status as any,
+                status: next.status as unknown as Prisma.EnumPaymentStatusFilter["equals"],
                 refundedAmountPaise: next.refundedAmountPaise,
                 refundedAt: new Date(),
-                refunds: refunds as any,
+                refunds: refunds as unknown as Prisma.InputJsonValue,
             },
         });
 
@@ -374,7 +378,7 @@ class PaymentRepository {
         const updated = await client.payment.update({
             where: { id: paymentId },
             data: {
-                refunds: updatedRefunds as any,
+                refunds: updatedRefunds as unknown as Prisma.InputJsonValue,
             },
         });
 
@@ -417,9 +421,9 @@ class PaymentRepository {
         const updated = await client.payment.update({
             where: { id: paymentId },
             data: {
-                status: next.status as any,
+                status: next.status as unknown as Prisma.EnumPaymentStatusFilter["equals"],
                 refundedAmountPaise: next.refundedAmountPaise,
-                refunds: updatedRefunds as any,
+                refunds: updatedRefunds as unknown as Prisma.InputJsonValue,
             },
         });
 
@@ -434,7 +438,7 @@ class PaymentRepository {
     ): Promise<IPayment[]> {
         const rows = await prisma.payment.findMany({
             where: {
-                status: { in: [...statuses] as any },
+                status: { in: [...statuses] as unknown as Prisma.EnumPaymentStatusFilter["in"] },
                 createdAt: { lt: olderThan, gt: newerThan },
             },
             orderBy: { createdAt: "asc" },
@@ -468,7 +472,7 @@ class PaymentRepository {
     }
 
     async list(filter: ListPaymentsFilter): Promise<IPayment[]> {
-        const where: any = {};
+        const where: Prisma.PaymentWhereInput = {};
         if (filter.rider) where.riderId = filter.rider.toString();
         if (filter.driver) where.driverId = filter.driver.toString();
         if (filter.ride) where.rideId = filter.ride.toString();
@@ -486,7 +490,7 @@ class PaymentRepository {
         page = 1,
         limit = 20
     ): Promise<{ items: IPayment[]; total: number }> {
-        const where: any = {};
+        const where: Prisma.PaymentWhereInput = {};
         if (filter.rider) where.riderId = filter.rider.toString();
         if (filter.driver) where.driverId = filter.driver.toString();
         if (filter.ride) where.rideId = filter.ride.toString();
@@ -505,51 +509,54 @@ class PaymentRepository {
         return { items: rows.map(formatPayment), total };
     }
 
-    async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
-        return prisma.$transaction(fn);
+    async transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+        return prisma.$transaction(fn as unknown as Parameters<typeof prisma.$transaction>[0]) as Promise<T>;
     }
 
-    async queryRideRaw(rideIdStr: string, forUpdate = false, tx?: any): Promise<any[]> {
+    async queryRideRaw(rideIdStr: string, forUpdate = false, tx?: Prisma.TransactionClient): Promise<Record<string, unknown>[]> {
         const client = tx || prisma;
-        const mockFn = (prisma.$queryRawUnsafe as any)?.mock || (client?.$queryRawUnsafe as any)?.mock;
+        const mockFn = (prisma.$queryRawUnsafe as unknown as { mock?: unknown })?.mock || (client?.$queryRawUnsafe as unknown as { mock?: unknown })?.mock;
         // In unit test environments where $queryRawUnsafe is mocked/spied on, delegate to mock
         if (typeof mockFn !== "undefined") {
             const sql = forUpdate
                 ? `SELECT * FROM rides WHERE id = $1::uuid FOR UPDATE`
                 : `SELECT * FROM rides WHERE id = $1::uuid`;
-            return (client?.$queryRawUnsafe || prisma.$queryRawUnsafe)(sql, rideIdStr);
+            return (client?.$queryRawUnsafe || prisma.$queryRawUnsafe)(sql, rideIdStr) as Promise<Record<string, unknown>[]>;
         }
         // In microservice architecture, rides are stored in urbanfleet_ride; fetch authoritative ride via rideClient
         try {
             const ride = await rideClient.getRideById(rideIdStr);
-            return ride ? [ride] : [];
+            return ride ? [ride as Record<string, unknown>] : [];
         } catch {
             return [];
         }
     }
 
-    async findRideById(rideId: string, tx?: any): Promise<any> {
-        const mockFind = (prisma.ride?.findUnique as any)?.mock || (tx?.ride?.findUnique as any)?.mock;
-        if (typeof mockFind !== "undefined") {
-            return (tx?.ride || prisma.ride).findUnique({ where: { id: rideId } });
+    async findRideById(rideId: string, tx?: Prisma.TransactionClient): Promise<IRide | Record<string, unknown> | null> {
+        const pClient = (tx || prisma) as unknown as { ride?: { findUnique?: { mock?: unknown } & ((args: { where: { id: string } }) => Promise<unknown>) } };
+        const mockFind = pClient.ride?.findUnique?.mock;
+        if (typeof mockFind !== "undefined" && typeof pClient.ride?.findUnique === "function") {
+            return pClient.ride.findUnique({ where: { id: rideId } }) as Promise<IRide | null>;
         }
         try {
             return await rideClient.getRideById(rideId);
         } catch {
-            return { id: rideId };
+            return { id: rideId, status: '' };
         }
     }
 
-    async updateRide(rideId: string, data: any, tx?: any): Promise<any> {
-        const mockUpdate = (prisma.ride?.update as any)?.mock || (tx?.ride?.update as any)?.mock;
-        if (typeof mockUpdate !== "undefined") {
-            return (tx?.ride || prisma.ride).update({ where: { id: rideId }, data });
+    async updateRide(rideId: string, data: { paymentStatus?: string; [key: string]: unknown }, tx?: Prisma.TransactionClient): Promise<unknown> {
+        const pClient = (tx || prisma) as unknown as { ride?: { update?: { mock?: unknown } & ((args: { where: { id: string }; data: unknown }) => Promise<unknown>) } };
+        const mockUpdate = pClient.ride?.update?.mock;
+        if (typeof mockUpdate !== "undefined" && typeof pClient.ride?.update === "function") {
+            return pClient.ride.update({ where: { id: rideId }, data });
         }
         if (data?.paymentStatus) {
             try {
                 await rideClient.updatePaymentStatus(rideId, data.paymentStatus);
-            } catch (err: any) {
-                console.warn(`[payment.repository] Failed to sync paymentStatus to ride-service: ${err.message}`);
+            } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : String(err);
+                console.warn(`[payment.repository] Failed to sync paymentStatus to ride-service: ${message}`);
             }
         }
         try {
@@ -559,36 +566,41 @@ class PaymentRepository {
         }
     }
 
-    async updateRideMany(args: any, tx?: any): Promise<any> {
-        const mockUpdateMany = (prisma.ride?.updateMany as any)?.mock || (tx?.ride?.updateMany as any)?.mock;
-        if (typeof mockUpdateMany !== "undefined") {
-            return (tx?.ride || prisma.ride).updateMany(args);
+    async updateRideMany(args: { where?: { id?: string; paymentStatus?: string }; data?: { paymentStatus?: string } }, tx?: Prisma.TransactionClient): Promise<{ count: number }> {
+        const pClient = (tx || prisma) as unknown as { ride?: { updateMany?: { mock?: unknown } & ((args: unknown) => Promise<{ count: number }>) } };
+        const mockUpdateMany = pClient.ride?.updateMany?.mock;
+        if (typeof mockUpdateMany !== "undefined" && typeof pClient.ride?.updateMany === "function") {
+            return pClient.ride.updateMany(args);
         }
         const rideId = args?.where?.id;
         if (rideId && args?.data?.paymentStatus) {
             try {
                 await rideClient.updatePaymentStatus(rideId, args.data.paymentStatus);
-            } catch (err: any) {
-                console.warn(`[payment.repository] Failed to sync paymentStatus to ride-service in updateRideMany: ${err.message}`);
+            } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : String(err);
+                console.warn(`[payment.repository] Failed to sync paymentStatus to ride-service in updateRideMany: ${message}`);
             }
         }
         return { count: 1 };
     }
 
-    async findUserById(userId: string): Promise<any> {
-        if (typeof (prisma.user?.findUnique as any)?.mock !== "undefined") {
-            return prisma.user.findUnique({
+    async findUserById(userId: string): Promise<{ id: string; roles: string[] } | null> {
+        const pUser = prisma.user as unknown as { findUnique?: { mock?: unknown } & ((args: { where: { id: string }; select?: unknown }) => Promise<{ roles?: string[] } | null>) };
+        if (typeof pUser?.findUnique?.mock !== "undefined" && typeof pUser.findUnique === "function") {
+            const res = await pUser.findUnique({
                 where: { id: userId },
                 select: { roles: true },
             });
+            return res ? { id: userId, roles: res.roles || [UserRole.RIDER] } : null;
         }
 
         // First check Redis session cache
-        if (redisClient.isOpen || typeof (redisClient.get as any)?.mock !== "undefined") {
+        const rClient = redisClient as unknown as { isOpen: boolean; get?: { mock?: unknown } & ((key: string) => Promise<string | null>) };
+        if (rClient.isOpen || typeof rClient.get?.mock !== "undefined") {
             try {
                 const cached = await redisClient.get(`auth:user:${userId}`);
                 if (cached) {
-                    const u = JSON.parse(cached);
+                    const u = JSON.parse(cached) as { id?: string; roles?: string[]; role?: string };
                     return {
                         id: u.id || userId,
                         roles: u.roles || (u.role ? [u.role] : [UserRole.RIDER]),
@@ -606,8 +618,9 @@ class PaymentRepository {
                     roles: user.roles || (user.role ? [user.role] : [UserRole.RIDER]),
                 };
             }
-        } catch (err: any) {
-            console.warn(`[payment.repository] Failed to fetch user from auth-service: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`[payment.repository] Failed to fetch user from auth-service: ${message}`);
         }
         return null;
     }

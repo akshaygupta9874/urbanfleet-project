@@ -22,56 +22,45 @@ describe('RideClient Inter-Service HTTP Communication', () => {
       totalFarePaise: 25000,
     };
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
+    const getSpy = vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockResolvedValue({
       status: 200,
-      json: async () => ({ success: true, data: mockRide }),
-    } as any);
+      data: { success: true, data: mockRide },
+    });
 
     const result = await client.getRideById('ride-uuid-123');
     expect(result).toEqual(mockRide);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://test-ride-service:4003/api/rides/ride-uuid-123',
-      expect.objectContaining({
-        headers: expect.objectContaining({ Accept: 'application/json' }),
-      })
-    );
+    expect(getSpy).toHaveBeenCalledWith('/api/rides/ride-uuid-123');
   });
 
   it('returns null when ride is not found (404)', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-    } as any);
+    const notFoundError = new Error('Request failed with status code 404');
+    Object.assign(notFoundError, { isAxiosError: true, response: { status: 404 } });
+
+    vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockRejectedValue(notFoundError);
 
     const result = await client.getRideById('missing-ride');
     expect(result).toBeNull();
   });
 
   it('updates ride payment status over HTTP PATCH API', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
+    const patchSpy = vi.spyOn((client as unknown as { client: { patch: Function } }).client, 'patch').mockResolvedValue({
       status: 200,
-      json: async () => ({ success: true, data: { id: 'ride-123', paymentStatus: 'PAID' } }),
-    } as any);
+      data: { success: true, data: { id: 'ride-123', paymentStatus: 'PAID' } },
+    });
 
     const result = await client.updatePaymentStatus('ride-123', 'PAID', 'PENDING');
     expect(result).toEqual({ id: 'ride-123', paymentStatus: 'PAID' });
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://test-ride-service:4003/api/rides/ride-123/payment-status',
-      expect.objectContaining({
-        method: 'PATCH',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ paymentStatus: 'PAID', currentStatus: 'PENDING' }),
-      })
+    expect(patchSpy).toHaveBeenCalledWith(
+      '/api/rides/ride-123/payment-status',
+      { paymentStatus: 'PAID', currentStatus: 'PENDING' }
     );
   });
 
   it('throws an error when ride service returns 500 error', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-    } as any);
+    const serverError = new Error('Request failed with status code 500');
+    Object.assign(serverError, { isAxiosError: true, response: { status: 500 } });
+
+    vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockRejectedValue(serverError);
 
     await expect(client.getRideById('ride-err')).rejects.toThrow('Ride Service returned HTTP 500');
   });

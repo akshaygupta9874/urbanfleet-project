@@ -17,7 +17,7 @@ export class PaymentController {
   }
 
   createPaymentOrder = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.userId || req.user?.userId || req.user?.id;
+    const userId = req.userId;
     if (!userId) throw new AppError('Unauthorized: User ID required', 401, 'UNAUTHORIZED');
     const { rideId, amountPaise, driverId } = req.body;
     const order = await this.paymentService.createOrder(rideId, userId, amountPaise, driverId);
@@ -42,7 +42,7 @@ export class PaymentController {
   });
 
   requestPayout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.userId || req.user?.userId || req.user?.id;
+    const userId = req.userId;
     if (!userId) throw new AppError('Unauthorized: User ID required', 401, 'UNAUTHORIZED');
     const { rideId, amountPaise } = req.body;
     const payout = await this.payoutService.createPayoutRequest(userId, rideId, amountPaise);

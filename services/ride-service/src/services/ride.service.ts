@@ -1,11 +1,26 @@
-import { Ride, RideStatus, RidePaymentStatus } from '../db/client.js';
+import { Ride, RideStatus, RidePaymentStatus, Rating } from '../db/client.js';
 import { RideRepository } from '../repositories/ride.repository.js';
 import { RatingRepository } from '../repositories/rating.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
-import { FareService } from './fare.service.js';
+import { FareService, CoordinatePoint } from './fare.service.js';
 import { OtpService } from './otp.service.js';
 import { NotFoundError, ConflictError, AppError } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
+
+export interface CreateRideInput {
+  riderId: string;
+  pickup: CoordinatePoint;
+  destination: CoordinatePoint;
+  vehicleCategory?: string;
+}
+
+export interface RideWithOtp extends Ride {
+  otp: string | null;
+}
+
+export interface CancelledRideResult extends Ride {
+  cancellationFeePaise: number;
+}
 
 export class RideService {
   private rideRepo: RideRepository;
@@ -28,16 +43,13 @@ export class RideService {
     this.otpService = otpService;
   }
 
-  async createRide(input: {
-    riderId: string;
-    pickup: any;
-    destination: any;
-    vehicleCategory?: string;
-  }) {
+  async createRide(input: CreateRideInput): Promise<Ride & { otp: string }> {
     const pickup = this.fareService.normalizeCoords(input.pickup);
     const destination = this.fareService.normalizeCoords(input.destination);
-    const pickupAddress = input.pickup?.address || 'Pickup Location';
-    const destinationAddress = input.destination?.address || 'Destination Location';
+    const pickupRecord = (input.pickup && typeof input.pickup === 'object') ? (input.pickup as Record<string, unknown>) : {};
+    const destRecord = (input.destination && typeof input.destination === 'object') ? (input.destination as Record<string, unknown>) : {};
+    const pickupAddress = (typeof pickupRecord.address === 'string' && pickupRecord.address) || 'Pickup Location';
+    const destinationAddress = (typeof destRecord.address === 'string' && destRecord.address) || 'Destination Location';
 
     const fare = this.fareService.calculateFareEstimate(pickup, destination, input.vehicleCategory);
     const otp = this.otpService.generateRideOtp();
@@ -60,6 +72,10 @@ export class RideService {
         status: 'SEARCHING',
         rideSequence: 1
       }, tx);
+
+      if (!created || !created.id) {
+        throw new AppError('Failed to create ride', 500, 'INTERNAL_SERVER_ERROR');
+      }
 
       // Store OTP in Redis (not in PostgreSQL database)
       await this.otpService.storeRideOtp(created.id, otp);
@@ -91,7 +107,7 @@ export class RideService {
     });
   }
 
-  async getRideById(id: string, requestingUserId?: string, userRole?: string | string[]): Promise<any> {
+  async getRideById(id: string, requestingUserId?: string, userRole?: string | string[]): Promise<RideWithOtp> {
     const ride = await this.rideRepo.findById(id);
     if (!ride) throw new NotFoundError('Ride not found');
 
@@ -129,11 +145,11 @@ export class RideService {
     };
   }
 
-  async getActiveRide(riderId: string) {
+  async getActiveRide(riderId: string): Promise<Ride | null> {
     return this.rideRepo.findActiveRide(riderId);
   }
 
-  async getDriverCurrentRide(driverId: string) {
+  async getDriverCurrentRide(driverId: string): Promise<Ride | null> {
     return this.rideRepo.findActiveRideByDriverId(driverId);
   }
 
@@ -151,7 +167,7 @@ export class RideService {
       : this.rideRepo.findActiveRideByRiderId(userId);
   }
 
-  async acceptRide(rideId: string, driverId: string) {
+  async acceptRide(rideId: string, driverId: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       // 1. Enforce single active ride per driver
       const existingActive = await tx.ride.findFirst({
@@ -182,6 +198,10 @@ export class RideService {
         rideSequence: nextSequence
       }, tx);
 
+      if (!updated) {
+        throw new AppError('Failed to assign driver to ride', 500, 'INTERNAL_SERVER_ERROR');
+      }
+
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
         partitionKey: ride.id,
@@ -196,7 +216,7 @@ export class RideService {
     });
   }
 
-  async driverArrived(rideId: string, driverId: string) {
+  async driverArrived(rideId: string, driverId: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
@@ -217,6 +237,10 @@ export class RideService {
         rideSequence: nextSequence
       }, tx);
 
+      if (!updated) {
+        throw new AppError('Failed to update driver arrival', 500, 'INTERNAL_SERVER_ERROR');
+      }
+
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
         partitionKey: ride.id,
@@ -231,11 +255,11 @@ export class RideService {
     });
   }
 
-  async arriveAtPickup(input: { rideId: string; driverId: string }) {
+  async arriveAtPickup(input: { rideId: string; driverId: string }): Promise<Ride> {
     return this.driverArrived(input.rideId, input.driverId);
   }
 
-  async arriveAtDestination(input: { rideId: string; driverId: string }) {
+  async arriveAtDestination(input: { rideId: string; driverId: string }): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: input.rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
@@ -254,6 +278,10 @@ export class RideService {
         rideSequence: nextSequence
       }, tx);
 
+      if (!updated) {
+        throw new AppError('Failed to update arrival at destination', 500, 'INTERNAL_SERVER_ERROR');
+      }
+
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
         partitionKey: ride.id,
@@ -268,11 +296,11 @@ export class RideService {
     });
   }
 
-  async cancelRideByDriver(input: { rideId: string; driverId: string; reason?: string }) {
+  async cancelRideByDriver(input: { rideId: string; driverId: string; reason?: string }): Promise<CancelledRideResult> {
     return this.cancelRide(input.rideId, input.driverId, input.reason);
   }
 
-  async startRide(rideId: string, driverId: string, otp: string) {
+  async startRide(rideId: string, driverId: string, otp: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
@@ -297,6 +325,10 @@ export class RideService {
         rideSequence: nextSequence
       }, tx);
 
+      if (!updated) {
+        throw new AppError('Failed to start ride', 500, 'INTERNAL_SERVER_ERROR');
+      }
+
       // Invalidate OTP in Redis upon successful start
       await this.otpService.invalidateRideOtp(rideId);
 
@@ -314,7 +346,7 @@ export class RideService {
     });
   }
 
-  async completeRide(rideId: string, driverId: string) {
+  async completeRide(rideId: string, driverId: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
@@ -334,6 +366,10 @@ export class RideService {
         completedAt: new Date(),
         rideSequence: nextSequence
       }, tx);
+
+      if (!completed) {
+        throw new AppError('Failed to complete ride', 500, 'INTERNAL_SERVER_ERROR');
+      }
 
       const platformCommissionPaise = Math.round(ride.totalFarePaise * 0.10);
       const driverEarningPaise = ride.totalFarePaise - platformCommissionPaise;
@@ -365,7 +401,7 @@ export class RideService {
     });
   }
 
-  async cancelRide(rideId: string, userId: string, reason?: string): Promise<any> {
+  async cancelRide(rideId: string, userId: string, reason?: string): Promise<CancelledRideResult> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
@@ -401,6 +437,10 @@ export class RideService {
         ...(cancellationFeePaise > 0 ? { totalFarePaise: cancellationFeePaise } : {})
       }, tx);
 
+      if (!cancelled) {
+        throw new AppError('Failed to cancel ride', 500, 'INTERNAL_SERVER_ERROR');
+      }
+
       // Invalidate OTP in Redis upon cancellation
       await this.otpService.invalidateRideOtp(rideId);
 
@@ -429,15 +469,23 @@ export class RideService {
     });
   }
 
-  async updateRideStatus(rideId: string, status: RideStatus) {
-    return this.rideRepo.update(rideId, { status });
+  async updateRideStatus(rideId: string, status: RideStatus): Promise<Ride> {
+    const updated = await this.rideRepo.update(rideId, { status });
+    if (!updated) {
+      throw new NotFoundError('Ride not found');
+    }
+    return updated;
   }
 
-  async updatePaymentStatus(rideId: string, paymentStatus: RidePaymentStatus) {
-    return this.rideRepo.update(rideId, { paymentStatus });
+  async updatePaymentStatus(rideId: string, paymentStatus: RidePaymentStatus): Promise<Ride> {
+    const updated = await this.rideRepo.update(rideId, { paymentStatus });
+    if (!updated) {
+      throw new NotFoundError('Ride not found');
+    }
+    return updated;
   }
 
-  async submitRating(rideId: string, fromId: string, score: number, feedback?: string) {
+  async submitRating(rideId: string, fromId: string, score: number, feedback?: string): Promise<Rating> {
     const ride = await this.rideRepo.findById(rideId);
     if (!ride) throw new NotFoundError('Ride not found');
 
@@ -458,7 +506,11 @@ export class RideService {
     }
 
     const toId = isRider ? ride.driverId! : ride.riderId;
-    return this.ratingRepo.create({ rideId, fromId, toId, score, feedback });
+    const rating = await this.ratingRepo.create({ rideId, fromId, toId, score, feedback });
+    if (!rating) {
+      throw new AppError('Failed to save rating', 500, 'INTERNAL_SERVER_ERROR');
+    }
+    return rating;
   }
 }
 

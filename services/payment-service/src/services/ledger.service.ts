@@ -1,6 +1,19 @@
 import { LedgerRepository } from '../repositories/ledger.repository.js';
-import { validateLedgerBalance } from '@urbanfleet/common';
+import { validateLedgerBalance, LedgerEntryType } from '@urbanfleet/common';
+import { Prisma, PrismaClient, LedgerAccount } from '../db/client.js';
 import crypto from 'crypto';
+
+export interface PaymentCaptureLedgerInput {
+  id: string;
+  amountPaise: number | bigint;
+  driverId?: string | null;
+}
+
+export interface DriverPayoutLedgerInput {
+  id: string;
+  amountPaise: number | bigint;
+  driverId: string;
+}
 
 export class LedgerService {
   private ledgerRepo: LedgerRepository;
@@ -9,13 +22,16 @@ export class LedgerService {
     this.ledgerRepo = ledgerRepo;
   }
 
-  async recordPaymentCapture(tx: any, payment: any) {
+  async recordPaymentCapture(
+    tx: Prisma.TransactionClient | PrismaClient,
+    payment: PaymentCaptureLedgerInput
+  ) {
     const transactionId = crypto.randomUUID();
     const amount = BigInt(payment.amountPaise);
     const platformCommission = (amount * BigInt(20)) / BigInt(100); // 20% commission
     const driverEarning = amount - platformCommission;
 
-    const entries = [
+    const entries: Prisma.LedgerEntryCreateInput[] = [
       // Leg 1: Debit Gateway Clearing (Asset increased)
       {
         transactionId,
@@ -56,17 +72,20 @@ export class LedgerService {
     ];
 
     // Invariant check: Sum(Debits) - Sum(Credits) === 0
-    validateLedgerBalance(entries.map(e => ({ entryType: e.entryType as any, amountPaise: e.amountPaise })));
+    validateLedgerBalance(entries.map(e => ({ entryType: e.entryType as unknown as LedgerEntryType, amountPaise: e.amountPaise })));
 
     await this.ledgerRepo.insertLegs(tx, entries);
     return transactionId;
   }
 
-  async recordDriverPayout(tx: any, payout: any) {
+  async recordDriverPayout(
+    tx: Prisma.TransactionClient | PrismaClient,
+    payout: DriverPayoutLedgerInput
+  ) {
     const transactionId = crypto.randomUUID();
     const amount = BigInt(payout.amountPaise);
 
-    const entries = [
+    const entries: Prisma.LedgerEntryCreateInput[] = [
       {
         transactionId,
         account: 'DRIVER',
@@ -92,12 +111,12 @@ export class LedgerService {
       }
     ];
 
-    validateLedgerBalance(entries.map(e => ({ entryType: e.entryType as any, amountPaise: e.amountPaise })));
+    validateLedgerBalance(entries.map(e => ({ entryType: e.entryType as unknown as LedgerEntryType, amountPaise: e.amountPaise })));
     await this.ledgerRepo.insertLegs(tx, entries);
     return transactionId;
   }
 
-  async getAccountBalance(account: any, ownerId?: string) {
+  async getAccountBalance(account: LedgerAccount | string, ownerId?: string) {
     return this.ledgerRepo.getAccountBalance(account, ownerId);
   }
 }

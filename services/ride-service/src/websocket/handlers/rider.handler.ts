@@ -28,14 +28,17 @@ const handlers: Record<string, RiderEventHandler> = {
   [RiderEvents.UPDATE_LOCATION]: handleRiderLocationUpdate,
 };
 
+import type { CoordinatePoint } from '../../services/fare.service.js';
+
 async function handleCancelRide(
   socket: AuthenticatedSocket,
-  data: any,
+  data: unknown,
   deps = globalRiderDeps
-) {
+): Promise<void> {
   const riderId = socket.user.userId;
-  const rideId = data?.rideId;
-  const reason = data?.reason || 'Cancelled by rider';
+  const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const rideId = typeof dataRecord.rideId === 'string' ? dataRecord.rideId : undefined;
+  const reason = typeof dataRecord.reason === 'string' ? dataRecord.reason : 'Cancelled by rider';
 
   if (!rideId) {
     sendSocketError(socket, 'Ride ID is required to cancel a ride.');
@@ -58,19 +61,24 @@ async function handleCancelRide(
           data: { rideId: cancelled.id, cancelledBy: 'RIDER', reason },
         })
       );
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to cancel ride.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to cancel ride.';
+      sendSocketError(socket, message);
     }
   }
 }
 
 async function handleRequestRide(
   socket: AuthenticatedSocket,
-  data: any,
+  data: unknown,
   deps = globalRiderDeps
-) {
+): Promise<void> {
   const riderId = socket.user.userId;
-  if (!data?.pickup || !data?.destination) {
+  const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const pickup = dataRecord.pickup as CoordinatePoint;
+  const destination = dataRecord.destination as CoordinatePoint;
+
+  if (!pickup || !destination) {
     sendSocketError(socket, 'Pickup and destination are required.');
     return;
   }
@@ -79,26 +87,29 @@ async function handleRequestRide(
     try {
       const ride = await deps.rideService.createRide({
         riderId,
-        pickup: data.pickup,
-        destination: data.destination,
-        vehicleCategory: data.vehicleCategory,
+        pickup,
+        destination,
+        vehicleCategory: typeof dataRecord.vehicleCategory === 'string' ? dataRecord.vehicleCategory : undefined,
       });
 
       socket.send(JSON.stringify({ event: 'server:ride-created', data: { ride } }));
       await deps.dispatchService.broadcastRideRequest(ride);
-    } catch (err: any) {
-      sendSocketError(socket, err.message || 'Failed to request ride.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to request ride.';
+      sendSocketError(socket, message);
     }
   }
 }
 
 async function handleRiderLocationUpdate(
   socket: AuthenticatedSocket,
-  data: any,
+  data: unknown,
   deps = globalRiderDeps
-) {
+): Promise<void> {
   const riderId = socket.user.userId;
-  const { rideId, location } = data || {};
+  const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const rideId = typeof dataRecord.rideId === 'string' ? dataRecord.rideId : undefined;
+  const location = dataRecord.location;
 
   if (rideId && location && deps?.rideService) {
     try {

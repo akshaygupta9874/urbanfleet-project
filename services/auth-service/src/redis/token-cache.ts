@@ -34,7 +34,7 @@ export async function cacheTokens(
 export async function cacheSession(
   userId: string,
   sessionId: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ): Promise<void> {
   try {
     if (authRedisClient.isOpen) {
@@ -96,7 +96,7 @@ export async function validateSessionInRedis(
 /**
  * Stores user profile in Redis under user:${userId} with 15-minute TTL.
  */
-export async function cacheUser(user: any): Promise<void> {
+export async function cacheUser<T extends { id?: string }>(user: T): Promise<void> {
   try {
     if (authRedisClient.isOpen && user?.id) {
       const userStr = JSON.stringify(user);
@@ -111,12 +111,12 @@ export async function cacheUser(user: any): Promise<void> {
 /**
  * Retrieves cached user profile from Redis.
  */
-export async function getCachedUser(userId: string): Promise<any | null> {
+export async function getCachedUser<T = Record<string, unknown>>(userId: string): Promise<T | null> {
   try {
     if (authRedisClient.isOpen) {
       const userStr = (await authRedisClient.get(authRedisKey(`user:${userId}`))) || (await authRedisClient.get(`user:${userId}`));
       if (userStr) {
-        return JSON.parse(userStr);
+        return JSON.parse(userStr) as T;
       }
     }
   } catch (err) {}

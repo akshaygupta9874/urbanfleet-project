@@ -4,8 +4,8 @@ import { UserService } from '../services/user.service.js';
 import { TwoFactorService } from '../services/two-factor.service.js';
 import { getCookieOptions, getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
 import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from '../middlewares/csrf.middleware.js';
-import { UnauthorizedError, BadRequestError, ForbiddenError, AuthenticatedRequest } from '@urbanfleet/common';
-import asyncHandler from '../middlewares/asyncHandler.js';
+import { UnauthorizedError, BadRequestError, ForbiddenError, AuthenticatedRequest, asyncHandler } from '@urbanfleet/common';
+import { User, Role } from '../db/client.js';
 
 export class AuthController {
   private authService: AuthService;
@@ -63,13 +63,22 @@ export class AuthController {
       userAgent: req.headers['user-agent']
     });
 
-    if ((result as any).requires2FASetup && (result as any).userId) {
-      const setup = await this.twoFactorService.initiateSetup((result as any).userId);
+    const loginResult = result as {
+      requires2FASetup?: boolean;
+      requires2FA?: boolean;
+      userId?: string;
+      refreshToken?: string;
+      accessToken?: string;
+      user?: { id: string; [key: string]: unknown };
+    };
+
+    if (loginResult.requires2FASetup && loginResult.userId) {
+      const setup = await this.twoFactorService.initiateSetup(loginResult.userId);
       return res.status(200).json({
         success: true,
         data: {
           requiresTwoFactorSetup: true,
-          userId: (result as any).userId,
+          userId: loginResult.userId,
           qrCodeUrl: setup.qrCodeUrl,
           otpauthUri: setup.otpauthUri,
           expiresInSeconds: setup.expiresInSeconds,
@@ -155,7 +164,7 @@ export class AuthController {
 
   login2FA = asyncHandler(async (req: Request, res: Response) => {
 
-    let user: any = null;
+    let user: { id: string; email: string; role: Role; firstName?: string; lastName?: string } | null = null;
 
     if (req.body.challengeToken) {
       if (req.body.recoveryCode) {
@@ -166,7 +175,7 @@ export class AuthController {
         );
         user = result.user;
       } else {
-        const code = req.body.code || req.body.token || req.body.otp;
+        const code = req.body.code;
         if (!code || typeof code !== 'string') {
           throw new BadRequestError('Verification code or recovery code is required');
         }
@@ -177,15 +186,23 @@ export class AuthController {
         );
       }
     } else if (req.body.userId) {
-      // Backward compatibility for legacy test callers
+      // 2FA setup verification
+      const code = req.body.code;
+      if (!code || typeof code !== 'string') {
+        throw new BadRequestError('Verification code is required');
+      }
       const isValid = await this.twoFactorService.verifyToken(
         req.body.userId,
-        req.body.code || req.body.token || req.body.otp
+        code
       );
       if (!isValid) return res.status(401).json({ success: false, message: 'Invalid 2FA code' });
       user = await this.userService.getUserById(req.body.userId);
     } else {
       throw new UnauthorizedError('2FA challenge token or credentials required');
+    }
+
+    if (!user) {
+      throw new UnauthorizedError('User not found');
     }
 
     const authResult = await this.authService.complete2FALogin(
@@ -262,7 +279,7 @@ export class AuthController {
       await this.authService.logout(token);
     }
 
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (userId) {
       await revokeCSRFToken(userId, res);
     }
@@ -276,7 +293,7 @@ export class AuthController {
 
   changePassword = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { oldPassword, newPassword } = req.body;
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
@@ -297,7 +314,7 @@ export class AuthController {
   });
 
   verifyEmail = asyncHandler(async (req: Request, res: Response) => {
-    const token = req.params?.token || req.body?.token || (req.query?.token as string);
+    const token = req.params.token;
     if (!token) {
       throw new BadRequestError('Verification token is required');
     }
@@ -312,7 +329,7 @@ export class AuthController {
   });
 
   getProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
@@ -321,14 +338,14 @@ export class AuthController {
   });
 
   getUserById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const callerId = req.user?.userId || req.user?.id || req.userId;
+    const callerId = req.userId;
     const targetId = req.params.id;
 
     if (!callerId) {
       throw new UnauthorizedError('User unauthenticated');
     }
 
-    const roles: string[] = req.role || req.user?.roles || (req.user?.role ? [req.user.role] : []);
+    const roles: string[] = req.role || [];
     const isPrivileged = roles.includes('ADMIN') || callerId === 'internal-service';
     const isSelf = callerId === targetId;
 
@@ -341,7 +358,7 @@ export class AuthController {
   });
 
   updateProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
@@ -350,7 +367,7 @@ export class AuthController {
   });
 
   enable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
@@ -367,7 +384,7 @@ export class AuthController {
   });
 
   verify2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
@@ -386,7 +403,7 @@ export class AuthController {
   });
 
   disable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
@@ -399,7 +416,7 @@ export class AuthController {
   });
 
   regenerateRecoveryCodes = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       throw new UnauthorizedError('User unauthenticated');
     }
@@ -418,7 +435,7 @@ export class AuthController {
   });
 
   refreshCSRF = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.user?.userId || req.user?.id || req.userId;
+    const userId = req.userId;
     if (!userId) {
       return res.status(401).json({ success: false, message: 'User not authenticated' });
     }

@@ -11,15 +11,14 @@ import { paymentRepository } from "../repositories/payment.repository.js";
  * replace this one - the payment routes only need "admin or 403".)
  */
 export async function requireAdmin(
-    req: Request,
+    req: AuthenticatedRequest,
     _res: Response,
     next: NextFunction
 ): Promise<void> {
 
     try {
 
-        const authReq = req as AuthenticatedRequest;
-        const userId = authReq.userId;
+        const userId = req.userId;
 
         if (!userId) {
             throw new AppError(
@@ -29,17 +28,18 @@ export async function requireAdmin(
             );
         }
 
-        let user: any = null;
+        let user: { roles?: string[] } | null = null;
 
         // In test environments where prisma.user.findUnique is spied on/mocked, delegate to mock
-        if (typeof (prisma.user?.findUnique as any)?.mock !== "undefined") {
+        const mockFindUnique = (prisma.user?.findUnique as unknown as { mock?: unknown })?.mock;
+        if (typeof mockFindUnique !== "undefined") {
             user = await prisma.user.findUnique({
                 where: { id: userId },
                 select: { roles: true },
             });
         } else {
             // First check roles already verified & attached to request context by authMiddleware
-            const roles = authReq.role || authReq.user?.roles || (authReq.user?.role ? [authReq.user.role] : null);
+            const roles = req.role || null;
             if (roles && Array.isArray(roles) && roles.length > 0) {
                 user = { roles };
             } else {
@@ -56,7 +56,7 @@ export async function requireAdmin(
             );
         }
 
-        const userRoles = Array.isArray(user.roles) ? user.roles : (user.role ? [user.role] : []);
+        const userRoles = Array.isArray(user.roles) ? user.roles : [];
         if (!userRoles.includes(UserRole.ADMIN) && !userRoles.includes("ADMIN")) {
             throw new AppError(
                 "Admin access required",

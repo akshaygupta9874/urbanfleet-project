@@ -20,24 +20,57 @@ export interface IFareBreakdown {
   totalPaise: number;
 }
 
+export type CoordinatePoint =
+  | {
+      lat?: number;
+      lng?: number;
+      latitude?: number;
+      longitude?: number;
+      coordinates?:
+        | { lat?: number; lng?: number; latitude?: number; longitude?: number }
+        | [number, number]
+        | number[];
+    }
+  | [number, number]
+  | number[]
+  | null
+  | undefined;
+
+export interface FareEstimateResult {
+  distanceKm: number;
+  durationMinutes: number;
+  baseFarePaise: number;
+  surgeMultiplier: number;
+  totalFarePaise: number;
+  platformCommissionPaise: number;
+  driverEarningPaise: number;
+}
+
 export class FareService {
-  normalizeCoords(point: any): { lat: number; lng: number } {
+  normalizeCoords(point: CoordinatePoint): { lat: number; lng: number } {
     if (!point) return { lat: 0, lng: 0 };
     if (Array.isArray(point)) {
       return { lat: Number(point[1] ?? 0), lng: Number(point[0] ?? 0) };
     }
-    if (Array.isArray(point.coordinates)) {
-      return { lat: Number(point.coordinates[1] ?? 0), lng: Number(point.coordinates[0] ?? 0) };
+    const pointRecord = point as Record<string, unknown>;
+    if (Array.isArray(pointRecord.coordinates)) {
+      const coords = pointRecord.coordinates as number[];
+      return { lat: Number(coords[1] ?? 0), lng: Number(coords[0] ?? 0) };
     }
-    const lat = point.lat ?? point.latitude ?? point.coordinates?.lat ?? point.coordinates?.latitude ?? 0;
-    const lng = point.lng ?? point.longitude ?? point.coordinates?.lng ?? point.coordinates?.longitude ?? 0;
+    const nestedCoords =
+      pointRecord.coordinates && typeof pointRecord.coordinates === 'object'
+        ? (pointRecord.coordinates as Record<string, unknown>)
+        : undefined;
+
+    const lat = pointRecord.lat ?? pointRecord.latitude ?? nestedCoords?.lat ?? nestedCoords?.latitude ?? 0;
+    const lng = pointRecord.lng ?? pointRecord.longitude ?? nestedCoords?.lng ?? nestedCoords?.longitude ?? 0;
     return { lat: Number(lat), lng: Number(lng) };
   }
 
   computeDistanceAndDuration(
-    pickupInput: { lat: number; lng: number } | any,
-    destinationInput: { lat: number; lng: number } | any
-  ) {
+    pickupInput: CoordinatePoint,
+    destinationInput: CoordinatePoint
+  ): { distanceKm: number; durationMinutes: number } {
     const pickup = this.normalizeCoords(pickupInput);
     const destination = this.normalizeCoords(destinationInput);
 
@@ -66,11 +99,11 @@ export class FareService {
   }
 
   calculateFareEstimate(
-    pickup: any,
-    destination: any,
+    pickup: CoordinatePoint,
+    destination: CoordinatePoint,
     vehicleType = 'car',
     demandFactor = 1.0
-  ) {
+  ): FareEstimateResult {
     const { distanceKm, durationMinutes } = this.computeDistanceAndDuration(pickup, destination);
     const multiplier = VEHICLE_MULTIPLIERS[vehicleType.toLowerCase()] ?? 1.2;
     const baseFarePaise = 5000; // 50 INR base

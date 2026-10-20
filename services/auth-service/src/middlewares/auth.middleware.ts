@@ -7,11 +7,33 @@ import { prisma } from '../db/client.js';
 import { getPublicKey } from '../crypto/keys.js';
 import { validateSessionInRedis, getCachedUser, cacheUser } from '../redis/token-cache.js';
 
+export interface UserPayloadContext {
+  id: string;
+  userId?: string;
+  email?: string;
+  role?: string | string[];
+  roles?: string[];
+  firstName?: string;
+  lastName?: string;
+  driverId?: string;
+}
+
+export interface AuthMiddlewareUser {
+  id: string;
+  email: string;
+  role?: string;
+  roles?: string[];
+  firstName?: string;
+  lastName?: string;
+  driverId?: string;
+  driver?: { id?: string };
+}
+
 export interface AuthenticatedRequest extends Request {
   userId?: string;
   role?: string[];
   driverId?: string;
-  user?: any;
+  user?: UserPayloadContext;
 }
 
 export interface AuthPayload extends JwtPayload {
@@ -21,6 +43,7 @@ export interface AuthPayload extends JwtPayload {
   email?: string;
   role?: string | string[];
   roles?: string[];
+  tokenType?: string;
 }
 
 export const authMiddleware = asyncHandler(
@@ -47,10 +70,11 @@ export const authMiddleware = asyncHandler(
     }
 
     // 1. Extract Token from Authorization header or cookie
+    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
     const token =
       request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      request.cookies?.accessToken ||
-      (request as any).cookies?.token;
+      cookies?.accessToken ||
+      cookies?.token;
 
     if (!token) {
       return response.status(401).json({
@@ -76,7 +100,7 @@ export const authMiddleware = asyncHandler(
         issuer: 'urbanfleet-auth',
         audience: 'urbanfleet-api',
       }) as AuthPayload;
-    } catch (error: any) {
+    } catch (_error: unknown) {
       const secret = process.env.JWT_ACCESS_SECRET;
       if (secret) {
         try {
@@ -97,7 +121,7 @@ export const authMiddleware = asyncHandler(
       }
     }
 
-    if ((decodedData as any).tokenType && (decodedData as any).tokenType !== 'ACCESS') {
+    if (decodedData.tokenType && decodedData.tokenType !== 'ACCESS') {
       return response.status(401).json({
         success: false,
         code: 'INVALID_TOKEN_TYPE',
@@ -105,7 +129,7 @@ export const authMiddleware = asyncHandler(
       });
     }
 
-    const userId = decodedData.userId || decodedData.id;
+    const userId = decodedData.userId;
     const sessionId = decodedData.sessionId;
 
     if (!userId) {
@@ -124,22 +148,33 @@ export const authMiddleware = asyncHandler(
     }
 
     // 4. Fetch User Data (Cache first, then PostgreSQL)
-    let user = await getCachedUser(userId);
+    let user = await getCachedUser<AuthMiddlewareUser>(userId);
 
     if (!user) {
       try {
-        user = await prisma.user.findUnique({
+        const dbUser = await prisma.user.findUnique({
           where: { id: userId },
         });
+        if (dbUser) {
+          user = {
+            id: dbUser.id,
+            email: dbUser.email,
+            role: dbUser.role,
+            roles: [dbUser.role],
+            firstName: dbUser.firstName,
+            lastName: dbUser.lastName,
+          };
+        }
       } catch (err) {}
 
       if (!user) {
         // Fallback to token payload if user not in local DB during unit tests
+        const roles = decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [typeof decodedData.role === 'string' ? decodedData.role : 'RIDER']);
         user = {
           id: userId,
           email: decodedData.email || '',
-          role: decodedData.role || 'RIDER',
-          roles: decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [decodedData.role || 'RIDER']),
+          role: typeof decodedData.role === 'string' ? decodedData.role : 'RIDER',
+          roles,
         };
       } else {
         await cacheUser(user);
@@ -147,8 +182,9 @@ export const authMiddleware = asyncHandler(
     }
 
     // 5. Attach payload to Request and proceed
+    const userRoles = Array.isArray(user.roles) ? user.roles : [user.role || 'RIDER'];
     request.userId = user.id;
-    request.role = Array.isArray(user.roles) ? user.roles : [user.role || 'RIDER'];
+    request.role = userRoles;
     if (user.driver?.id || user.driverId) {
       request.driverId = user.driver?.id || user.driverId;
     }
@@ -160,7 +196,7 @@ export const authMiddleware = asyncHandler(
       id: user.id,
       email: user.email,
       role: user.role,
-      roles: request.role,
+      roles: userRoles,
       firstName,
       lastName,
       driverId: request.driverId,
@@ -175,8 +211,8 @@ export const requireRole = (...allowedRoles: string[]) => {
     if (!req.userId && !req.user) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.role || (req.user?.role ? [req.user.role] : []);
-    const hasRole = roles.some((r) => allowedRoles.includes(r)) || (req.user?.role && allowedRoles.includes(req.user.role));
+    const roles: string[] = req.role || (req.user?.roles ? req.user.roles : []);
+    const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(
         new AppError(`Forbidden: Requires one of roles: ${allowedRoles.join(', ')}`, 403, 'FORBIDDEN')

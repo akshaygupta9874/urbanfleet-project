@@ -10,6 +10,22 @@ import {
 
 const logger = createLogger('notification-dispatcher');
 
+interface NotificationPayload {
+  subject?: string;
+  html?: string;
+  token?: string;
+  otp?: string;
+  rideId?: string;
+  paymentId?: string;
+  amountPaise?: number | bigint;
+  totalFarePaise?: number | bigint;
+  pickupAddress?: string;
+  dropoffAddress?: string;
+  destinationAddress?: string;
+  driverName?: string;
+  message?: string;
+}
+
 export class NotificationDispatcher {
   private isRunning = false;
   private notifRepo: NotificationRepository;
@@ -30,7 +46,7 @@ export class NotificationDispatcher {
         const pending = await this.notifRepo.findPending();
         for (const item of pending) {
           try {
-            const payload: any = item.payload || {};
+            const payload = (item.payload || {}) as NotificationPayload;
             let subject = payload.subject || 'UrbanFleet Notification';
             let html = payload.html;
 
@@ -49,10 +65,9 @@ export class NotificationDispatcher {
                 email: item.recipient,
                 rideId: payload.rideId || 'ride-unknown',
                 paymentId: payload.paymentId,
-                amountPaise: payload.amountPaise || payload.totalFarePaise,
-                totalFarePaise: payload.totalFarePaise || payload.amountPaise,
+                totalFarePaise: Number(payload.totalFarePaise || 0),
                 pickupAddress: payload.pickupAddress,
-                dropoffAddress: payload.dropoffAddress || payload.destinationAddress,
+                dropoffAddress: payload.dropoffAddress,
                 driverName: payload.driverName,
               });
             } else if (!html) {
@@ -65,12 +80,17 @@ export class NotificationDispatcher {
               html,
             });
 
-            const messageId = response.headers?.get?.('x-message-id') || `sg_${item.id}`;
+            const responseHeaders = (response && 'headers' in response && response.headers)
+              ? (response.headers as Record<string, unknown>)
+              : {};
+            const rawHeader = responseHeaders['x-message-id'];
+            const messageId = typeof rawHeader === 'string' ? rawHeader : `sg_${item.id}`;
             logger.info(`Dispatched notification ${item.id} [${item.template}] to ${item.recipient} via SendGrid (${messageId})`);
             await this.notifRepo.markDispatched(item.id, messageId);
-          } catch (err: any) {
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
             logger.error(`Failed to dispatch notification ${item.id}:`, err);
-            await this.notifRepo.recordFailure(item.id, err.message);
+            await this.notifRepo.recordFailure(item.id, message);
           }
         }
       } catch (err) {

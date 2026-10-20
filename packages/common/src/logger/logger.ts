@@ -5,7 +5,7 @@ export interface LogContext {
   requestId?: string;
   userId?: string;
   rideId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class StructuredLogger {
@@ -33,7 +33,7 @@ export class StructuredLogger {
     console.warn(this.format('warn', message, context));
   }
 
-  public error(message: string, error?: Error | any, context?: LogContext): void {
+  public error(message: string, error?: Error | unknown, context?: LogContext): void {
     const errorDetails = error instanceof Error ? {
       name: error.name,
       message: error.message,

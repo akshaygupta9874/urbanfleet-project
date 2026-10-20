@@ -195,7 +195,7 @@ export default function LandingPage() {
             const data: unknown = await res.json();
             if (isGeoapifyFeatureCollection(data) && data.features[0]) {
               const prop = data.features[0].properties;
-              const city = prop.city || prop.town || prop.county || "Kolkata";
+              const city = prop.city || "Kolkata";
               const country = prop.country_code ? prop.country_code.toUpperCase() : "IN";
               setCurrentLocationName(`${city}, ${country}`);
             }

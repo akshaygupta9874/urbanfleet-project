@@ -2,14 +2,14 @@ export class AppError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
   public readonly isOperational: boolean;
-  public readonly details?: any;
+  public readonly details?: unknown;
 
   constructor(
     message: string,
     statusCode = 500,
     code = "INTERNAL_SERVER_ERROR",
     isOperational = true,
-    details?: any
+    details?: unknown
   ) {
     super(message);
     Object.setPrototypeOf(this, new.target.prototype);

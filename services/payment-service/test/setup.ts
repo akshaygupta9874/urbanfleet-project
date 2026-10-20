@@ -16,6 +16,3 @@ process.env.SENDGRID_FROM_EMAIL = "sendsampleom";
 process.env.RAZORPAY_KEY_ID = "rzp_test_key";
 process.env.RAZORPAY_KEY_SECRET = "sample";
 process.env.RAZORPAY_WEBHOOK_SECRET = "your-razorpay-webhook-secret";
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};

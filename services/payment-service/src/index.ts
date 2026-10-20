@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { createLogger, AppError } from '@urbanfleet/common';
+import { createLogger, AppError, configureBigIntSerialization } from '@urbanfleet/common';
 import { PaymentRepository } from './repositories/payment.repository.js';
 import { LedgerRepository } from './repositories/ledger.repository.js';
 import { RefundRepository } from './repositories/refund.repository.js';
@@ -20,11 +20,8 @@ import { connectRedis, disconnectRedis, redisClient } from './redis/client.js';
 const logger = createLogger('payment-service');
 import { prisma } from './db/client.js';
 
-(BigInt.prototype as any).toJSON = function () {
-  return Number(this);
-};
-
 const app = express();
+configureBigIntSerialization(app);
 
 const port = process.env.PORT || 4005;
 
@@ -113,18 +110,26 @@ app.use('/api/payment', paymentRouter);
 app.use('/api/payments', paymentRouter);
 
 // Global Error Handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const statusCode = err.statusCode || (err.status || 500);
-  const code = err.code || (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
-  if (statusCode < 500 || err.isOperational) {
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const errObj = (typeof err === 'object' && err !== null ? err : {}) as {
+    statusCode?: number;
+    status?: number;
+    code?: string;
+    isOperational?: boolean;
+    message?: string;
+  };
+  const statusCode = errObj.statusCode ?? 500;
+  const code = errObj.code ?? (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
+  const message = errObj.message || (err instanceof Error ? err.message : 'Internal server error');
+  if (statusCode < 500 || errObj.isOperational) {
     return res.status(statusCode).json({
       success: false,
       code,
-      message: err.message
+      message,
     });
   }
   logger.error('Unhandled internal error:', err);
-  res.status(statusCode).json({ success: false, code, message: err.message || 'Internal server error' });
+  res.status(statusCode).json({ success: false, code, message });
 });
 
 const server = app.listen(port, () => {
