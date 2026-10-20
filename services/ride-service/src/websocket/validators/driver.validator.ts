@@ -13,7 +13,12 @@ export const DriverAvailabilitySchema = z.object({
 
 export const RideActionSchema = z.object({
   rideId: z.string().min(1),
-  otp: z.string().optional(),
+});
+
+export const AcceptRideSchema = RideActionSchema;
+
+export const StartRideSchema = RideActionSchema.extend({
+  otp: z.string().regex(/^\d{4}$/, 'OTP must be a 4-digit code'),
 });
 
 export const RideCancelSchema = z.object({

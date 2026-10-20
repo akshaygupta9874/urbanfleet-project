@@ -76,6 +76,16 @@ export const clearAccessToken = () => {
 
 export const getAccessToken = () => accessToken;
 
+export async function refreshAccessToken(): Promise<string> {
+  const response = await refreshClient.post<{ accessToken?: unknown }>("/refresh");
+  const token = response.data.accessToken;
+  if (typeof token !== "string") {
+    throw new Error("Authentication refresh did not return an access token.");
+  }
+  setAccessToken(token);
+  return token;
+}
+
 export const getCookieValue = (name: string) => {
   if (typeof document === "undefined") return "";
 

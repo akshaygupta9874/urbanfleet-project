@@ -112,7 +112,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     expect(mockUserRepo.create).toHaveBeenCalledWith(expect.objectContaining({
       firstName: 'Jane',
       lastName: 'Doe',
-      role: 'RIDER',
+      roles: ['RIDER'],
     }));
   });
 
@@ -187,7 +187,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     mockUserRepo.findById.mockResolvedValue({
       id: 'usr-fix-1',
       email: 'user@urbanfleet.com',
-      role: 'RIDER',
+      roles: ['RIDER'],
     });
 
     const res = await authService.refreshAccessToken('old-refresh-token');
@@ -211,7 +211,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       email: 'user@urbanfleet.com',
       passwordHash: await authService.hashPassword('Password123!'),
       twoFactorEnabled: false,
-      role: 'RIDER',
+      roles: ['RIDER'],
     });
 
     const res = await fetch(`${baseUrl}/login`, {
@@ -269,7 +269,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       id: 'admin-1',
       email: 'admin@urbanfleet.com',
       passwordHash: await authService.hashPassword('AdminPassword123!'),
-      role: 'ADMIN',
+      roles: ['ADMIN'],
       twoFactorEnabled: false,
     });
     mockUserRepo.findById.mockResolvedValue({
@@ -448,7 +448,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         expect.objectContaining({
           email: 'newgoogleuser@example.com',
           isEmailVerified: true,
-          role: 'RIDER',
+          roles: ['RIDER'],
         })
       );
       axiosSpy.mockRestore();
@@ -471,7 +471,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         email: 'existinguser@example.com',
         firstName: 'Existing',
         lastName: 'Rider',
-        role: 'RIDER',
+        roles: ['RIDER'],
         isEmailVerified: true,
       });
       mockSessionRepo.create.mockResolvedValue({ id: 'sess-existing-1' });
@@ -497,7 +497,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       email: 'usera@example.com',
       firstName: 'User',
       lastName: 'A',
-      role: 'RIDER',
+      roles: ['RIDER'],
       isEmailVerified: true,
     };
     const userB = {
@@ -505,7 +505,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       email: 'userb@example.com',
       firstName: 'User',
       lastName: 'B',
-      role: 'RIDER',
+      roles: ['RIDER'],
       isEmailVerified: true,
     };
 
@@ -593,7 +593,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const pendingAdmin = {
         id: 'admin-setup-1',
         email: 'admin-setup@urbanfleet.com',
-        role: 'ADMIN',
         roles: ['ADMIN'],
         twoFactorEnabled: false,
         twoFactorPendingSecret: secret,
@@ -637,7 +636,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const pendingAdmin = {
         id: 'admin-setup-2',
         email: 'admin-setup2@urbanfleet.com',
-        role: 'ADMIN',
         roles: ['ADMIN'],
         twoFactorEnabled: false,
         twoFactorPendingSecret: secret,
@@ -664,7 +662,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const activeUser = {
         id: 'user-2fa-1',
         email: 'user2fa@urbanfleet.com',
-        role: 'RIDER',
         roles: ['RIDER'],
         twoFactorEnabled: true,
       };

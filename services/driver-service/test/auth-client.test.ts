@@ -53,4 +53,17 @@ describe('AuthClient Inter-Service HTTP Communication in driver-service', () => 
 
     await expect(client.getUserById('usr-err')).rejects.toThrow('Auth Service returned HTTP 500');
   });
+
+  it('requests a driver-role grant from auth service', async () => {
+    const postSpy = vi.spyOn(
+      (client as unknown as { client: { post: Function } }).client,
+      'post'
+    ).mockResolvedValue({ status: 200 });
+
+    await client.grantDriverRole('usr-driver-1');
+
+    expect(postSpy).toHaveBeenCalledWith(
+      '/api/auth/internal/users/usr-driver-1/driver-role'
+    );
+  });
 });

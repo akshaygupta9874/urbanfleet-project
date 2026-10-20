@@ -1,33 +1,10 @@
 import { socketRegistry } from '../registry/socket.registry.js';
 import { ServerEvent, ServerEvents } from '../event.constants.js';
-import { DriverLocationPayload, RideCancelledPayload, PaymentCapturedPayload } from '../types.js';
-
-import { Ride } from '../../db/client.js';
-
-export interface RideAcceptedPayload {
-  ride: Ride | Record<string, unknown>;
-}
+import { DriverLocationPayload, RideCancelledPayload, PaymentCapturedPayload, RideLifecyclePayload } from '../types.js';
 
 export type { DriverLocationPayload };
 
-export interface DriverArrivedPayload {
-  rideId: string;
-}
-
-export interface RideStartedPayload {
-  rideId: string;
-}
-
-export interface ArrivedAtDestinationPayload {
-  rideId: string;
-}
-
 export type { RideCancelledPayload };
-
-export interface RideCompletedPayload {
-  rideId: string;
-  ride?: Ride | Record<string, unknown>;
-}
 
 export type { PaymentCapturedPayload };
 
@@ -51,7 +28,7 @@ export function emitToRider<T>(riderId: string, event: ServerEvent, data: T): vo
   }
 }
 
-export function emitRideAccepted(riderId: string, payload: RideAcceptedPayload): void {
+export function emitRideAccepted(riderId: string, payload: RideLifecyclePayload): void {
   emitToRider(riderId, ServerEvents.RIDE_ACCEPTED, payload);
 }
 
@@ -59,19 +36,19 @@ export function emitDriverLocation(riderId: string, payload: DriverLocationPaylo
   emitToRider(riderId, ServerEvents.DRIVER_LOCATION, payload);
 }
 
-export function emitDriverArrived(riderId: string, payload: DriverArrivedPayload): void {
+export function emitDriverArrived(riderId: string, payload: RideLifecyclePayload): void {
   emitToRider(riderId, ServerEvents.DRIVER_ARRIVED, payload);
 }
 
-export function emitRideStarted(riderId: string, payload: RideStartedPayload): void {
+export function emitRideStarted(riderId: string, payload: RideLifecyclePayload): void {
   emitToRider(riderId, ServerEvents.RIDE_STARTED, payload);
 }
 
-export function emitArrivedAtDestination(riderId: string, payload: ArrivedAtDestinationPayload): void {
+export function emitArrivedAtDestination(riderId: string, payload: RideLifecyclePayload): void {
   emitToRider(riderId, ServerEvents.ARRIVED_AT_DESTINATION, payload);
 }
 
-export function emitRideCompleted(riderId: string, payload: RideCompletedPayload): void {
+export function emitRideCompleted(riderId: string, payload: RideLifecyclePayload): void {
   emitToRider(riderId, ServerEvents.RIDE_COMPLETED, payload);
 }
 

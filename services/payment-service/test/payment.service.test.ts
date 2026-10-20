@@ -21,7 +21,11 @@ describe('Payment Service Order Creation & Verification', () => {
     vi.spyOn(razorpayClient.orders, 'create').mockResolvedValue({ id: 'order_test_123' } as any);
     mockPaymentRepo.create.mockImplementation((data: any) => Promise.resolve({ id: 'pay-1', ...data }));
 
-    const order = await paymentService.createOrder('ride-123', 'rider-456', 15000);
+    const order = await paymentService.createOrder({
+      rideId: 'ride-123',
+      riderId: 'rider-456',
+      amountPaise: 15000,
+    });
     expect(order.rideId).toBe('ride-123');
     expect(order.amountPaise).toBe(15000);
     expect(order.gatewayOrderId).toBe('order_test_123');

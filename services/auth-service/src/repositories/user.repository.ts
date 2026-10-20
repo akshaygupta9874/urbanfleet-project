@@ -1,4 +1,5 @@
 import { PrismaClient, User, Role } from '../db/client.js';
+import { NotFoundError } from '@urbanfleet/common';
 
 export class UserRepository {
   private prisma: PrismaClient;
@@ -25,7 +26,7 @@ export class UserRepository {
     firstName: string;
     lastName: string;
     phone?: string;
-    role?: Role;
+    roles?: Role[];
     avatarUrl?: string;
     isEmailVerified?: boolean;
   }): Promise<User> {
@@ -34,6 +35,22 @@ export class UserRepository {
 
   async update(id: string, data: Partial<User>): Promise<User> {
     return this.prisma.user.update({ where: { id }, data });
+  }
+
+  async addDriverRole(id: string): Promise<User> {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id } });
+      if (!user) {
+        throw new NotFoundError('User not found');
+      }
+
+      const roles = Array.from(new Set([
+        Role.RIDER,
+        ...user.roles.filter((role) => role !== Role.RIDER && role !== Role.DRIVER),
+        Role.DRIVER,
+      ]));
+      return tx.user.update({ where: { id }, data: { roles } });
+    });
   }
 
   async delete(id: string): Promise<User> {

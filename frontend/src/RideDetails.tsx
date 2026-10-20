@@ -25,56 +25,18 @@ import { createPaymentOrder, loadRazorpayCheckout, verifyPaymentSignature } from
 import { useAuthContext } from "./context/auth-context";
 import CityMapBackground from "./components/CityMapBackground";
 import { type PaymentStatus } from "./lib/payment";
-import type { Coordinates, LocationPoint } from "./types/location";
+import type { Coordinates } from "./types/location";
+import type { RideDto as Ride, RideStatus } from "./types/ride";
 
 /**
  * RideDetails — Luxury Transit Map Edition (Full Width / Zero Animations / Lag-Free)
  */
-
-type RideStatus =
-  | "SEARCHING"
-  | "DRIVER_ASSIGNED"
-  | "DRIVER_ARRIVING"
-  | "RIDE_STARTED"
-  | "ARRIVED_AT_DESTINATION"
-  | "COMPLETED"
-  | "CANCELLED";
 
 const payableStatuses: PaymentStatus[] = [
   "CREATED",
   "PENDING",
   "AUTHORIZED",
 ];
-
-interface FareBreakdown {
-  baseFarePaise?: number;
-  distanceFarePaise?: number;
-  timeFarePaise?: number;
-  surgePaise?: number;
-  platformCommissionPaise?: number;
-  driverEarningPaise?: number;
-  totalPaise?: number;
-}
-interface DriverInfo {
-  id: string;
-  firstName?: string;
-  lastName?: string;
-  vehicleNumber?: string | null;
-  phone?: string;
-  user?: { firstName?: string; lastName?: string; phone?: string };
-  vehicle?: { registrationNumber?: string; model?: string; color?: string };
-}
-interface Ride {
-  id: string;
-  pickup: LocationPoint;
-  destination: LocationPoint;
-  fare: { estimated: number; final?: number | null; breakdown?: FareBreakdown | null };
-  distance: { estimated: number | null; actual?: number | null };
-  duration: { estimated: number | null; actual?: number | null };
-  status: RideStatus;
-  paymentStatus?: PaymentStatus;
-  driver?: DriverInfo | null;
-}
 
 const DISPLAY_FONT = "'Fraunces', Georgia, serif";
 const BODY_FONT = "'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif";
@@ -119,6 +81,15 @@ function formatDurationSeconds(seconds: number): string {
   if (minutes < 60) return `${Math.max(1, minutes)} min`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${minutes % 60}m`;
+}
+
+function mergeRideLifecycle(current: Ride | null, payload: { ride: Ride }): Ride | null {
+  if (current && current.id !== payload.ride.id) return current;
+  return {
+    ...current,
+    ...payload.ride,
+    otp: payload.ride.status === "RIDE_STARTED" ? null : current?.otp ?? payload.ride.otp,
+  };
 }
 
 function TicketButton({
@@ -369,21 +340,28 @@ export default function RideDetails() {
     const s = connectRiderSocket({
       onReady: () => setToast("Connected to live updates"),
       onError: (m: string) => setToast(m),
-      onRideAccepted: async () => {
+      onRideCreated: (payload) => {
+        if (payload?.ride?.id !== rideId) return;
+        setRide({ ...payload.ride, otp: payload.otp });
+      },
+      onRideAccepted: (payload) => {
+        if (payload?.ride?.id !== rideId) return;
+        setRide((current) => mergeRideLifecycle(current, payload));
         setToast("Driver has accepted your ride");
-        await fetchRideDetails(rideId);
       },
       onDriverLocation: (payload: DriverLocationPayload) => {
         if (payload?.latitude != null && payload?.longitude != null) {
           setDriverLocation({ latitude: payload.latitude, longitude: payload.longitude });
         }
       },
-      onDriverArriving: () => {
-        setRide((p) => (p ? { ...p, status: "DRIVER_ARRIVING" } : p));
+      onDriverArriving: (payload) => {
+        if (payload?.ride?.id !== rideId) return;
+        setRide((current) => mergeRideLifecycle(current, payload));
         setToast("Driver is arriving at pickup");
       },
-      onRideStarted: () => {
-        setRide((p) => (p ? { ...p, status: "RIDE_STARTED" } : p));
+      onRideStarted: (payload) => {
+        if (payload?.ride?.id !== rideId) return;
+        setRide((current) => mergeRideLifecycle(current, payload));
         setToast("Ride started");
       },
       onPaymentCaptured: (payload) => {
@@ -392,19 +370,30 @@ export default function RideDetails() {
           setToast("Payment confirmed. Your driver can complete the ride.");
         }
       },
-      onRideArrivedAtDestination: () => {
-        setRide((p) => (p ? { ...p, status: "ARRIVED_AT_DESTINATION" } : p));
+      onRideArrivedAtDestination: (payload) => {
+        if (payload?.ride?.id !== rideId) return;
+        setRide((current) => mergeRideLifecycle(current, payload));
         setToast("Driver has arrived at your destination");
       },
-      onRideCompleted: () => {
-        setRide((p) => (p ? { ...p, status: "COMPLETED" } : p));
+      onRideCompleted: (payload) => {
+        if (payload?.ride?.id !== rideId) return;
+        setRide((current) => mergeRideLifecycle(current, payload));
         setToast("Ride complete");
       },
       onRideCancelled: (payload: RideCancelledPayload) => {
-        setRide((p) => (p ? { ...p, status: "CANCELLED" } : p));
+        if (payload.rideId !== rideId) return;
+        setRide((p) => (p ? {
+          ...p,
+          status: "CANCELLED",
+          cancelledBy: payload.cancelledBy,
+          cancellationReason: payload.reason ?? null,
+          otp: null,
+        } : p));
         setToast(`Ride cancelled by ${payload.cancelledBy.toLowerCase()}`);
       },
-      onNoDriversAvailable: () => setToast("No drivers available yet"),
+      onNoDriversAvailable: (payload) => {
+        if (payload.rideId === rideId) setToast("No drivers available yet");
+      },
     });
 
     socketRef.current = s;
@@ -469,7 +458,7 @@ export default function RideDetails() {
       return;
     }
 
-    const driverId = currentRide.driver?.id || (typeof currentRide.driver === "string" ? currentRide.driver : "");
+    const driverId = currentRide.driver?.id ?? "";
     if (!driverId) {
       setError("Driver information is unavailable.");
       return;
@@ -741,6 +730,26 @@ export default function RideDetails() {
             {/* Driver Card */}
             {ride.driver && (
               <DriverCard firstName={driverFirstName} lastName={driverLastName} vehicleNo={vehicleNo} phone={driverPhone} />
+            )}
+
+            {ride.otp && ["SEARCHING", "DRIVER_ASSIGNED", "DRIVER_ARRIVING"].includes(ride.status) && (
+              <section className="flex items-start gap-4 rounded-2xl border border-amber-600/30 bg-amber-500/10 p-4 shadow-sm">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#3a1f0a] text-[#ffd88a]">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-[#3a1f0a]">Ride verification code</p>
+                  <p className="mt-1 text-xs leading-relaxed text-[#6b3a12]">
+                    Share this code with your driver. They must enter it to accept your ride. It expires within one hour.
+                  </p>
+                  <p
+                    aria-label="Ride verification code"
+                    className="mt-3 font-mono text-3xl font-extrabold tracking-[0.45em] text-[#2e1808]"
+                  >
+                    {ride.otp}
+                  </p>
+                </div>
+              </section>
             )}
 
             {/* Trip Stops */}

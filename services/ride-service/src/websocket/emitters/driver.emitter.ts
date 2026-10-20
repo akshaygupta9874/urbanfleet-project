@@ -1,11 +1,10 @@
 import { ServerEvents } from '../event.constants.js';
 import { socketRegistry } from '../registry/socket.registry.js';
 import { RideCancelledPayload, PaymentCapturedPayload } from '../types.js';
-
-import { Ride } from '../../db/client.js';
+import type { RideDto } from '@urbanfleet/common';
 
 export interface NewRideRequestPayload {
-  ride: Ride | Record<string, unknown>;
+  ride: RideDto;
 }
 
 export type { RideCancelledPayload, PaymentCapturedPayload };

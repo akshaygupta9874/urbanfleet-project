@@ -81,6 +81,19 @@ export interface DriverProfile {
   };
 }
 
+export function isDriverApproved(
+  profile:
+    | { verificationStatus?: DriverVerificationStatus; isVerified?: boolean }
+    | null
+    | undefined
+): boolean {
+  return Boolean(
+    profile?.isVerified &&
+      (profile.verificationStatus === "APPROVED" ||
+        profile.verificationStatus === "VERIFIED")
+  );
+}
+
 export async function registerDriver(
     formData: FormData
 ): Promise<DriverRegistrationResponse> {

@@ -18,32 +18,14 @@ import LoadingScreen from "./components/LoadingScreen";
 import { Input } from "./components/ui/input";
 import { appApi } from "./lib/api";
 import { useAuthContext } from "./context/auth-context";
-import type { DriverProfile } from "./lib/driverApi";
+import { isDriverApproved, type DriverProfile } from "./lib/driverApi";
 import DriverCTA from "./components/DriverCTA";
 import { searchPlaces, reverseGeocode } from "./services/geoapify.service";
 import PinpointLocation from "./components/PinpointLocation";
 import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
-import type { Coordinates, LocationPoint } from "./types/location";
-
-type RideStatus =
-  | "SEARCHING"
-  | "DRIVER_ASSIGNED"
-  | "DRIVER_ARRIVING"
-  | "RIDE_STARTED"
-  | "ARRIVED_AT_DESTINATION"
-  | "COMPLETED"
-  | "CANCELLED";
-
-interface Ride {
-  id: string;
-  pickup: LocationPoint;
-  destination: LocationPoint;
-  fare: { estimated: number; final?: number | null };
-  distance: { estimated: number | null };
-  duration: { estimated: number | null };
-  status: RideStatus;
-}
+import type { Coordinates } from "./types/location";
+import type { RideDto as Ride } from "./types/ride";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -85,9 +67,6 @@ export default function Dashboard() {
         const res = await appApi.get("/driver/profile");
         const profile = res.data.data;
         setDriverProfile(profile);
-        if (profile?.isVerified) {
-          sessionStorage.setItem("isDriverVerified", "true");
-        }
       } catch {
         setDriverProfile(null);
       } finally {
@@ -282,8 +261,7 @@ export default function Dashboard() {
       routeDuration,
     };
 
-    sessionStorage.setItem("pendingRide", JSON.stringify(payload));
-    navigate("/choose");
+    navigate("/choose", { state: { pendingRide: payload } });
   };
 
   async function handleLogout() {
@@ -352,7 +330,7 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2.5">
-              {(driverProfile?.isVerified || user?.roles?.includes("DRIVER")) && (
+              {isDriverApproved(driverProfile) && (
                 <button
                   onClick={() => navigate("/driver-dashboard")}
                   className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-[#c58a3a]/40 bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] text-xs font-semibold shadow-md hover:opacity-95 active:scale-95 transition-all"

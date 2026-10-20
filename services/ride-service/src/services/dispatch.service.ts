@@ -2,6 +2,7 @@ import { GeoService } from './geo.service.js';
 import { createLogger } from '@urbanfleet/common';
 import { emitNewRideRequest } from '../websocket/emitters/driver.emitter.js';
 import { Ride } from '../db/client.js';
+import { toRideDto } from '../utils/ride-dto.js';
 
 const logger = createLogger('dispatch-service');
 
@@ -30,17 +31,18 @@ export class DispatchService {
     return nearby.filter((id) => !excludedSet.has(id));
   }
 
-  async dispatchRideOffer(rideId: string, driverIds: string[], ride?: Ride | Record<string, unknown>): Promise<{ rideId: string; candidates: string[] }> {
+  async dispatchRideOffer(rideId: string, driverIds: string[], ride: Ride | null): Promise<{ rideId: string; candidates: string[] }> {
     logger.info(`Dispatching ride ${rideId} offer to ${driverIds.length} candidate drivers.`);
-    if (ride) {
+    if (ride !== null) {
+      const rideDto = toRideDto(ride);
       for (const driverId of driverIds) {
-        emitNewRideRequest(driverId, { ride });
+        emitNewRideRequest(driverId, { ride: rideDto });
       }
     }
     return { rideId, candidates: driverIds };
   }
 
-  async broadcastRideRequest(ride: Ride | { id: string; pickupLat: unknown; pickupLng: unknown; [key: string]: unknown }): Promise<{ rideId: string; candidates: string[] }> {
+  async broadcastRideRequest(ride: Ride): Promise<{ rideId: string; candidates: string[] }> {
     const rejections = Array.from(this.rejectedOffers.get(ride.id) || []);
     const nearby = await this.findNearbyDrivers(
       Number(ride.pickupLat),
@@ -55,11 +57,11 @@ export class DispatchService {
     rideId: string,
     driverId: string,
     accepted: boolean,
-    ride?: Ride | { id: string; pickupLat: unknown; pickupLng: unknown; [key: string]: unknown }
+    ride: Ride | null
   ): Promise<{ rideId: string; driverId: string; accepted: boolean }> {
     if (!accepted) {
       await this.recordDriverRejection(rideId, driverId);
-      if (ride) {
+      if (ride !== null) {
         const rejections = Array.from(this.rejectedOffers.get(rideId) || []);
         const remainingCandidates = await this.findNearbyDrivers(
           Number(ride.pickupLat),

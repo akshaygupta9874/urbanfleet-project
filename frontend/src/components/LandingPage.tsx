@@ -368,8 +368,7 @@ export default function LandingPage() {
       selectedMode: modeId,
     };
 
-    sessionStorage.setItem("pendingRide", JSON.stringify(payload));
-    navigate("/choose");
+    navigate("/choose", { state: { pendingRide: payload } });
   };
 
   const baseFareValue = 25 + (calculatedDistanceMeters / 1000) * 5 + 4;

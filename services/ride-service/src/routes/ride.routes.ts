@@ -7,6 +7,8 @@ import {
   cancelRideSchema,
   rateRideSchema,
   rideIdParamSchema,
+  acceptRideSchema,
+  startRideSchema,
   paymentStatusSchema,
 } from '../validation/ride.validation.js';
 import { authMiddleware, requireRole } from '../middlewares/auth.middleware.js';
@@ -40,8 +42,8 @@ export function createRideRouter(controller: RideController): Router {
   router.get('/:id', validateRequest({ params: rideIdParamSchema }), controller.getRideById);
 
   // Driver Lifecycle Actions (supporting both PATCH and POST for frontend / test compatibility)
-  router.patch('/:id/accept', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverAcceptRide);
-  router.post('/:id/accept', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverAcceptRide);
+  router.patch('/:id/accept', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: acceptRideSchema }), controller.driverAcceptRide);
+  router.post('/:id/accept', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: acceptRideSchema }), controller.driverAcceptRide);
 
   router.patch('/:id/arrive', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
   router.patch('/:id/arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
@@ -50,8 +52,8 @@ export function createRideRouter(controller: RideController): Router {
   router.patch('/:id/destination-arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
   router.post('/:id/destination-arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
 
-  router.patch('/:id/start', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.startRide);
-  router.post('/:id/start', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.startRide);
+  router.patch('/:id/start', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
+  router.post('/:id/start', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
 
   router.patch('/:id/complete', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
   router.post('/:id/complete', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
@@ -71,5 +73,4 @@ export function createRideRouter(controller: RideController): Router {
 }
 
 export default createRideRouter;
-
 

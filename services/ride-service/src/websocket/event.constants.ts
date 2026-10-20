@@ -23,8 +23,10 @@ export const RiderEvents = {
 } as const;
 
 export const ServerEvents = {
+  RIDE_CREATED: 'server:ride-created',
   NEW_RIDE: 'server:new-ride',
   RIDE_ACCEPTED: 'server:ride-accepted',
+  RIDE_REJECTED: 'server:ride-rejected',
   RIDE_NO_DRIVERS_AVAILABLE: 'server:ride-no-drivers-available',
   DRIVER_LOCATION: 'server:driver-location',
   DRIVER_ARRIVED: 'server:driver-arrived',
@@ -36,6 +38,8 @@ export const ServerEvents = {
   ERROR: 'server:error',
   DRIVER_STATUS: 'server:driver-status',
   HEARTBEAT_ACK: 'server:heartbeat-ack',
+  RIDER_LOCATION: 'server:rider-location',
+  RIDER_LOCATION_ACK: 'server:rider-location-ack',
 } as const;
 
 export type DriverEvent = (typeof DriverEvents)[keyof typeof DriverEvents];

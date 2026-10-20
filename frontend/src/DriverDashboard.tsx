@@ -34,55 +34,18 @@ import MapView from "./components/MapView";
 import { Button } from "./components/ui/button";
 import { appApi } from "./lib/api";
 import { connectDriverSocket, sendDriverLocation } from "./lib/socket";
-import { fetchDriverProfile } from "./lib/driverApi";
+import { fetchDriverProfile, isDriverApproved } from "./lib/driverApi";
 import { useAuthContext } from "./context/auth-context";
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
 import { type PaymentStatus } from "./lib/payment";
-import type { Coordinates, LocationPoint } from "./types/location";
+import type { Coordinates } from "./types/location";
+import type { RiderLocationPayload, RideDto, RideStatus } from "./types/ride";
 
 // --- Types mirrored from backend models (Driver / Ride) ---
 type VehicleType = "CAR" | "BIKE" | "AUTO";
 
-type RideStatus =
-  | "SEARCHING"
-  | "DRIVER_ASSIGNED"
-  | "DRIVER_ARRIVING"
-  | "RIDE_STARTED"
-  | "ARRIVED_AT_DESTINATION"
-  | "COMPLETED"
-  | "CANCELLED";
-
-interface FareBreakdown {
-  baseFarePaise: number;
-  distanceFarePaise: number;
-  timeFarePaise: number;
-  surgePaise: number;
-  platformCommissionPaise: number;
-  driverEarningPaise: number;
-  totalPaise: number;
-}
-
-export interface Ride {
-  id: string;
-  driver: string;
-  pickup: LocationPoint;
-  destination: LocationPoint;
-  fare: {
-    estimated: number;
-    final: number | null;
-    breakdown: FareBreakdown | null;
-  };
-  distance: { estimated: number; actual: number | null };
-  duration: { estimated: number; actual: number | null };
-  status: RideStatus;
-  paymentStatus: PaymentStatus;
-  cancelledBy: "RIDER" | "DRIVER" | "SYSTEM" | null;
-  cancellationReason: string | null;
-  startedAt?: string;
-  completedAt?: string;
-  cancelledAt?: string;
-}
+export type Ride = RideDto;
 
 interface DriverProfileData {
   id: string;
@@ -139,9 +102,12 @@ const DriverEvents = {
 const ServerEvents = {
   NEW_RIDE: "server:new-ride",
   RIDE_ACCEPTED: "server:ride-accepted",
+  RIDE_REJECTED: "server:ride-rejected",
+  DRIVER_STATUS: "server:driver-status",
+  DRIVER_ARRIVED: "server:driver-arrived",
+  RIDER_LOCATION: "server:rider-location",
   RIDE_NO_DRIVERS_AVAILABLE: "server:ride-no-drivers-available",
   DRIVER_LOCATION: "server:driver-location",
-  DRIVER_ARRIVING: "server:driver-arriving",
   ARRIVED_AT_DESTINATION: "server:ride-arrived-at-destination",
   PAYMENT_CAPTURED: "server:payment-captured",
   RIDE_STARTED: "server:ride-started",
@@ -373,6 +339,7 @@ export default function DriverDashboard() {
   const [profile, setProfile] = useState<DriverProfileData | null>(null);
   const [currentRide, setCurrentRide] = useState<Ride | null>(null);
   const [driverLocation, setDriverLocation] = useState<Coordinates | null>(null);
+  const [riderLocation, setRiderLocation] = useState<Coordinates | null>(null);
   const [driverStatus, setDriverStatus] = useState<DriverStatus>("ONLINE");
   const [routePolyline, setRoutePolyline] = useState<{
     rideId: string;
@@ -384,6 +351,9 @@ export default function DriverDashboard() {
   const [currentTime] = useState(() => Date.now());
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   const [copiedId, setCopiedId] = useState(false);
+  const [tripOtp, setTripOtp] = useState("");
+  const [isStartingRide, setIsStartingRide] = useState(false);
+  const [isAcceptingRide, setIsAcceptingRide] = useState(false);
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -561,17 +531,45 @@ export default function DriverDashboard() {
           case ServerEvents.NEW_RIDE:
             if (data?.ride) {
               setError("");
+              setTripOtp("");
+              setRiderLocation(null);
               setCurrentRide(data.ride);
             }
             break;
           case ServerEvents.RIDE_ACCEPTED:
+            if (data?.ride) {
+              setCurrentRide(data.ride);
+              setIsAcceptingRide(false);
+            }
+            break;
+          case ServerEvents.RIDE_REJECTED:
+            if (data?.rideId === currentRideRef.current?.id) {
+              setCurrentRide(null);
+              setTripOtp("");
+              setRiderLocation(null);
+            }
+            break;
+          case ServerEvents.DRIVER_STATUS:
+            if (["OFFLINE", "ONLINE", "AVAILABLE", "BUSY"].includes(data?.status)) {
+              setDriverStatus(data.status);
+            }
+            break;
+          case ServerEvents.RIDER_LOCATION: {
+            const payload = data as RiderLocationPayload;
+            if (
+              payload?.rideId === currentRideRef.current?.id &&
+              typeof payload.location?.latitude === "number" &&
+              typeof payload.location?.longitude === "number"
+            ) {
+              setRiderLocation(payload.location);
+            }
+            break;
+          }
+          case ServerEvents.DRIVER_ARRIVED:
             if (data?.ride) setCurrentRide(data.ride);
             break;
-          case ServerEvents.DRIVER_ARRIVING:
-            setCurrentRide((prev) => (prev ? { ...prev, status: "DRIVER_ARRIVING" } : prev));
-            break;
           case ServerEvents.ARRIVED_AT_DESTINATION:
-            setCurrentRide((prev) => (prev ? { ...prev, status: "ARRIVED_AT_DESTINATION" } : prev));
+            if (data?.ride) setCurrentRide(data.ride);
             break;
           case ServerEvents.PAYMENT_CAPTURED:
             setCurrentRide((prev) =>
@@ -584,7 +582,11 @@ export default function DriverDashboard() {
             );
             break;
           case ServerEvents.RIDE_STARTED:
-            setCurrentRide((prev) => (prev ? { ...prev, status: "RIDE_STARTED" } : prev));
+            if (data?.ride) {
+              setCurrentRide(data.ride);
+              setTripOtp("");
+              setIsStartingRide(false);
+            }
             break;
           case ServerEvents.RIDE_COMPLETED: {
             setCurrentRide((prev) => {
@@ -601,17 +603,21 @@ export default function DriverDashboard() {
               }
               return updated;
             });
+            setRiderLocation(null);
             break;
           }
           case ServerEvents.RIDE_CANCELLED:
+            if (data?.rideId !== currentRideRef.current?.id) break;
             setCurrentRide((prev) =>
               prev
                 ? { ...prev, status: "CANCELLED", cancelledBy: data?.cancelledBy, cancellationReason: data?.reason }
                 : prev,
             );
+            setRiderLocation(null);
             break;
           case ServerEvents.ERROR:
             setError(data?.message || "Server error occurred.");
+            setIsAcceptingRide(false);
             break;
           default:
             break;
@@ -741,8 +747,28 @@ export default function DriverDashboard() {
       return;
     }
     setError("");
-    socketRef.current.send(JSON.stringify({ event: DriverEvents.ACCEPT_RIDE, data: { rideId } }));
-    setCurrentRide((prev) => (prev ? { ...prev, status: "DRIVER_ASSIGNED" } : prev));
+    setIsAcceptingRide(true);
+    socketRef.current.send(JSON.stringify({
+      event: DriverEvents.ACCEPT_RIDE,
+      data: { rideId },
+    }));
+  };
+
+  const handleStartRide = (rideId: string) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      setError("Socket connection not ready.");
+      return;
+    }
+    if (!/^\d{4}$/.test(tripOtp)) {
+      setError("Enter the 4-digit passenger OTP before starting the trip.");
+      return;
+    }
+    setError("");
+    setIsStartingRide(true);
+    socketRef.current.send(JSON.stringify({
+      event: DriverEvents.START_RIDE,
+      data: { rideId, otp: tripOtp },
+    }));
   };
 
   const handleRejectRide = (rideId: string) => {
@@ -751,7 +777,6 @@ export default function DriverDashboard() {
       return;
     }
     socketRef.current.send(JSON.stringify({ event: DriverEvents.REJECT_RIDE, data: { rideId } }));
-    setCurrentRide(null);
   };
 
   const handleCancelRide = (rideId: string) => {
@@ -766,7 +791,6 @@ export default function DriverDashboard() {
         data: { rideId, reason: "Cancelled by driver" },
       }),
     );
-    setCurrentRide((prev) => (prev ? { ...prev, status: "CANCELLED", cancelledBy: "DRIVER" } : prev));
   };
 
   const sendRideAction = (event: string, rideId: string, extraData = {}) => {
@@ -775,13 +799,6 @@ export default function DriverDashboard() {
       return;
     }
     socketRef.current.send(JSON.stringify({ event, data: { rideId, ...extraData } }));
-    if (event === DriverEvents.ARRIVED_AT_PICKUP) {
-      setCurrentRide((prev) => (prev ? { ...prev, status: "DRIVER_ARRIVING" } : prev));
-    } else if (event === DriverEvents.ARRIVED_AT_DESTINATION) {
-      setCurrentRide((prev) => (prev ? { ...prev, status: "ARRIVED_AT_DESTINATION" } : prev));
-    } else if (event === DriverEvents.START_RIDE) {
-      setCurrentRide((prev) => (prev ? { ...prev, status: "RIDE_STARTED" } : prev));
-    }
   };
 
   const acceptanceRate = useMemo(() => {
@@ -795,10 +812,7 @@ export default function DriverDashboard() {
     return <LoadingScreen label="Loading driver dashboard" />;
   }
 
-  const isApprovedDriver =
-    Boolean(profile?.isVerified) ||
-    profile?.verificationStatus === "APPROVED" ||
-    profile?.verificationStatus === "VERIFIED";
+  const isApprovedDriver = isDriverApproved(profile);
 
   if (!profile || !isApprovedDriver) {
     return (
@@ -863,6 +877,9 @@ export default function DriverDashboard() {
             title: "Destination",
           },
         ]
+      : []),
+    ...(riderLocation
+      ? [{ position: { lat: riderLocation.latitude, lng: riderLocation.longitude }, label: "R", title: "Rider location" }]
       : []),
   ];
 
@@ -990,18 +1007,22 @@ export default function DriverDashboard() {
                   </h1>
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-bold border shadow-xs ${
-                      profile?.verificationStatus === "APPROVED" || profile?.isVerified
+                      isApprovedDriver
                         ? "bg-emerald-950/20 text-emerald-900 border-emerald-500/30"
-                        : profile?.verificationStatus === "REJECTED"
+                        : profile?.verificationStatus === "REJECTED" || profile?.verificationStatus === "SUSPENDED"
                         ? "bg-rose-950/20 text-rose-900 border-rose-500/30"
                         : "bg-amber-950/20 text-amber-900 border-amber-500/30"
                     }`}
                   >
                     <Shield className="h-3.5 w-3.5" />
-                    {profile?.verificationStatus === "APPROVED" || profile?.isVerified
+                    {isApprovedDriver
                       ? "Verified Partner"
                       : profile?.verificationStatus === "REJECTED"
                       ? "Verification Rejected"
+                      : profile?.verificationStatus === "SUSPENDED"
+                      ? "Verification Suspended"
+                      : profile?.verificationStatus === "UNDER_REVIEW"
+                      ? "Application Under Review"
                       : "Pending Verification"}
                   </span>
                 </div>
@@ -1219,14 +1240,19 @@ export default function DriverDashboard() {
               {/* Action Buttons */}
               <div className="w-full flex flex-col sm:flex-row gap-3">
                 {currentRide.status === "SEARCHING" && (
-                  <>
-                    <Button onClick={() => handleAcceptRide(currentRide.id)} className="w-full bg-gradient-to-br from-emerald-900 to-emerald-950 text-emerald-100 hover:opacity-90 border border-emerald-500/30 h-11 active:scale-[0.98] transition-all font-semibold">
-                      <CheckCircle2 className="mr-2 h-4 w-4" /> Accept Ride Request
+                  <div className="w-full flex flex-col gap-3 sm:flex-row">
+                    <Button
+                      onClick={() => handleAcceptRide(currentRide.id)}
+                      disabled={isAcceptingRide}
+                      className="w-full bg-gradient-to-br from-emerald-900 to-emerald-950 text-emerald-100 hover:opacity-90 border border-emerald-500/30 h-11 active:scale-[0.98] transition-all font-semibold"
+                    >
+                      {isAcceptingRide ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                      {isAcceptingRide ? "Accepting..." : "Accept Ride"}
                     </Button>
                     <Button onClick={() => handleRejectRide(currentRide.id)} variant="outline" className="w-full border-rose-500/30 bg-rose-950/20 text-rose-900 hover:bg-rose-950/30 h-11 active:scale-[0.98] transition-all font-semibold">
                       <X className="mr-2 h-4 w-4" /> Decline
                     </Button>
-                  </>
+                  </div>
                 )}
                 {currentRide.status === "DRIVER_ASSIGNED" && (
                   <Button onClick={() => sendRideAction(DriverEvents.ARRIVED_AT_PICKUP, currentRide.id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
@@ -1234,9 +1260,29 @@ export default function DriverDashboard() {
                   </Button>
                 )}
                 {currentRide.status === "DRIVER_ARRIVING" && (
-                  <Button onClick={() => sendRideAction(DriverEvents.START_RIDE, currentRide.id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
-                    <ChevronRight className="mr-2 h-4 w-4" /> Start Trip
-                  </Button>
+                  <div className="w-full space-y-3">
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-semibold text-[#3a1f0a]">Enter Passenger's 4-Digit OTP to Start Trip</span>
+                      <input
+                        aria-label="Trip start OTP"
+                        autoComplete="one-time-code"
+                        className="h-11 w-full rounded-xl border border-[#7a4416]/30 bg-[#fffaf0] px-4 text-center font-mono text-lg font-bold tracking-[0.4em] text-[#2e1808] outline-none focus:border-[#b8722c] focus:ring-2 focus:ring-[#b8722c]/20"
+                        inputMode="numeric"
+                        maxLength={4}
+                        onChange={(event) => setTripOtp(event.target.value.replace(/\D/gu, "").slice(0, 4))}
+                        placeholder="4-digit OTP"
+                        value={tripOtp}
+                      />
+                    </label>
+                    <Button
+                      onClick={() => handleStartRide(currentRide.id)}
+                      disabled={tripOtp.length !== 4 || isStartingRide}
+                      className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold"
+                    >
+                      {isStartingRide ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ChevronRight className="mr-2 h-4 w-4" />}
+                      {isStartingRide ? "Verifying PIN..." : "Verify & Start Trip"}
+                    </Button>
+                  </div>
                 )}
                 {currentRide.status === "RIDE_STARTED" && (
                   <Button onClick={() => sendRideAction(DriverEvents.ARRIVED_AT_DESTINATION, currentRide.id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">

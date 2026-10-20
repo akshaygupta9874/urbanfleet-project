@@ -1,5 +1,37 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { RideDto } from '@urbanfleet/common';
 import { RideClient } from '../src/clients/ride.client.js';
+
+function makeRideDto(paymentStatus = 'PENDING'): RideDto {
+  const breakdown = {
+    baseFarePaise: 100,
+    distanceFarePaise: 200,
+    timeFarePaise: 0,
+    surgePaise: 0,
+    platformCommissionPaise: 30,
+    driverEarningPaise: 270,
+    totalPaise: 300,
+  };
+  return {
+    id: 'ride-uuid-123',
+    riderId: 'rider-uuid-456',
+    driverId: null,
+    pickupAddress: 'Pickup',
+    pickupLat: 12.9716,
+    pickupLng: 77.5946,
+    destinationAddress: 'Destination',
+    destinationLat: 13.0827,
+    destinationLng: 80.2707,
+    pickup: { address: 'Pickup', coordinates: { latitude: 12.9716, longitude: 77.5946 } },
+    destination: { address: 'Destination', coordinates: { latitude: 13.0827, longitude: 80.2707 } },
+    fare: { estimated: 300, final: null, breakdown },
+    distance: { estimated: 3, actual: 3 },
+    duration: { estimated: 10, actual: null },
+    status: 'ARRIVED_AT_DESTINATION',
+    paymentStatus,
+    driver: null,
+  };
+}
 
 describe('RideClient Inter-Service HTTP Communication', () => {
   const originalFetch = globalThis.fetch;
@@ -15,12 +47,7 @@ describe('RideClient Inter-Service HTTP Communication', () => {
   });
 
   it('fetches ride by ID over HTTP GET API', async () => {
-    const mockRide = {
-      id: 'ride-uuid-123',
-      riderId: 'rider-uuid-456',
-      status: 'ARRIVED_AT_DESTINATION',
-      totalFarePaise: 25000,
-    };
+    const mockRide = makeRideDto();
 
     const getSpy = vi.spyOn((client as unknown as { client: { get: Function } }).client, 'get').mockResolvedValue({
       status: 200,
@@ -45,11 +72,11 @@ describe('RideClient Inter-Service HTTP Communication', () => {
   it('updates ride payment status over HTTP PATCH API', async () => {
     const patchSpy = vi.spyOn((client as unknown as { client: { patch: Function } }).client, 'patch').mockResolvedValue({
       status: 200,
-      data: { success: true, data: { id: 'ride-123', paymentStatus: 'PAID' } },
+      data: { success: true, data: { ...makeRideDto('PAID'), id: 'ride-123' } },
     });
 
     const result = await client.updatePaymentStatus('ride-123', 'PAID', 'PENDING');
-    expect(result).toEqual({ id: 'ride-123', paymentStatus: 'PAID' });
+    expect(result).toEqual({ ...makeRideDto('PAID'), id: 'ride-123' });
     expect(patchSpy).toHaveBeenCalledWith(
       '/api/rides/ride-123/payment-status',
       { paymentStatus: 'PAID', currentStatus: 'PENDING' }

@@ -63,10 +63,14 @@ export class AuthService {
 
     const firstName = input.firstName || 'User';
     const lastName = input.lastName || '';
-    const role =
-      (input.role as Role) ||
-      (input.roles && input.roles.length > 0 ? (input.roles[0] as Role) : undefined) ||
-      ('RIDER' as Role);
+    const requestedRoles: Role[] = input.roles && input.roles.length > 0
+      ? (input.roles as Role[])
+      : (input.role ? [input.role as Role] : [Role.RIDER]);
+
+    // Drivers are also riders
+    const roles: Role[] = requestedRoles.includes(Role.DRIVER)
+      ? Array.from(new Set([...requestedRoles, Role.RIDER]))
+      : requestedRoles;
 
     const passwordHash = await this.hashPassword(input.password);
     const user = await this.userRepo.create({
@@ -75,15 +79,14 @@ export class AuthService {
       firstName,
       lastName,
       phone: input.phone,
-      role,
+      roles,
     });
 
-    const userRoles = (user.role === 'DRIVER' ? ['DRIVER', 'RIDER'] : [user.role]) as Role[];
+    const userRoles = user.roles;
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
       roles: userRoles,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -148,7 +151,8 @@ export class AuthService {
               firstName: user.firstName,
               lastName: user.lastName,
               phone: user.phone || undefined,
-              role: user.role,
+              roles: user.roles,
+              role: user.roles[0],
               verifyToken,
             },
           },
@@ -191,7 +195,8 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phone: user.phone || undefined,
-        role: user.role,
+        roles: user.roles,
+        role: user.roles[0],
       },
       registrationEventId
     );
@@ -202,7 +207,6 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        role: userRoles,
         roles: userRoles,
         isEmailVerified: user.isEmailVerified
       },
@@ -222,8 +226,10 @@ export class AuthService {
       throw new UnauthorizedError('Invalid email or password');
     }
 
+    const userRoles = user.roles ?? ((user as any).role ? [(user as any).role as Role] : [Role.RIDER]);
+
     // Admin 2FA Policy: Admins must complete 2FA setup before full system access
-    if (user.role === 'ADMIN' && !user.twoFactorEnabled) {
+    if (userRoles.includes('ADMIN') && !user.twoFactorEnabled) {
       return {
         requires2FASetup: true,
         userId: user.id,
@@ -240,12 +246,10 @@ export class AuthService {
     const firstName = user.firstName || 'User';
     const lastName = user.lastName || '';
 
-    const userRoles = (user.role === 'DRIVER' ? ['DRIVER', 'RIDER'] : [user.role]) as Role[];
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
       roles: userRoles,
       firstName,
       lastName,
@@ -279,7 +283,6 @@ export class AuthService {
         email: user.email,
         firstName,
         lastName,
-        role: userRoles,
         roles: userRoles,
         isEmailVerified: user.isEmailVerified,
       },
@@ -288,7 +291,7 @@ export class AuthService {
     };
   }
 
-  async complete2FALogin(user: { id: string; email: string; role: Role; firstName?: string; lastName?: string }, ipAddress?: string, userAgent?: string) {
+  async complete2FALogin(user: { id: string; email: string; roles: Role[]; firstName?: string; lastName?: string }, ipAddress?: string, userAgent?: string) {
     const firstName = user.firstName || 'User';
     const lastName = user.lastName || '';
 
@@ -296,8 +299,7 @@ export class AuthService {
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
-      roles: [user.role],
+      roles: user.roles,
       firstName,
       lastName,
       sessionId,
@@ -328,8 +330,7 @@ export class AuthService {
         email: user.email,
         firstName,
         lastName,
-        role: [user.role],
-        roles: [user.role]
+        roles: user.roles
       },
       accessToken,
       refreshToken
@@ -358,13 +359,11 @@ export class AuthService {
 
     const firstName = user.firstName || 'User';
     const lastName = user.lastName || '';
-
-    const userRoles = (user.role === 'DRIVER' ? ['DRIVER', 'RIDER'] : [user.role]) as Role[];
+    const userRoles = user.roles ?? ((user as any).role ? [(user as any).role as Role] : [Role.RIDER]);
     const newSessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
       roles: userRoles,
       firstName,
       lastName,
@@ -403,7 +402,6 @@ export class AuthService {
         email: user.email,
         firstName,
         lastName,
-        role: userRoles,
         roles: userRoles,
         isEmailVerified: user.isEmailVerified,
       }
@@ -660,7 +658,7 @@ export class AuthService {
         firstName: firstName.slice(0, 50),
         lastName: lastName.slice(0, 50),
         passwordHash,
-        role: 'RIDER' as Role,
+        roles: [Role.RIDER],
         avatarUrl: payload.picture ? String(payload.picture).slice(0, 500) : undefined,
         isEmailVerified: true,
       });
@@ -690,7 +688,8 @@ export class AuthService {
                 firstName: user.firstName,
                 lastName: user.lastName,
                 phone: user.phone || undefined,
-                role: user.role,
+                roles: user.roles,
+                role: user.roles[0],
               },
             },
           });
@@ -707,7 +706,8 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           phone: user.phone || undefined,
-          role: user.role,
+          roles: user.roles,
+          role: user.roles[0],
         },
         registrationEventId
       );
@@ -722,12 +722,11 @@ export class AuthService {
     const lastName = user.lastName || '';
 
     // 4. Session & Token generation
-    const userRoles = (user.role === 'DRIVER' ? ['DRIVER', 'RIDER'] : [user.role]) as Role[];
+    const userRoles = user.roles ?? ((user as any).role ? [(user as any).role as Role] : [Role.RIDER]);
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
       roles: userRoles,
       firstName,
       lastName,
@@ -760,7 +759,6 @@ export class AuthService {
       email: user.email,
       firstName,
       lastName,
-      role: userRoles,
       roles: userRoles,
       isEmailVerified: user.isEmailVerified,
       avatarUrl: user.avatarUrl,

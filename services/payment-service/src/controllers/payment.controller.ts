@@ -20,7 +20,12 @@ export class PaymentController {
     const userId = req.userId;
     if (!userId) throw new AppError('Unauthorized: User ID required', 401, 'UNAUTHORIZED');
     const { rideId, amountPaise, driverId } = req.body;
-    const order = await this.paymentService.createOrder(rideId, userId, amountPaise, driverId);
+    const order = await this.paymentService.createOrder({
+      rideId,
+      riderId: userId,
+      amountPaise,
+      driverId,
+    });
     res.status(201).json({ success: true, data: order });
   });
 

@@ -4,6 +4,8 @@ import {
   UpdateDriverLocationSchema,
   DriverHeartbeatSchema,
   DriverAvailabilitySchema,
+  AcceptRideSchema,
+  StartRideSchema,
   RideActionSchema,
   RideCancelSchema,
 } from '../validators/driver.validator.js';
@@ -14,6 +16,7 @@ import type { DriverPresenceService } from '../../services/driver-presence.servi
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { Ride } from '../../db/client.js';
+import { toRideDto } from '../../utils/ride-dto.js';
 
 export interface DriverHandlerDeps {
   geoService: GeoService;
@@ -248,7 +251,7 @@ async function handleAcceptRide(
   data: unknown,
   deps = globalDeps
 ) {
-  const result = RideActionSchema.safeParse(data);
+  const result = AcceptRideSchema.safeParse(data);
   if (!result.success) {
     sendSocketError(socket, 'Invalid ride payload.');
     return;
@@ -263,8 +266,9 @@ async function handleAcceptRide(
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.acceptRide(result.data.rideId, driverId);
-      emitRideAccepted(ride.riderId, { ride });
-      socket.send(JSON.stringify({ event: ServerEvents.RIDE_ACCEPTED, data: { ride } }));
+      const rideDto = toRideDto(ride);
+      emitRideAccepted(ride.riderId, { ride: rideDto });
+      socket.send(JSON.stringify({ event: ServerEvents.RIDE_ACCEPTED, data: { ride: rideDto } }));
       if (deps.presenceService) {
         await deps.presenceService.setDriverBusy(driverId);
       }
@@ -294,11 +298,14 @@ async function handleRejectRide(
         ride = await deps.rideService.getRideById(result.data.rideId);
       } catch {}
     }
-    await deps.dispatchService.handleDriverResponse(result.data.rideId, driverId, false, ride || undefined);
+    await deps.dispatchService.handleDriverResponse(result.data.rideId, driverId, false, ride);
   }
 
   // Acknowledge rejection
-  socket.send(JSON.stringify({ event: 'server:ride-rejected', data: { rideId: result.data.rideId } }));
+  socket.send(JSON.stringify({
+    event: ServerEvents.RIDE_REJECTED,
+    data: { rideId: result.data.rideId },
+  }));
 }
 
 async function handleArrived(
@@ -324,8 +331,9 @@ async function handleArrived(
         rideId: result.data.rideId,
         driverId,
       });
-      emitDriverArrived(ride.riderId, { rideId: ride.id });
-      socket.send(JSON.stringify({ event: ServerEvents.DRIVER_ARRIVED, data: { ride } }));
+      const rideDto = toRideDto(ride);
+      emitDriverArrived(ride.riderId, { ride: rideDto });
+      socket.send(JSON.stringify({ event: ServerEvents.DRIVER_ARRIVED, data: { ride: rideDto } }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to record arrival.';
       sendSocketError(socket, message);
@@ -356,8 +364,9 @@ async function handleArrivedAtDestination(
         rideId: result.data.rideId,
         driverId,
       });
-      emitArrivedAtDestination(ride.riderId, { rideId: ride.id });
-      socket.send(JSON.stringify({ event: ServerEvents.ARRIVED_AT_DESTINATION, data: { ride } }));
+      const rideDto = toRideDto(ride);
+      emitArrivedAtDestination(ride.riderId, { ride: rideDto });
+      socket.send(JSON.stringify({ event: ServerEvents.ARRIVED_AT_DESTINATION, data: { ride: rideDto } }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to record destination arrival.';
       sendSocketError(socket, message);
@@ -370,9 +379,9 @@ async function handleStartRide(
   data: unknown,
   deps = globalDeps
 ) {
-  const result = RideActionSchema.safeParse(data);
+  const result = StartRideSchema.safeParse(data);
   if (!result.success) {
-    sendSocketError(socket, 'Invalid ride payload.');
+    sendSocketError(socket, 'Invalid ride payload. 4-digit OTP is required to start the ride.');
     return;
   }
 
@@ -384,13 +393,10 @@ async function handleStartRide(
 
   if (deps?.rideService) {
     try {
-      const ride = await deps.rideService.startRide(
-        result.data.rideId,
-        driverId,
-        result.data.otp || ''
-      );
-      emitRideStarted(ride.riderId, { rideId: ride.id });
-      socket.send(JSON.stringify({ event: ServerEvents.RIDE_STARTED, data: { ride } }));
+      const ride = await deps.rideService.startRide(result.data.rideId, driverId, result.data.otp);
+      const rideDto = toRideDto(ride);
+      emitRideStarted(ride.riderId, { ride: rideDto });
+      socket.send(JSON.stringify({ event: ServerEvents.RIDE_STARTED, data: { ride: rideDto } }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to start ride.';
       sendSocketError(socket, message);
@@ -418,8 +424,9 @@ async function handleCompleteRide(
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.completeRide(result.data.rideId, driverId);
-      emitRideCompleted(ride.riderId, { rideId: ride.id, ride });
-      socket.send(JSON.stringify({ event: ServerEvents.RIDE_COMPLETED, data: { ride } }));
+      const rideDto = toRideDto(ride);
+      emitRideCompleted(ride.riderId, { ride: rideDto });
+      socket.send(JSON.stringify({ event: ServerEvents.RIDE_COMPLETED, data: { ride: rideDto } }));
       if (deps.presenceService) {
         await deps.presenceService.setDriverAvailable(driverId, true);
       }

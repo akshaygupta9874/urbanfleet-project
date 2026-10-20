@@ -1,6 +1,6 @@
 import MapView from './components/MapView';
 import { useState, useEffect } from 'react';
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { appApi } from './apiInterceptor';
 import { Button } from './components/ui/button';
 import { Bike, Car, Clock, IndianRupee, Check, Loader2, Sparkles, ArrowLeft } from 'lucide-react';
@@ -17,6 +17,7 @@ interface PendingRide {
     destinationCoords: Coordinates;
     routeDistance: number | null;
     routeDuration: number | null;
+    selectedMode?: "bike" | "auto" | "car";
 }
 
 function parsePendingRide(value: unknown): PendingRide | null {
@@ -45,6 +46,9 @@ function parsePendingRide(value: unknown): PendingRide | null {
         destinationCoords: { latitude: destination.latitude, longitude: destination.longitude },
         routeDistance: typeof data.routeDistance === "number" ? data.routeDistance : null,
         routeDuration: typeof data.routeDuration === "number" ? data.routeDuration : null,
+        selectedMode: data.selectedMode === "bike" || data.selectedMode === "auto" || data.selectedMode === "car"
+            ? data.selectedMode
+            : undefined,
     };
 }
 
@@ -95,22 +99,19 @@ function formatPaiseToRupee(amount: number | null | undefined): string {
 
 export default function ChooseMode() {
     const navigate = useNavigate();
+    const location = useLocation();
     const { user } = useAuthContext();
 
     const [routePolyline, setRoutePolyline] = useState<[number, number][]>([]);
-    const [rideData] = useState<PendingRide | null>(() => {
-        const savedData = sessionStorage.getItem("pendingRide");
-        if (!savedData) return null;
-        try {
-            return parsePendingRide(JSON.parse(savedData));
-        } catch {
-            return null;
-        }
-    });
+    const [rideData] = useState<PendingRide | null>(() =>
+        parsePendingRide((location.state as { pendingRide?: unknown } | null)?.pendingRide)
+    );
     const [error, setError] = useState(rideData ? "" : "No route details found. Please start over.");
     const [isLoading, setIsLoading] = useState(Boolean(rideData));
     const [isCreatingRide, setIsCreatingRide] = useState(false);
-    const [selectedMode, setSelectedMode] = useState<"bike" | "auto" | "car">("car");
+    const [selectedMode, setSelectedMode] = useState<"bike" | "auto" | "car">(
+        rideData?.selectedMode ?? "car"
+    );
 
     useEffect(() => {
         if (!rideData) return;
@@ -177,7 +178,6 @@ export default function ChooseMode() {
                 duration: { estimated: rideData.routeDuration ? Math.round(rideData.routeDuration/60) : 14 },
             });
 
-            sessionStorage.removeItem("pendingRide");
             const targetRideId = response.data.data?.id;
             navigate(`/ride/${targetRideId}`, { replace: true });
         } catch (err: unknown) {

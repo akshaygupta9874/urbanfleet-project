@@ -9,6 +9,7 @@ import {
 } from '../services/cloudinary.service.js';
 import { driverRegistrationSchema } from '../validation/driver.validation.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
+import { authClient, AuthClient } from '../clients/auth.client.js';
 
 // Domain Policy Constant preserved from original backend
 export const DOCUMENT_EXPIRY_DAYS = 365;
@@ -73,6 +74,8 @@ export interface RawDriverProfile {
   profilePhoto?: unknown;
   vehicleImages?: Record<string, string>;
   documents?: unknown[];
+  verificationStatus?: string;
+  isVerified?: boolean;
   [key: string]: unknown;
 }
 
@@ -124,8 +127,10 @@ export function formatDriverProfileForFrontend(profile: RawDriverProfile | null 
       registrationYear: vehicle.registrationYear || 2022,
     },
     documents: profile.documents || {},
-    verificationStatus: profile.verificationStatus || 'APPROVED',
-    isVerified: Boolean(profile.isVerified ?? true),
+    verificationStatus: profile.verificationStatus || 'PENDING',
+    isVerified:
+      Boolean(profile.isVerified) &&
+      (profile.verificationStatus === 'APPROVED' || profile.verificationStatus === 'VERIFIED'),
     rating: {
       average: ratingAvg,
       totalRatings: Number(ratingObj?.totalRatings ?? 10),
@@ -144,6 +149,7 @@ export class DriverController {
   private driverService: DriverService;
   private documentService: DocumentService;
   private cloudinaryService: CloudinaryService;
+  private authServiceClient: AuthClient;
 
   private getAuthenticatedUserId(req: AuthenticatedRequest): string {
     const userId = req.userId;
@@ -156,11 +162,23 @@ export class DriverController {
   constructor(
     driverService: DriverService,
     documentService: DocumentService,
-    cloudinaryService: CloudinaryService = defaultCloudinaryService
+    cloudinaryService: CloudinaryService = defaultCloudinaryService,
+    authServiceClient: AuthClient = authClient
   ) {
     this.driverService = driverService;
     this.documentService = documentService;
     this.cloudinaryService = cloudinaryService;
+    this.authServiceClient = authServiceClient;
+  }
+
+  private async grantDriverRoleIfApproved(driverProfileId: string): Promise<void> {
+    const profile = await this.driverService.getDriverById(driverProfileId);
+    if (
+      profile.isVerified &&
+      (profile.verificationStatus === 'APPROVED' || profile.verificationStatus === 'VERIFIED')
+    ) {
+      await this.authServiceClient.grantDriverRole(profile.userId);
+    }
   }
 
   registerDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -177,7 +195,11 @@ export class DriverController {
             vehicle: req.body.vehicle,
             documents: req.body.documents || [],
           });
-          const formatted = formatDriverProfileForFrontend(profile);
+          if (this.documentService?.syncDriverVerificationStatus && profile?.id) {
+            await this.documentService.syncDriverVerificationStatus(profile.id);
+          }
+          const freshProfile = (await this.driverService.getDriverById?.(profile.id)) || profile;
+          const formatted = formatDriverProfileForFrontend(freshProfile);
           return res.status(201).json({ success: true, data: formatted, driver: formatted });
         }
 
@@ -359,16 +381,26 @@ export class DriverController {
         ],
       });
 
+      if (this.documentService?.syncDriverVerificationStatus && profile?.id) {
+        await this.documentService.syncDriverVerificationStatus(profile.id);
+      }
+
+      const freshProfile = (await this.driverService.getDriverById?.(profile.id)) || profile;
+
       return res.status(201).json({
         success: true,
         message: 'Driver profile created successfully. Awaiting verification.',
         data: {
-          id: profile.id,
-          verificationStatus: profile.verificationStatus,
+          id: freshProfile.id,
+          verificationStatus: freshProfile.verificationStatus,
+          isVerified: freshProfile.isVerified ?? false,
         },
       });
-    } catch (err) {
+    } catch (err: any) {
       await rollbackUploads();
+      if (err?.code === 'ETIMEDOUT' || err?.name === 'AggregateError' || (typeof err?.message === 'string' && err.message.includes('timeout'))) {
+        throw new AppError('Image upload service temporarily timed out. Please check network connection and try again.', 504, 'GATEWAY_TIMEOUT');
+      }
       throw err;
     }
   });
@@ -394,6 +426,7 @@ export class DriverController {
   getDriverProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = this.getAuthenticatedUserId(req);
     const profile = await this.driverService.getDriverByUserId(userId);
+    await this.grantDriverRoleIfApproved(profile.id);
     const formatted = formatDriverProfileForFrontend(profile);
     res.status(200).json({ success: true, data: formatted });
   });
@@ -441,7 +474,7 @@ export class DriverController {
   });
 
   verifyDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const roles = req.role || [];
+    const roles: string[] = req.roles ?? req.role ?? [];
     const isVerifier = roles.includes('ADMIN') || roles.includes('VERIFIER');
 
     if (!isVerifier) {
@@ -450,7 +483,49 @@ export class DriverController {
 
     const { status, rejectionReason } = req.body;
     const doc = await this.documentService.verifyDocument(req.params.id, status, rejectionReason);
+    if (status === 'VERIFIED' && doc.driverProfileId) {
+      await this.grantDriverRoleIfApproved(doc.driverProfileId);
+    }
     res.status(200).json({ success: true, data: doc });
+  });
+
+  verifyDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const roles: string[] = req.roles ?? req.role ?? [];
+    const isVerifier = roles.includes('ADMIN') || roles.includes('VERIFIER');
+
+    if (!isVerifier) {
+      throw new AppError('Forbidden: Only administrators or verifiers can verify drivers', 403, 'FORBIDDEN');
+    }
+
+    const paramId = req.params.id;
+    let profile = await this.driverService.getDriverById(paramId).catch(() => null);
+    if (!profile) {
+      profile = await this.driverService.getDriverByUserId(paramId).catch(() => null);
+    }
+
+    if (!profile) {
+      throw new AppError('Driver profile not found', 404, 'NOT_FOUND');
+    }
+
+    const { status = 'VERIFIED' } = req.body;
+    const isVerified = status === 'VERIFIED' || status === 'APPROVED';
+    const verificationStatus = isVerified ? 'VERIFIED' : 'REJECTED';
+
+    await this.driverService.updateProfile(profile.userId, {
+      verificationStatus,
+      isVerified,
+    } as any);
+
+    if (isVerified) {
+      const docs = await this.documentService.getDocumentsByDriverId(profile.id);
+      for (const doc of docs) {
+        await this.documentService.verifyDocument(doc.id, 'VERIFIED' as any);
+      }
+      await this.grantDriverRoleIfApproved(profile.id);
+    }
+
+    const fresh = await this.driverService.getDriverById(profile.id);
+    res.status(200).json({ success: true, data: formatDriverProfileForFrontend(fresh) });
   });
 
   checkDocumentExpiry = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

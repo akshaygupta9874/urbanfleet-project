@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import type { Coordinates, LocationPoint } from '@urbanfleet/common';
+import type { Coordinates, LocationPoint, RideDto } from '@urbanfleet/common';
 
 export interface AuthenticatedSocketUser {
   userId: string;
@@ -34,7 +34,6 @@ export interface DriverAvailabilityPayload {
 
 export interface RideActionPayload {
   rideId: string;
-  otp?: string;
 }
 
 export interface RideCancelPayload {
@@ -48,10 +47,12 @@ export interface RideCancelledPayload {
   reason?: string;
 }
 
-import { Ride } from '../db/client.js';
-
 export interface PaymentCapturedPayload {
-  ride: Ride | Record<string, unknown>;
+  ride: Pick<RideDto, 'id' | 'paymentStatus'>;
+}
+
+export interface RideLifecyclePayload {
+  ride: RideDto;
 }
 
 export interface HeartbeatPayload {

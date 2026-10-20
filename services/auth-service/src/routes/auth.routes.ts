@@ -49,6 +49,7 @@ export function createAuthRouter(controller: AuthController): Router {
   }
 
   // Authenticated Profile & User Endpoints
+  router.post('/internal/users/:id/driver-role', authMiddleware, controller.grantDriverRole);
   router.get('/me', authMiddleware, controller.getProfile);
   if (controller.getUserById) {
     router.get('/users/:id', authMiddleware, controller.getUserById);

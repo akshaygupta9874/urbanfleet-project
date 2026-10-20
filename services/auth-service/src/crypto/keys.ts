@@ -36,8 +36,8 @@ export function initAsymmetricKeys(): { privateKey: string; publicKey: string } 
 export function signAccessToken(payload: {
   userId: string;
   email: string;
-  role: string;
   roles?: string[];
+  role?: string;
   firstName?: string;
   lastName?: string;
   sessionId?: string;
@@ -45,7 +45,9 @@ export function signAccessToken(payload: {
 }): string {
   if (!privateKey) initAsymmetricKeys();
 
-  return jwt.sign({ ...payload, tokenType: 'ACCESS' }, privateKey, {
+  const roles = payload.roles || (payload.role ? [payload.role] : ['RIDER']);
+  const role = payload.role || roles[0] || 'RIDER';
+  return jwt.sign({ ...payload, role, roles, tokenType: 'ACCESS' }, privateKey, {
     algorithm: 'RS256',
     expiresIn: '15m',
     issuer: 'urbanfleet-auth',

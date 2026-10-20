@@ -14,7 +14,6 @@ export interface CreateOrderInput {
     rideId: string;
     riderId: string;
     idempotencyKey: string;
-    amountPaise?: number;
 }
 
 export interface CreateOrderResult {

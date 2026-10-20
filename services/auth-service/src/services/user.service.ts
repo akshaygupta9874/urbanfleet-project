@@ -1,6 +1,7 @@
 import { UserRepository } from '../repositories/user.repository.js';
 import { NotFoundError } from '@urbanfleet/common';
 import { User } from '../db/client.js';
+import { cacheUser } from '../redis/token-cache.js';
 
 function sanitizeUser(user: User) {
   const {
@@ -40,6 +41,12 @@ export class UserService {
   async updateUser(id: string, data: { firstName?: string; lastName?: string; phone?: string; avatarUrl?: string }) {
     const updated = await this.userRepo.update(id, data);
     return sanitizeUser(updated);
+  }
+
+  async addDriverRole(id: string) {
+    const user = await this.userRepo.addDriverRole(id);
+    await cacheUser(user);
+    return sanitizeUser(user);
   }
 
   async deleteUser(id: string) {

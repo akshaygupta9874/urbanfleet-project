@@ -7,7 +7,8 @@ export const UserRegisteredPayloadSchema = z.object({
   firstName: z.string(),
   lastName: z.string(),
   phone: z.string().optional(),
-  role: z.enum(['RIDER', 'DRIVER', 'ADMIN'])
+  roles: z.array(z.enum(['RIDER', 'DRIVER', 'ADMIN'])).optional(),
+  role: z.enum(['RIDER', 'DRIVER', 'ADMIN']).optional()
 });
 export type UserRegisteredPayload = z.infer<typeof UserRegisteredPayloadSchema>;
 

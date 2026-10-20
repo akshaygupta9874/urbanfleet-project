@@ -205,8 +205,24 @@ class LedgerService {
         session?: ClientSession
     ): Promise<string> {
 
+        let fareBreakdown = payment.fareBreakdown;
+        if (!fareBreakdown || typeof fareBreakdown.platformCommissionPaise !== 'number' || typeof fareBreakdown.driverEarningPaise !== 'number') {
+            const total = payment.amountPaise;
+            const platformCommission = Math.round(total * 0.2);
+            const driverEarning = total - platformCommission;
+            fareBreakdown = {
+                baseFarePaise: 0,
+                distanceFarePaise: 0,
+                timeFarePaise: 0,
+                surgePaise: 0,
+                platformCommissionPaise: platformCommission,
+                driverEarningPaise: driverEarning,
+                totalPaise: total,
+            };
+        }
+
         const { platformCommissionPaise, driverEarningPaise } =
-            payment.fareBreakdown;
+            fareBreakdown;
 
         return this.recordTransaction(
             {

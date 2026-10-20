@@ -50,7 +50,7 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
           // 3. Handle Business Mutations
           if (envelope.eventType === 'USER_REGISTERED') {
             const payload = envelope.payload as UserRegisteredPayload;
-            if (payload.role === 'DRIVER') {
+            if (payload.roles?.includes('DRIVER') || payload.role === 'DRIVER') {
               await tx.driverProfile.upsert({
                 where: { userId: payload.userId },
                 create: {

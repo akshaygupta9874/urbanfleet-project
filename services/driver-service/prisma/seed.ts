@@ -189,31 +189,7 @@ async function main() {
     ]
   });
 
-  // 3. Also verify any pending driver profile for akshaygupta9874@gmail.com if present
-  try {
-    const akshayProfile = await prisma.driverProfile.findUnique({
-      where: { userId: '51029c27-ba29-4515-b0d1-038f6cca4fbc' }
-    });
-    if (akshayProfile) {
-      await prisma.driverProfile.update({
-        where: { id: akshayProfile.id },
-        data: {
-          verificationStatus: VerificationStatus.VERIFIED,
-          isVerified: true,
-          isAvailable: true
-        }
-      });
-      await prisma.document.updateMany({
-        where: { driverProfileId: akshayProfile.id },
-        data: { status: VerificationStatus.VERIFIED, isVerified: true }
-      });
-      console.log(`✅ Verified existing profile for user akshaygupta9874@gmail.com`);
-    }
-  } catch (err) {
-    // Non-critical, ignore if user ID not present
-  }
-
-  // 4. Seed Redis Driver Presence & GEO Coordinates
+  // 3. Seed Redis Driver Presence & GEO Coordinates
   if (process.env.REDIS_URL) {
     try {
       const { createClient } = await import('redis');

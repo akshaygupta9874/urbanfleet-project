@@ -72,7 +72,7 @@ export class DriverRepository {
         licenseNumber: data.licenseNumber,
         profilePhoto: data.profilePhoto,
         isVerified: false,
-        verificationStatus: 'PENDING',
+        verificationStatus: data.documents && data.documents.length > 0 ? 'UNDER_REVIEW' : 'PENDING',
         vehicles: {
           create: {
             category: data.vehicle.type || 'SEDAN',
@@ -134,7 +134,7 @@ export class DriverRepository {
         data: {
           licenseNumber: data.licenseNumber,
           profilePhoto: data.profilePhoto,
-          verificationStatus: 'PENDING',
+          verificationStatus: data.documents && data.documents.length > 0 ? 'UNDER_REVIEW' : 'PENDING',
           isVerified: false,
         },
       });

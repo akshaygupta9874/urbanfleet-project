@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { formatRide, RideClient, rideClient } from '../../src/clients/ride.client.js';
+import { RideClient, rideClient } from '../../src/clients/ride.client.js';
 import { PayoutService } from '../../src/payment/services/payout.service.js';
 import { payoutRepository } from '../../src/payment/repositories/payout.repository.js';
 import { paymentRepository } from '../../src/payment/repositories/payment.repository.js';
@@ -9,6 +9,38 @@ import { authClient } from '../../src/clients/auth.client.js';
 import { requireAdmin } from '../../src/payment/middlewares/require-admin.middleware.js';
 import { prisma, UserRole } from '../../src/db/client.js';
 import { redisClient } from '../../src/redis/client.js';
+import type { RideDto } from '@urbanfleet/common';
+
+function makeRideDto(id: string): RideDto {
+  const breakdown = {
+    baseFarePaise: 100,
+    distanceFarePaise: 200,
+    timeFarePaise: 0,
+    surgePaise: 0,
+    platformCommissionPaise: 30,
+    driverEarningPaise: 270,
+    totalPaise: 300,
+  };
+  return {
+    id,
+    riderId: 'rider-1',
+    driverId: 'driver-1',
+    pickupAddress: 'Pickup',
+    pickupLat: 12.9716,
+    pickupLng: 77.5946,
+    destinationAddress: 'Destination',
+    destinationLat: 13.0827,
+    destinationLng: 80.2707,
+    pickup: { address: 'Pickup', coordinates: { latitude: 12.9716, longitude: 77.5946 } },
+    destination: { address: 'Destination', coordinates: { latitude: 13.0827, longitude: 80.2707 } },
+    fare: { estimated: 300, final: null, breakdown },
+    distance: { estimated: 3, actual: 3 },
+    duration: { estimated: 10, actual: null },
+    status: 'ARRIVED_AT_DESTINATION',
+    paymentStatus: 'PENDING',
+    driver: null,
+  };
+}
 
 const { mockKafkaConsumer, getCapturedHandler } = vi.hoisted(() => {
   let capturedHandler: any = null;
@@ -34,71 +66,15 @@ vi.mock('kafkajs', () => ({
 describe('Payment Service Comprehensive Fixes Test Suite', () => {
 
   // ==========================================
-  // 1. Ride Client & Normalization
+  // 1. Ride Client & Canonical Contract
   // ==========================================
-  describe('formatRide Canonical Shape & Resilient Properties', () => {
-    it('sets both riderId and rider, driverId and driver from standard ride-service response', () => {
-      const incomingRide = {
-        id: 'ride-uuid-1',
-        riderId: 'rider-uuid-1',
-        driverId: 'driver-uuid-1',
-        status: 'ARRIVED_AT_DESTINATION',
-        paymentStatus: 'PENDING',
-        totalFarePaise: 45000,
-      };
-
-      const formatted = formatRide(incomingRide);
-      expect(formatted.riderId).toBe('rider-uuid-1');
-      expect(formatted.rider).toBe('rider-uuid-1');
-      expect(formatted.driverId).toBe('driver-uuid-1');
-      expect(formatted.driver).toBe('driver-uuid-1');
-      expect(formatted.id).toBe('ride-uuid-1');
-    });
-
-    it('sets both riderId and driverId', () => {
-      const incomingRide = {
-        id: 'ride-uuid-2',
-        riderId: 'rider-nested-2',
-        driverId: 'driver-nested-2',
-        status: 'ARRIVED_AT_DESTINATION',
-      };
-
-      const formatted = formatRide(incomingRide);
-      expect(formatted.riderId).toBe('rider-nested-2');
-      expect(formatted.driverId).toBe('driver-nested-2');
-    });
-
-    it('handles null driver gracefully', () => {
-      const incomingRide = {
-        id: 'ride-uuid-3',
-        riderId: 'rider-uuid-3',
-        driverId: null,
-      };
-
-      const formatted = formatRide(incomingRide);
-      expect(formatted.driverId).toBeNull();
-      expect(formatted.driver).toBeNull();
-    });
-
-    it('reads the fare breakdown from the canonical nested ride field', () => {
-      const breakdown = {
-        baseFarePaise: 100,
-        distanceFarePaise: 200,
-        timeFarePaise: 0,
-        surgePaise: 0,
-        platformCommissionPaise: 30,
-        driverEarningPaise: 270,
-        totalPaise: 300,
-      };
-      const formatted = formatRide({
-        id: 'ride-uuid-4',
-        riderId: 'rider-uuid-4',
-        fareBreakdown: { ...breakdown, totalPaise: 999 },
-        fare: { estimated: 300, final: 300, breakdown },
-      });
-
-      expect(formatted.fare?.breakdown).toEqual(breakdown);
-      expect(formatted).not.toHaveProperty('fareBreakdown');
+  describe('Canonical RideDto contract', () => {
+    it('uses the shared nested fare breakdown and a nullable driver object', () => {
+      const ride = makeRideDto('ride-uuid-1');
+      expect(ride.fare.breakdown.totalPaise).toBe(300);
+      expect(ride.driver).toBeNull();
+      expect(ride).not.toHaveProperty('fareBreakdown');
+      expect(ride).not.toHaveProperty('totalFarePaise');
     });
   });
 
@@ -113,7 +89,7 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       try {
         const patchSpy = vi.spyOn((client as unknown as { client: { patch: Function } }).client, 'patch').mockResolvedValue({
           status: 200,
-          data: { success: true, data: { id: 'ride-1', paymentStatus: 'CAPTURED' } },
+          data: { success: true, data: { ...makeRideDto('ride-1'), paymentStatus: 'CAPTURED' } },
         });
 
         await client.updatePaymentStatus('ride-1', 'CAPTURED');
@@ -273,6 +249,59 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
           rideId: 'ride-arr-1',
           riderId: 'rider-arr-1',
           idempotencyKey: 'ride-order-ride-arr-1',
+        })
+      );
+    });
+
+    it('RIDE_COMPLETED: triggers fallback order creation with both ride/rider and rideId/riderId when no prior payment exists', async () => {
+      mockPrisma = {
+        $transaction: vi.fn().mockImplementation(async (cb: any) => {
+          const tx = {
+            processedEvent: {
+              findUnique: vi.fn().mockResolvedValue(null),
+              create: vi.fn().mockResolvedValue({}),
+            },
+            payment: {
+              findUnique: vi.fn().mockResolvedValue(null),
+            },
+          };
+          return cb(tx);
+        }),
+      };
+
+      await initPaymentConsumer(mockPrisma, mockPaymentService);
+      const messageHandler = getCapturedHandler();
+
+      const completedEnvelope = {
+        id: 'evt-completed-fallback-1',
+        version: 1,
+        eventType: 'RIDE_COMPLETED',
+        producer: 'ride-service',
+        timestamp: '2026-10-18T00:00:00Z',
+        partitionKey: 'ride-comp-fallback-1',
+        aggregateType: 'RIDE',
+        aggregateId: 'ride-comp-fallback-1',
+        aggregateSequence: 2,
+        payload: {
+          rideId: 'ride-comp-fallback-1',
+          riderId: 'rider-comp-fallback-1',
+          totalFarePaise: 65000,
+          driverId: 'driver-comp-fallback-1',
+        },
+      };
+
+      await messageHandler({
+        message: {
+          key: Buffer.from('ride-comp-fallback-1'),
+          value: Buffer.from(JSON.stringify(completedEnvelope)),
+        },
+      });
+
+      expect(mockPaymentService.createOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rideId: 'ride-comp-fallback-1',
+          riderId: 'rider-comp-fallback-1',
+          idempotencyKey: 'ride-order-ride-comp-fallback-1',
         })
       );
     });
@@ -503,30 +532,21 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
   // 5. Payment Data Model Decoupling & Requester Resolution
   // ==========================================
   describe('Payment Data Model Decoupling & Isolation', () => {
-    it('queryRideRaw calls rideClient and does not query payments database when unmocked', async () => {
-      const getSpy = vi.spyOn(rideClient, 'getRideById').mockResolvedValue({
-        id: 'ride-decoupled-1',
-        riderId: 'rider-1',
-        paymentStatus: 'PENDING',
-      });
+    it('findRideById returns the canonical RideDto from rideClient', async () => {
+      const expectedRide = makeRideDto('ride-decoupled-1');
+      const getSpy = vi.spyOn(rideClient, 'getRideById').mockResolvedValue(expectedRide);
 
-      const rows = await paymentRepository.queryRideRaw('ride-decoupled-1');
+      const ride = await paymentRepository.findRideById('ride-decoupled-1');
       expect(getSpy).toHaveBeenCalledWith('ride-decoupled-1');
-      expect(rows).toHaveLength(1);
-      expect(rows[0].id).toBe('ride-decoupled-1');
+      expect(ride).toEqual(expectedRide);
 
       getSpy.mockRestore();
     });
 
     it('findRideById and updateRide delegate to rideClient in runtime', async () => {
-      const getSpy = vi.spyOn(rideClient, 'getRideById').mockResolvedValue({
-        id: 'ride-decoupled-2',
-        status: 'ARRIVED_AT_DESTINATION',
-      });
-      const updateSpy = vi.spyOn(rideClient, 'updatePaymentStatus').mockResolvedValue({
-        id: 'ride-decoupled-2',
-        paymentStatus: 'CAPTURED',
-      });
+      const expectedRide = { ...makeRideDto('ride-decoupled-2'), paymentStatus: 'CAPTURED' };
+      const getSpy = vi.spyOn(rideClient, 'getRideById').mockResolvedValue(expectedRide);
+      const updateSpy = vi.spyOn(rideClient, 'updatePaymentStatus').mockResolvedValue(expectedRide);
 
       const ride = await paymentRepository.findRideById('ride-decoupled-2');
       expect(ride.id).toBe('ride-decoupled-2');

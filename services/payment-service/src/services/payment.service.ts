@@ -5,6 +5,7 @@ import { LedgerService } from './ledger.service.js';
 import { NotFoundError, AppError } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 import { razorpayClient } from '../config/razorpay.config.js';
+import type { Prisma } from '../db/client.js';
 import crypto from 'crypto';
 
 export class PaymentService {
@@ -26,26 +27,46 @@ export class PaymentService {
   }
 
   async createOrder(
-    rideIdOrInput: string | { rideId: string; riderId: string; idempotencyKey?: string },
-    riderIdParam?: string,
-    amountPaiseParam?: number,
-    driverIdParam?: string
+    input: { rideId: string; riderId: string; amountPaise?: number; driverId?: string; idempotencyKey?: string; fareBreakdown?: Record<string, unknown> }
   ) {
-    let rideId: string;
-    let riderId: string;
-    let amountPaise: number = amountPaiseParam || 0;
-    let driverId: string | undefined = driverIdParam;
-
-    if (typeof rideIdOrInput === 'object' && rideIdOrInput !== null) {
-      rideId = rideIdOrInput.rideId;
-      riderId = rideIdOrInput.riderId;
-    } else {
-      rideId = rideIdOrInput;
-      riderId = riderIdParam!;
-    }
+    const { rideId, riderId, amountPaise = 0, driverId, fareBreakdown } = input;
 
     const existing = await this.paymentRepo.findByRideId(rideId);
-    if (existing) return existing;
+    if (existing) {
+      if (!existing.fareBreakdown && fareBreakdown) {
+        await this.paymentRepo.update(existing.id, {
+          fareBreakdown: fareBreakdown as unknown as Prisma.InputJsonValue,
+        });
+      }
+      return existing;
+    }
+
+    let finalFareBreakdown = fareBreakdown;
+    if (!finalFareBreakdown && rideId) {
+      try {
+        const { rideClient } = await import('../clients/ride.client.js');
+        const rideDetails = await rideClient.getRideById(rideId);
+        if (rideDetails?.fare?.breakdown) {
+          finalFareBreakdown = rideDetails.fare.breakdown as unknown as Record<string, unknown>;
+        }
+      } catch {
+        // Fallback to standard platform/driver split below
+      }
+    }
+
+    if (!finalFareBreakdown) {
+      const platform = Math.round(amountPaise * 0.2);
+      const driver = amountPaise - platform;
+      finalFareBreakdown = {
+        baseFarePaise: 0,
+        distanceFarePaise: 0,
+        timeFarePaise: 0,
+        surgePaise: 0,
+        platformCommissionPaise: platform,
+        driverEarningPaise: driver,
+        totalPaise: amountPaise,
+      };
+    }
 
     let gatewayOrderId: string;
     try {
@@ -73,7 +94,8 @@ export class PaymentService {
       amountPaise,
       gatewayOrderId,
       status: 'PENDING',
-      paymentSequence: 1
+      paymentSequence: 1,
+      fareBreakdown: finalFareBreakdown as unknown as Prisma.InputJsonValue,
     });
   }
 

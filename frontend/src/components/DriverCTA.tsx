@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
+import { isDriverApproved } from "../lib/driverApi";
 
 export type VerificationStatus =
   | "PENDING"
@@ -75,10 +76,7 @@ export default function DriverCTA({
     );
   }
 
-  const isApproved =
-    Boolean(driver.isVerified) ||
-    driver.verificationStatus === "APPROVED" ||
-    driver.verificationStatus === "VERIFIED";
+  const isApproved = isDriverApproved(driver);
 
   if (isApproved) {
     return (
@@ -98,11 +96,21 @@ export default function DriverCTA({
     );
   }
 
-  const isPending =
-    driver.verificationStatus === "PENDING" ||
-    driver.verificationStatus === "UNDER_REVIEW";
+  if (driver.verificationStatus === "PENDING") {
+    return (
+      <CardWrapper
+        icon={<Car className="h-7 w-7 text-[#b8722c]" />}
+        title="Complete Your Application"
+        description="Submit your required vehicle and identity documents to begin verification."
+      >
+        <CTAButton onClick={() => navigate("/driver-registration")}>
+          Continue Registration
+        </CTAButton>
+      </CardWrapper>
+    );
+  }
 
-  if (isPending) {
+  if (driver.verificationStatus === "UNDER_REVIEW") {
     return (
       <CardWrapper
         icon={
@@ -142,13 +150,11 @@ export default function DriverCTA({
 
   return (
     <CardWrapper
-      icon={<Car className="h-7 w-7 text-[#b8722c]" />}
-      title="Driver Partner"
-      description="Access your driver portal."
+      icon={<Clock3 className="h-7 w-7 text-amber-700" />}
+      title="Verification Status Unavailable"
+      description="Your driver access remains restricted until your application status can be confirmed."
     >
-      <CTAButton onClick={() => navigate("/driver-dashboard")}>
-        Enter Driver Dashboard
-      </CTAButton>
+      <CTAButton disabled>Access Restricted</CTAButton>
     </CardWrapper>
   );
 }

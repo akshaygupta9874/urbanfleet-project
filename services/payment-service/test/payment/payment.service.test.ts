@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createHmac } from "crypto";
 
 const redis = vi.hoisted(() => {
@@ -50,27 +50,17 @@ vi.mock("../../src/redis/client.js", () => ({
   redisClient: redis.client,
 }));
 
-vi.mock("../../src/sockets/emitters/driver.emitter.js", () => ({
-  emitPaymentCaptured: vi.fn(),
-}));
-
-vi.mock("../../src/sockets/emitters/rider.emitter.js", () => ({
-  emitPaymentCaptured: vi.fn(),
-}));
-
 /**
  * --------------------------------------------------------------------------
  * Imports
  * --------------------------------------------------------------------------
  */
 
-import * as driverEmitter from "../../src/sockets/emitters/driver.emitter.js";
-import * as riderEmitter from "../../src/sockets/emitters/rider.emitter.js";
-
 import { paymentService } from "../../src/payment/services/payment.service.js";
 import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
 import { ledgerService } from "../../src/payment/services/ledger.service.js";
 import { razorpayClient } from "../../src/config/razorpay.config.js";
+import { rideClient } from "../../src/clients/ride.client.js";
 
 import { prisma } from "../../src/db/client.js";
 
@@ -107,15 +97,6 @@ import {
   retryingSession,
 } from "../helpers/helpers.js";
 
-/**
- * --------------------------------------------------------------------------
- * Typed mocked emitters
- * --------------------------------------------------------------------------
- */
-
-const emitDriver = vi.mocked(driverEmitter.emitPaymentCaptured);
-const emitRider = vi.mocked(riderEmitter.emitPaymentCaptured);
-
 let currentRide: any = null;
 
 /**
@@ -127,9 +108,6 @@ let currentRide: any = null;
 beforeEach(() => {
   redis.store.clear();
   currentRide = null;
-
-  emitDriver.mockClear();
-  emitRider.mockClear();
 
   vi.spyOn(prisma, "$transaction").mockImplementation(async (cb: any) => cb(prisma));
   vi.spyOn(prisma.ride, "findUnique").mockImplementation(async () => currentRide);
@@ -144,6 +122,15 @@ beforeEach(() => {
  */
 
 describe("handlePaymentCaptured", () => {
+  beforeEach(() => {
+    vi.spyOn(rideClient, "updatePaymentStatus")
+      .mockReset()
+      .mockResolvedValue(null);
+  });
+  afterEach(() => {
+    vi.mocked(rideClient.updatePaymentStatus).mockRestore();
+  });
+
   function arrange(opts: {
     claims: (any | null)[];
     session?: any;
@@ -240,8 +227,10 @@ describe("handlePaymentCaptured", () => {
         gatewayPaymentId: "pay_TEST1",
       });
 
-      expect(emitDriver).toHaveBeenCalledTimes(1);
-      expect(emitRider).toHaveBeenCalledTimes(1);
+      expect(rideClient.updatePaymentStatus).toHaveBeenCalledWith(
+        expect.any(String),
+        RidePaymentStatus.CAPTURED
+      );
     }
   );
 
@@ -260,7 +249,7 @@ describe("handlePaymentCaptured", () => {
 
       expect(ledger).not.toHaveBeenCalled();
 
-      expect(emitDriver).not.toHaveBeenCalled();
+      expect(rideClient.updatePaymentStatus).not.toHaveBeenCalled();
     }
   );
 
@@ -342,7 +331,7 @@ describe("handlePaymentCaptured", () => {
         statusCode: 404,
       });
 
-      expect(emitDriver).not.toHaveBeenCalled();
+      expect(rideClient.updatePaymentStatus).not.toHaveBeenCalled();
     }
   );
 
@@ -433,15 +422,15 @@ describe("handlePaymentCaptured", () => {
   );
 
   it(
-    "a socket failure after commit does not fail the capture",
+    "a ride-service sync failure after commit does not fail the capture",
     async () => {
       arrange({
         claims: ["same"],
       });
 
-      emitDriver.mockImplementationOnce(() => {
-        throw new Error("socket down");
-      });
+      vi.mocked(rideClient.updatePaymentStatus).mockRejectedValueOnce(
+        new Error("ride service unavailable")
+      );
 
       await expect(
         paymentService.handlePaymentCaptured(
@@ -1096,9 +1085,10 @@ describe("createOrder", () => {
         "findByIdempotencyKey"
       ).mockResolvedValue(null);
 
-      vi.spyOn(prisma, "$queryRawUnsafe").mockResolvedValue([
-        { ...ride, paymentStatus: RidePaymentStatus.CAPTURED },
-      ] as any);
+      vi.spyOn(prisma.ride, "findUnique")
+        .mockResolvedValueOnce(ride as any)
+        .mockResolvedValueOnce(ride as any)
+        .mockResolvedValue({ ...ride, paymentStatus: RidePaymentStatus.CAPTURED } as any);
 
       const create = vi.spyOn(
         razorpayClient.orders,

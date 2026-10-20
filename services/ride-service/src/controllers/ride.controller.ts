@@ -1,118 +1,17 @@
 import { Request, Response } from 'express';
-import { Ride, RidePaymentStatus } from '../db/client.js';
-import { RideService, CreateRideInput, RideWithOtp, CancelledRideResult } from '../services/ride.service.js';
+import { RidePaymentStatus } from '../db/client.js';
+import { RideService, CreateRideInput } from '../services/ride.service.js';
 import { FareService } from '../services/fare.service.js';
 import type { DispatchService } from '../services/dispatch.service.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
-import { AuthenticatedRequest, AppError, RideDto, FormattedDriver, LocationPoint, IFareBreakdown } from '@urbanfleet/common';
+import { AuthenticatedRequest, AppError } from '@urbanfleet/common';
 import type { EstimateFareDTO, RequestRideDTO } from '../validation/ride.validation.js';
+import { toRideDto } from '../utils/ride-dto.js';
+import { emitPaymentCaptured as emitPaymentCapturedToDriver } from '../websocket/emitters/driver.emitter.js';
+import { emitPaymentCaptured as emitPaymentCapturedToRider } from '../websocket/emitters/rider.emitter.js';
 
 function extractRecord(val: unknown): Record<string, unknown> | undefined {
   return val && typeof val === 'object' ? (val as Record<string, unknown>) : undefined;
-}
-
-export function toRideDto(
-  ride: Ride | RideWithOtp | CancelledRideResult | Record<string, unknown> | null | undefined
-): RideDto | null {
-  if (!ride) return null;
-
-  const r = ride as Record<string, unknown>;
-  const pickupLat = Number(r.pickupLat ?? 0);
-  const pickupLng = Number(r.pickupLng ?? 0);
-  const destLat = Number(r.destinationLat ?? 0);
-  const destLng = Number(r.destinationLng ?? 0);
-
-  const totalFarePaise = Number(r.totalFarePaise ?? 0);
-  const baseFarePaise = Number(r.baseFarePaise ?? (totalFarePaise > 0 ? Math.round(totalFarePaise * 0.4) : 0));
-  const distanceKm = Number(r.distanceKm ?? 0);
-  const distanceFarePaise = Math.round(distanceKm * 500);
-  const timeFarePaise = Math.max(0, totalFarePaise - baseFarePaise - distanceFarePaise);
-  const driverEarningPaise = Math.round(totalFarePaise * 0.8);
-  const platformCommissionPaise = totalFarePaise - driverEarningPaise;
-
-  const breakdown: IFareBreakdown = {
-    baseFarePaise,
-    distanceFarePaise,
-    timeFarePaise,
-    surgePaise: 0,
-    platformCommissionPaise,
-    driverEarningPaise,
-    totalPaise: totalFarePaise,
-  };
-
-  const id = String(r.id || '');
-  const riderId = String(r.riderId || '');
-  const pickupAddress = String(r.pickupAddress || 'Pickup Location');
-  const destinationAddress = String(r.destinationAddress || 'Destination Location');
-
-  const driverObj = extractRecord(r.driver);
-  const driverUser = extractRecord(driverObj?.user);
-  const driverVehicle = extractRecord(driverObj?.vehicle);
-  const driverId = r.driverId ? String(r.driverId) : (driverObj?.id ? String(driverObj.id) : null);
-
-  const formattedDriver: FormattedDriver | null = driverId
-    ? {
-        id: driverId,
-        firstName: String(driverUser?.firstName || ''),
-        lastName: String(driverUser?.lastName || ''),
-        vehicleNumber: String(driverVehicle?.registrationNumber || ''),
-        phone: String(driverUser?.phone || ''),
-        user: {
-          firstName: String(driverUser?.firstName || ''),
-          lastName: String(driverUser?.lastName || ''),
-          phone: String(driverUser?.phone || ''),
-        },
-        vehicle: {
-          registrationNumber: String(driverVehicle?.registrationNumber || ''),
-          model: String(driverVehicle?.model || ''),
-          color: String(driverVehicle?.color || ''),
-        },
-      }
-    : null;
-
-  return {
-    id,
-    riderId,
-    driverId,
-    pickupAddress,
-    pickupLat,
-    pickupLng,
-    destinationAddress,
-    destinationLat: destLat,
-    destinationLng: destLng,
-    pickup: {
-      address: pickupAddress,
-      coordinates: {
-        latitude: pickupLat,
-        longitude: pickupLng,
-      },
-    },
-    destination: {
-      address: destinationAddress,
-      coordinates: {
-        latitude: destLat,
-        longitude: destLng,
-      },
-    },
-    fare: {
-      estimated: totalFarePaise,
-      final: r.status === 'COMPLETED' ? Number(r.finalFarePaise ?? totalFarePaise) : null,
-      breakdown,
-    },
-    distance: {
-      estimated: distanceKm,
-      actual: r.actualDistanceKm ? Number(r.actualDistanceKm) : distanceKm,
-    },
-    duration: {
-      estimated: r.durationMinutes ? Number(r.durationMinutes) : 15,
-      actual: r.actualDurationMinutes ? Number(r.actualDurationMinutes) : null,
-    },
-    status: String(r.status || 'SEARCHING'),
-    paymentStatus: String(r.paymentStatus || 'PENDING'),
-    driver: formattedDriver,
-    createdAt: typeof r.createdAt === 'string' ? r.createdAt : r.createdAt instanceof Date ? r.createdAt.toISOString() : undefined,
-    updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : r.updatedAt instanceof Date ? r.updatedAt.toISOString() : undefined,
-  };
 }
 
 function getUserId(req: AuthenticatedRequest): string {
@@ -179,10 +78,11 @@ export class RideController {
     }
 
     const formatted = toRideDto(ride);
+    const otp = await this.rideService.getRiderOtpForRide(ride.id, userId);
     res.status(201).json({
       success: true,
       message: 'Ride requested successfully',
-      data: formatted,
+      data: { ...formatted, otp },
     });
   });
 
@@ -228,7 +128,10 @@ export class RideController {
       throw new AppError('Ride not found', 404, 'NOT_FOUND');
     }
     const formatted = toRideDto(ride);
-    res.status(200).json({ success: true, data: formatted });
+    res.status(200).json({
+      success: true,
+      data: ride.riderId === userId ? { ...formatted, otp: ride.otp } : formatted,
+    });
   });
 
   getRiderHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -259,7 +162,10 @@ export class RideController {
     const isDriver = roles.includes('DRIVER');
     const activeRide = await this.rideService.getActiveRideForUser(userId, isDriver);
     const formatted = activeRide ? toRideDto(activeRide) : null;
-    res.status(200).json({ success: true, data: formatted });
+    res.status(200).json({
+      success: true,
+      data: formatted && !isDriver ? { ...formatted, otp: activeRide?.otp ?? null } : formatted,
+    });
   });
 
   getCurrentRideOfDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -358,6 +264,18 @@ export class RideController {
       throw new AppError('Failed to update payment status', 500, 'INTERNAL_SERVER_ERROR');
     }
     const formatted = toRideDto(ride);
+    if (paymentStatus === RidePaymentStatus.CAPTURED) {
+      const payload = {
+        ride: {
+          id: formatted.id,
+          paymentStatus: formatted.paymentStatus,
+        },
+      };
+      emitPaymentCapturedToRider(ride.riderId, payload);
+      if (ride.driverId) {
+        emitPaymentCapturedToDriver(ride.driverId, payload);
+      }
+    }
     res.status(200).json({ success: true, data: formatted });
   });
 }

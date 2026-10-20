@@ -19,7 +19,10 @@ export class AuthClient {
     this.client = axios.create({
       baseURL: baseUrl,
       timeout: 5000,
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
+      },
     });
   }
 
@@ -37,6 +40,22 @@ export class AuthClient {
         }
         if (err.response) {
           throw new Error(`Auth Service returned HTTP ${err.response.status}`);
+        }
+      }
+      throw err;
+    }
+  }
+
+  async grantDriverRole(userId: string): Promise<void> {
+    try {
+      await this.client.post(`/api/auth/internal/users/${userId}/driver-role`);
+    } catch (err: unknown) {
+      if (isAxiosError(err)) {
+        if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          throw new Error('Auth Service timed out while granting driver role');
+        }
+        if (err.response) {
+          throw new Error(`Auth Service rejected driver role grant with HTTP ${err.response.status}`);
         }
       }
       throw err;

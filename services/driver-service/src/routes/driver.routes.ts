@@ -32,6 +32,7 @@ export function createDriverRouter(controller: DriverController): Router {
   router.get('/documents', authMiddleware, controller.getDriverDocuments);
   router.get('/documents/summary', authMiddleware, controller.getDocumentSummary);
   router.patch('/documents/:id/verify', authMiddleware, controller.verifyDocument);
+  router.patch('/:id/verify', authMiddleware, controller.verifyDriver);
   router.post('/documents/:id/check-expiry', authMiddleware, controller.checkDocumentExpiry);
   router.post('/availability', authMiddleware, validateRequest({ body: updateStatusSchema }), controller.toggleAvailability);
   router.get('/earnings', authMiddleware, controller.getEarnings);

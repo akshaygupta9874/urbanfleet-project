@@ -10,7 +10,8 @@ import {
     IFareBreakdown,
 } from "../types/payment.types.js";
 import { AppError } from "../../utils/AppError.js";
-import { rideClient, type IRide } from "../../clients/ride.client.js";
+import { rideClient } from "../../clients/ride.client.js";
+import type { RideDto } from "@urbanfleet/common";
 import { authClient } from "../../clients/auth.client.js";
 import { redisClient } from "../../redis/client.js";
 
@@ -513,57 +514,22 @@ class PaymentRepository {
         return prisma.$transaction(fn as unknown as Parameters<typeof prisma.$transaction>[0]) as Promise<T>;
     }
 
-    async queryRideRaw(rideIdStr: string, forUpdate = false, tx?: Prisma.TransactionClient): Promise<Record<string, unknown>[]> {
-        const client = tx || prisma;
-        const mockFn = (prisma.$queryRawUnsafe as unknown as { mock?: unknown })?.mock || (client?.$queryRawUnsafe as unknown as { mock?: unknown })?.mock;
-        // In unit test environments where $queryRawUnsafe is mocked/spied on, delegate to mock
-        if (typeof mockFn !== "undefined") {
-            const sql = forUpdate
-                ? `SELECT * FROM rides WHERE id = $1::uuid FOR UPDATE`
-                : `SELECT * FROM rides WHERE id = $1::uuid`;
-            return (client?.$queryRawUnsafe || prisma.$queryRawUnsafe)(sql, rideIdStr) as Promise<Record<string, unknown>[]>;
-        }
-        // In microservice architecture, rides are stored in urbanfleet_ride; fetch authoritative ride via rideClient
-        try {
-            const ride = await rideClient.getRideById(rideIdStr);
-            return ride ? [ride as Record<string, unknown>] : [];
-        } catch {
-            return [];
-        }
-    }
-
-    async findRideById(rideId: string, tx?: Prisma.TransactionClient): Promise<IRide | Record<string, unknown> | null> {
-        const pClient = (tx || prisma) as unknown as { ride?: { findUnique?: { mock?: unknown } & ((args: { where: { id: string } }) => Promise<unknown>) } };
+    async findRideById(rideId: string, tx?: Prisma.TransactionClient): Promise<RideDto | null> {
+        const pClient = (tx || prisma) as unknown as { ride?: { findUnique?: { mock?: unknown } & ((args: { where: { id: string } }) => Promise<RideDto | null>) } };
         const mockFind = pClient.ride?.findUnique?.mock;
         if (typeof mockFind !== "undefined" && typeof pClient.ride?.findUnique === "function") {
-            return pClient.ride.findUnique({ where: { id: rideId } }) as Promise<IRide | null>;
+            return pClient.ride.findUnique({ where: { id: rideId } });
         }
-        try {
-            return await rideClient.getRideById(rideId);
-        } catch {
-            return { id: rideId, status: '' };
-        }
+        return rideClient.getRideById(rideId);
     }
 
-    async updateRide(rideId: string, data: { paymentStatus?: string; [key: string]: unknown }, tx?: Prisma.TransactionClient): Promise<unknown> {
+    async updateRide(rideId: string, data: { paymentStatus: string }, tx?: Prisma.TransactionClient): Promise<RideDto | null> {
         const pClient = (tx || prisma) as unknown as { ride?: { update?: { mock?: unknown } & ((args: { where: { id: string }; data: unknown }) => Promise<unknown>) } };
         const mockUpdate = pClient.ride?.update?.mock;
         if (typeof mockUpdate !== "undefined" && typeof pClient.ride?.update === "function") {
-            return pClient.ride.update({ where: { id: rideId }, data });
+            return pClient.ride.update({ where: { id: rideId }, data }) as Promise<RideDto | null>;
         }
-        if (data?.paymentStatus) {
-            try {
-                await rideClient.updatePaymentStatus(rideId, data.paymentStatus);
-            } catch (err: unknown) {
-                const message = err instanceof Error ? err.message : String(err);
-                console.warn(`[payment.repository] Failed to sync paymentStatus to ride-service: ${message}`);
-            }
-        }
-        try {
-            return await rideClient.getRideById(rideId);
-        } catch {
-            return { id: rideId, paymentStatus: data?.paymentStatus };
-        }
+        return rideClient.updatePaymentStatus(rideId, data.paymentStatus);
     }
 
     async updateRideMany(args: { where?: { id?: string; paymentStatus?: string }; data?: { paymentStatus?: string } }, tx?: Prisma.TransactionClient): Promise<{ count: number }> {

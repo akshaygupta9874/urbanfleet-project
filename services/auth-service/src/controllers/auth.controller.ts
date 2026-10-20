@@ -164,7 +164,7 @@ export class AuthController {
 
   login2FA = asyncHandler(async (req: Request, res: Response) => {
 
-    let user: { id: string; email: string; role: Role; firstName?: string; lastName?: string } | null = null;
+    let user: { id: string; email: string; roles: Role[]; firstName?: string; lastName?: string } | null = null;
 
     if (req.body.challengeToken) {
       if (req.body.recoveryCode) {
@@ -364,6 +364,15 @@ export class AuthController {
     }
     const updated = await this.userService.updateUser(userId, req.body);
     res.status(200).json({ success: true, data: updated });
+  });
+
+  grantDriverRole = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    if (req.userId !== 'internal-service' || !(req.roles ?? []).includes('ADMIN')) {
+      throw new ForbiddenError('Only internal services can grant driver access');
+    }
+    const userId = req.params.id;
+    const user = await this.userService.addDriverRole(userId);
+    res.status(200).json({ success: true, data: user });
   });
 
   enable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

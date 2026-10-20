@@ -5,6 +5,7 @@ import { emitRideCancelled, emitToDriver } from '../emitters/driver.emitter.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { coordinatesSchema, requestRideSchema } from '../../validation/ride.validation.js';
+import { toRideDto } from '../../utils/ride-dto.js';
 
 export interface RiderHandlerDeps {
   rideService?: RideService;
@@ -88,7 +89,9 @@ async function handleRequestRide(
         vehicleCategory: request.data.vehicleCategory,
       });
 
-      socket.send(JSON.stringify({ event: 'server:ride-created', data: { ride } }));
+      const rideDto = toRideDto(ride);
+      const otp = await deps.rideService.getRiderOtpForRide(ride.id, riderId);
+      socket.send(JSON.stringify({ event: ServerEvents.RIDE_CREATED, data: { ride: rideDto, otp } }));
       await deps.dispatchService.broadcastRideRequest(ride);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to request ride.';
@@ -116,7 +119,7 @@ async function handleRiderLocationUpdate(
     try {
       const ride = await deps.rideService.getRideById(rideId);
       if (ride && ride.driverId) {
-        emitToDriver(ride.driverId, 'server:rider-location', {
+        emitToDriver(ride.driverId, ServerEvents.RIDER_LOCATION, {
           rideId,
           riderId,
           location: location.data,
@@ -129,7 +132,7 @@ async function handleRiderLocationUpdate(
   // Acknowledge telemetry
   socket.send(
     JSON.stringify({
-      event: 'server:rider-location-ack',
+      event: ServerEvents.RIDER_LOCATION_ACK,
       data: { timestamp: Date.now() },
     })
   );

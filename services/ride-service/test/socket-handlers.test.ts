@@ -19,6 +19,54 @@ import {
 import { ServerEvents } from '../src/websocket/event.constants.js';
 import { registerDispatcher } from '../src/websocket/handlers/dispatcher.js';
 import { AuthenticatedSocket } from '../src/websocket/types.js';
+import { getSocketRoles } from '../src/websocket/ride-socket.server.js';
+import type { RideDto } from '@urbanfleet/common';
+
+function makeRideDto(id: string): RideDto {
+  const fareBreakdown = {
+    baseFarePaise: 100,
+    distanceFarePaise: 200,
+    timeFarePaise: 0,
+    surgePaise: 0,
+    platformCommissionPaise: 30,
+    driverEarningPaise: 270,
+    totalPaise: 300,
+  };
+  return {
+    id,
+    riderId: 'rider-1',
+    driverId: null,
+    pickupAddress: 'Pickup',
+    pickupLat: 12.9716,
+    pickupLng: 77.5946,
+    destinationAddress: 'Destination',
+    destinationLat: 13.0827,
+    destinationLng: 80.2707,
+    pickup: { address: 'Pickup', coordinates: { latitude: 12.9716, longitude: 77.5946 } },
+    destination: { address: 'Destination', coordinates: { latitude: 13.0827, longitude: 80.2707 } },
+    fare: { estimated: 300, final: null, breakdown: fareBreakdown },
+    distance: { estimated: 3, actual: 3 },
+    duration: { estimated: 10, actual: null },
+    status: 'SEARCHING',
+    paymentStatus: 'PENDING',
+    driver: null,
+    cancelledBy: null,
+    cancellationReason: null,
+  };
+}
+
+describe('WebSocket token role mapping', () => {
+  it('uses the roles array when the primary role claim is RIDER', () => {
+    expect(getSocketRoles({ role: 'RIDER', roles: ['RIDER', 'DRIVER'] })).toEqual([
+      'RIDER',
+      'DRIVER',
+    ]);
+  });
+
+  it('ensures the driver role also includes rider access', () => {
+    expect(getSocketRoles({ role: 'DRIVER' })).toEqual(['DRIVER', 'RIDER']);
+  });
+});
 
 function createMockSocket(user: any): AuthenticatedSocket {
   const listeners: Record<string, Function[]> = {};
@@ -114,7 +162,7 @@ describe('Legacy Socket Registry & Emitters Suite', () => {
 
     // 1. emitNewRideRequest
     emitNewRideRequest('target-drv-100', {
-      ride: { id: 'ride-999', pickupAddress: 'MG Road' },
+      ride: makeRideDto('ride-999'),
     });
 
     // 2. emitRideCancelled
@@ -126,18 +174,20 @@ describe('Legacy Socket Registry & Emitters Suite', () => {
 
     // 3. emitPaymentCaptured
     emitDriverPaymentCaptured('target-drv-100', {
-      ride: { id: 'ride-999', totalFarePaise: 45000 },
+      ride: { id: 'ride-999', paymentStatus: 'CAPTURED' },
     });
 
     const messages = (mockDriverSocket as any).sentMessages.map((m: string) => JSON.parse(m));
     expect(messages[0].event).toBe(ServerEvents.NEW_RIDE);
     expect(messages[0].data.ride.id).toBe('ride-999');
+    expect(messages[0].data.ride.pickup.coordinates).toEqual({ latitude: 12.9716, longitude: 77.5946 });
+    expect(messages[0].data.ride).not.toHaveProperty('otp');
 
     expect(messages[1].event).toBe(ServerEvents.RIDE_CANCELLED);
     expect(messages[1].data.cancelledBy).toBe('RIDER');
 
     expect(messages[2].event).toBe(ServerEvents.PAYMENT_CAPTURED);
-    expect(messages[2].data.ride.totalFarePaise).toBe(45000);
+    expect(messages[2].data.ride.paymentStatus).toBe('CAPTURED');
 
     socketRegistry.unregister(mockDriverSocket);
   });
@@ -152,7 +202,8 @@ describe('Legacy Socket Registry & Emitters Suite', () => {
     socketRegistry.register(mockRiderSocket);
 
     // 1. emitRideAccepted
-    emitRideAccepted('target-rider-200', { ride: { id: 'ride-abc' } });
+    const ride = makeRideDto('ride-abc');
+    emitRideAccepted('target-rider-200', { ride });
 
     // 2. emitDriverLocation
     emitDriverLocation('target-rider-200', {
@@ -162,19 +213,21 @@ describe('Legacy Socket Registry & Emitters Suite', () => {
     });
 
     // 3. emitDriverArrived
-    emitDriverArrived('target-rider-200', { rideId: 'ride-abc' });
+    emitDriverArrived('target-rider-200', { ride });
 
     // 4. emitRideStarted
-    emitRideStarted('target-rider-200', { rideId: 'ride-abc' });
+    emitRideStarted('target-rider-200', { ride });
 
     // 5. emitArrivedAtDestination
-    emitArrivedAtDestination('target-rider-200', { rideId: 'ride-abc' });
+    emitArrivedAtDestination('target-rider-200', { ride });
 
     // 6. emitRideCompleted
-    emitRideCompleted('target-rider-200', { rideId: 'ride-abc' });
+    emitRideCompleted('target-rider-200', { ride });
 
     // 7. emitPaymentCaptured
-    emitRiderPaymentCaptured('target-rider-200', { ride: { id: 'ride-abc' } });
+    emitRiderPaymentCaptured('target-rider-200', {
+      ride: { id: 'ride-abc', paymentStatus: 'CAPTURED' },
+    });
 
     // 8. emitRideCancelled
     emitRiderRideCancelled('target-rider-200', {
@@ -188,6 +241,7 @@ describe('Legacy Socket Registry & Emitters Suite', () => {
 
     const messages = (mockRiderSocket as any).sentMessages.map((m: string) => JSON.parse(m));
     expect(messages[0].event).toBe(ServerEvents.RIDE_ACCEPTED);
+    expect(messages[0].data.ride.status).toBe('SEARCHING');
     expect(messages[1].event).toBe(ServerEvents.DRIVER_LOCATION);
     expect(messages[1].data.latitude).toBe(12.9716);
     expect(messages[2].event).toBe(ServerEvents.DRIVER_ARRIVED);

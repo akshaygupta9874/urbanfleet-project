@@ -51,12 +51,11 @@ import {
   VerifyCheckoutInput,
 } from "../types/payment.dto.js";
 
-import { formatRide, rideClient, type IRide } from "../../clients/ride.client.js";
+import { rideClient } from "../../clients/ride.client.js";
+import type { RideDto } from "@urbanfleet/common";
 import { RidePaymentStatus, RideStatus } from "../types/payment.types.js";
 export { RidePaymentStatus, RideStatus };
 import { UserRole } from "../../db/client.js";
-import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
-import { emitPaymentCaptured as emitPaymentCapturedToRider } from "../../sockets/emitters/rider.emitter.js";
 
 // Re-exported so existing imports of acquireLock from this file keep working.
 export { acquireLock } from "../../redis/redis-lock.js";
@@ -175,24 +174,15 @@ class PaymentService {
   async createOrder(
     input: CreateOrderInput
   ): Promise<CreateOrderResult> {
-    const rideIdStr = input.rideId?.toString();
-    const riderIdStr = input.riderId?.toString();
+    const rideIdStr = input.rideId;
+    const riderIdStr = input.riderId;
 
     if (!rideIdStr || !riderIdStr) {
       throw new AppError("Ride and rider are required.", 400, "INVALID_INPUT");
     }
 
-    const rawRide = await rideClient.getRideById(rideIdStr);
+    const ride = await rideClient.getRideById(rideIdStr);
 
-    if (!rawRide) {
-      throw new AppError(
-        "Ride not found.",
-        404,
-        "RIDE_NOT_FOUND"
-      );
-    }
-
-    const ride = formatRide(rawRide);
     if (!ride) {
       throw new AppError(
         "Ride not found.",
@@ -202,7 +192,7 @@ class PaymentService {
     }
 
     // Ownership first: never reveal the state of somebody else's ride.
-    const rideRiderId = ride.riderId?.toString();
+    const rideRiderId = ride.riderId;
     if (
       !rideRiderId || rideRiderId !== riderIdStr
     ) {
@@ -213,14 +203,11 @@ class PaymentService {
       );
     }
 
-    const isCancelled = ride.status === RideStatus.CANCELLED || ride.status === "CANCELLED";
+    const isCancelled = ride.status === RideStatus.CANCELLED;
     const payableRideStatuses: string[] = [
       RideStatus.ARRIVED_AT_DESTINATION,
       RideStatus.COMPLETED,
-      "ARRIVED_AT_DESTINATION",
-      "COMPLETED",
       RideStatus.CANCELLED,
-      "CANCELLED",
     ];
 
     if (
@@ -239,9 +226,10 @@ class PaymentService {
     // Fast path: this rider already has an order for this ride (double click,
     // page reload, retry after a failed attempt ...) -> hand back the same order.
     const existing =
-      await paymentRepository.findByIdempotencyKey(
+      (await paymentRepository.findByIdempotencyKey(
         input.idempotencyKey
-      );
+      )) ??
+      (await paymentRepository.findByRide(rideIdStr))[0];
 
     if (existing) {
       return this.resumeOrder(
@@ -251,8 +239,7 @@ class PaymentService {
     }
 
     // Pre-check ride details before calling the external gateway
-    const checkRows = await paymentRepository.queryRideRaw(rideIdStr);
-    const latestRide = (checkRows && checkRows.length > 0) ? formatRide(checkRows[0]) : ride;
+    const latestRide = await paymentRepository.findRideById(rideIdStr);
     if (!latestRide) {
       throw new AppError(
         "Ride not found.",
@@ -261,7 +248,7 @@ class PaymentService {
       );
     }
 
-    const latestDriverId = latestRide.driverId?.toString();
+    const latestDriverId = latestRide.driverId;
     if (!latestDriverId && !isCancelled) {
       throw new AppError(
         "Driver not assigned.",
@@ -270,7 +257,7 @@ class PaymentService {
       );
     }
 
-    const fareBreakdown = latestRide.fare?.breakdown;
+    const fareBreakdown = latestRide.fare.breakdown;
 
     if (!fareBreakdown) {
       throw new AppError(
@@ -310,12 +297,7 @@ class PaymentService {
       let reservation: { payment: IPayment; alreadyExists: boolean };
       try {
         reservation = await paymentRepository.transaction(async (tx) => {
-          const rows = await paymentRepository.queryRideRaw(rideIdStr, true, tx);
-          if (!rows || rows.length === 0) {
-            throw new AppError("Ride not found.", 404, "RIDE_NOT_FOUND");
-          }
-
-          const lockedRide = formatRide(rows[0]);
+          const lockedRide = await paymentRepository.findRideById(rideIdStr, tx);
           if (!lockedRide) {
             throw new AppError("Ride not found.", 404, "RIDE_NOT_FOUND");
           }
@@ -339,9 +321,9 @@ class PaymentService {
             return { payment: existingForRide[0]!, alreadyExists: true };
           }
 
-          const lockedFare = lockedRide.fare?.breakdown;
-          const lockedRiderId = lockedRide.riderId?.toString();
-          const lockedDriverId = lockedRide.driverId?.toString() || (isCancelled ? lockedRiderId : undefined);
+          const lockedFare = lockedRide.fare.breakdown;
+          const lockedRiderId = lockedRide.riderId;
+          const lockedDriverId = lockedRide.driverId || (isCancelled ? lockedRiderId : undefined);
           if (!lockedDriverId || !lockedFare) {
             throw new AppError(
               "Ride payment details are incomplete.",
@@ -746,7 +728,7 @@ class PaymentService {
       );
     }
 
-    let updatedRide: IRide | null = null;
+    let updatedRide: RideDto | null = null;
 
     const transactionId = randomUUID();
 
@@ -770,6 +752,33 @@ class PaymentService {
 
       if (!claimed) {
         return null; // another request already recorded this capture
+      }
+
+      // If claimed payment has missing/null fareBreakdown, populate from ride or calculate default
+      if (!claimed.fareBreakdown || typeof claimed.fareBreakdown.platformCommissionPaise !== 'number') {
+        const rideData = await paymentRepository.findRideById(payment.ride.toString(), tx);
+        if (rideData?.fare?.breakdown) {
+          claimed.fareBreakdown = rideData.fare.breakdown as unknown as IFareBreakdown;
+          await paymentRepository.update(claimed.id.toString(), {
+            fareBreakdown: rideData.fare.breakdown as unknown as IFareBreakdown,
+          }, tx);
+        } else {
+          const total = claimed.amountPaise;
+          const platform = Math.round(total * 0.2);
+          const driver = total - platform;
+          claimed.fareBreakdown = {
+            baseFarePaise: 0,
+            distanceFarePaise: 0,
+            timeFarePaise: 0,
+            surgePaise: 0,
+            platformCommissionPaise: platform,
+            driverEarningPaise: driver,
+            totalPaise: total,
+          };
+          await paymentRepository.update(claimed.id.toString(), {
+            fareBreakdown: claimed.fareBreakdown as unknown as IFareBreakdown,
+          }, tx);
+        }
       }
 
       // 2) ledger: rider debit / platform + driver credit
@@ -798,6 +807,35 @@ class PaymentService {
         tx
       );
 
+      // 4) Stage Outbox event in database for Kafka worker
+      const pTx = tx as unknown as { outboxEvent?: { create: (args: unknown) => Promise<unknown> } };
+      if (typeof pTx.outboxEvent?.create === 'function') {
+        try {
+          await pTx.outboxEvent.create({
+            data: {
+              topic: 'urbanfleet.payment.events',
+              partitionKey: payment.ride.toString(),
+              eventType: 'PAYMENT_CAPTURED',
+              aggregateType: 'PAYMENT',
+              aggregateId: claimed.id.toString(),
+              aggregateSequence: 1,
+              payload: {
+                paymentId: claimed.id.toString(),
+                rideId: payment.ride.toString(),
+                riderId: (claimed.riderId ?? claimed.rider)?.toString(),
+                driverId: (claimed.driverId ?? claimed.driver)?.toString(),
+                amountPaise: claimed.amountPaise,
+                gatewayPaymentId: entity.id,
+                capturedAt: new Date(),
+              },
+              status: 'PENDING',
+            },
+          });
+        } catch (outboxErr) {
+          paymentLog.warn('Failed to stage outbox event for payment capture', { error: String(outboxErr) });
+        }
+      }
+
       return { claimed, updatedRideRecord };
     });
 
@@ -805,7 +843,7 @@ class PaymentService {
       return; // another request already recorded this capture
     }
 
-    updatedRide = formatRide(captureResult.updatedRideRecord as Record<string, unknown> | null | undefined);
+    updatedRide = captureResult.updatedRideRecord;
 
     if (updatedRide) {
       paymentLog.info("payment.captured", {
@@ -826,33 +864,6 @@ class PaymentService {
         });
       }
 
-      // Notifications are best-effort: the money is already safely recorded.
-      try {
-        const driverId = updatedRide.driverId?.toString();
-        const riderId = updatedRide.riderId?.toString();
-
-        if (driverId) {
-          emitPaymentCaptured(
-            driverId,
-            {
-              ride: updatedRide
-            }
-          );
-        }
-
-        if (riderId) {
-          emitPaymentCapturedToRider(
-            riderId,
-            {
-              ride: updatedRide,
-            }
-          );
-        }
-      } catch (err) {
-        paymentLog.error("payment.notify_failed", {
-          paymentId: payment.id.toString(),
-        });
-      }
     }
 
   }

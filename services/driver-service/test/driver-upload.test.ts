@@ -22,6 +22,7 @@ describe('Driver Cloudinary Multi-File Registration & Upload Workflow', () => {
 
     mockDocService = {
       uploadDocument: vi.fn(),
+      syncDriverVerificationStatus: vi.fn().mockResolvedValue(undefined),
     };
 
     mockCloudinaryService = {

@@ -1,9 +1,25 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { DriverService } from '../src/services/driver.service.js';
-import { DriverController } from '../src/controllers/driver.controller.js';
+import {
+  DriverController,
+  formatDriverProfileForFrontend,
+} from '../src/controllers/driver.controller.js';
 import { AppError } from '@urbanfleet/common';
 
 describe('Driver Service Security & Integration Fixes Suite', () => {
+  it('does not expose an inconsistent profile as verified', () => {
+    const formatted = formatDriverProfileForFrontend({
+      ...mockFullProfile,
+      verificationStatus: 'UNDER_REVIEW',
+      isVerified: true,
+    });
+
+    expect(formatted).toMatchObject({
+      verificationStatus: 'UNDER_REVIEW',
+      isVerified: false,
+    });
+  });
+
   let mockDriverRepo: any;
   let mockDocRepo: any;
   let driverService: DriverService;
@@ -58,6 +74,33 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
   });
 
   describe('Document Verification Role-Based Authorization', () => {
+    it('grants the DRIVER role only after the driver profile is approved', async () => {
+      const grantDriverRole = vi.fn().mockResolvedValue(undefined);
+      const approvedProfile = { ...mockFullProfile, isVerified: true };
+      mockDocService.verifyDocument.mockResolvedValue({
+        id: 'doc-verified',
+        driverProfileId: approvedProfile.id,
+        status: 'VERIFIED',
+      });
+      mockDriverRepo.findById.mockResolvedValueOnce(approvedProfile);
+      const controller = new DriverController(
+        driverService,
+        mockDocService,
+        {} as any,
+        { grantDriverRole } as any
+      );
+      const req: any = {
+        params: { id: 'doc-verified' },
+        body: { status: 'VERIFIED' },
+        roles: ['ADMIN'],
+      };
+      const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+
+      await controller.verifyDocument(req, res, () => {});
+
+      expect(grantDriverRole).toHaveBeenCalledWith(approvedProfile.userId);
+    });
+
     it('rejects document verification attempt by unprivileged user with 403 FORBIDDEN', async () => {
       const req: any = {
         params: { id: 'doc-1' },

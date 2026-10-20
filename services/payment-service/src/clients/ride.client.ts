@@ -1,72 +1,8 @@
 import axios, { AxiosInstance, isAxiosError } from 'axios';
 import { prisma } from "../db/client.js";
-import type { IFareBreakdown } from "../payment/types/payment.types.js";
-
-export interface IRide {
-  id: string;
-  riderId: string;
-  driverId?: string | null;
-  status: string;
-  paymentStatus?: string;
-  farePaise?: number;
-  totalFarePaise?: number;
-  totalFare?: number;
-  baseFarePaise?: number;
-  fare?: { breakdown?: IFareBreakdown; [key: string]: unknown };
-  [key: string]: unknown;
-}
-
-function extractEntityId(val: unknown): string | undefined {
-  if (!val) return undefined;
-  if (typeof val === 'string') return val;
-  if (typeof val === 'object' && 'id' in val && (val as { id?: unknown }).id) {
-    return String((val as { id: unknown }).id);
-  }
-  return undefined;
-}
+import type { RideDto } from "@urbanfleet/common";
 
 type Mockable<T> = T & { mock?: unknown };
-
-export function formatRide(ride: IRide | Record<string, unknown> | null | undefined): IRide | null {
-  if (!ride) return null;
-  const rideData = ride as IRide;
-  const normalizedRide = { ...rideData };
-  delete normalizedRide.fareBreakdown;
-  const riderId = String(rideData.riderId ?? '');
-  const driverId = rideData.driverId ? String(rideData.driverId) : null;
-  let breakdown = rideData.fare?.breakdown;
-  if (!breakdown && rideData.totalFarePaise !== undefined) {
-    const total = Number(rideData.totalFarePaise);
-    const platform = Math.round(total * 0.10);
-    const driver = total - platform;
-    breakdown = {
-      baseFarePaise: Number(rideData.baseFarePaise ?? total),
-      distanceFarePaise: 0,
-      timeFarePaise: 0,
-      surgePaise: 0,
-      platformCommissionPaise: platform,
-      driverEarningPaise: driver,
-      totalPaise: total
-    };
-  }
-  return {
-    ...normalizedRide,
-    id: String(ride.id),
-    riderId: riderId ?? '',
-    driverId,
-    rider: riderId,
-    driver: driverId,
-    status: String(ride.status || ''),
-    ...(breakdown
-      ? {
-          fare: {
-            ...rideData.fare,
-            breakdown,
-          },
-        }
-      : {}),
-  };
-}
 
 export class RideClient {
   private client: AxiosInstance;
@@ -84,8 +20,8 @@ export class RideClient {
     });
   }
 
-  async getRideById(id: string): Promise<IRide | null> {
-    const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<IRide | null>> };
+  async getRideById(id: string): Promise<RideDto | null> {
+    const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<RideDto | null>> };
     if (typeof pRide?.findUnique === 'function' && pRide.findUnique.mock) {
       return pRide.findUnique({ where: { id } });
     }
@@ -93,10 +29,10 @@ export class RideClient {
     try {
       let res;
       try {
-        res = await this.client.get<{ success: boolean; data: IRide }>(`/api/rides/${id}`);
+        res = await this.client.get<{ success: boolean; data: RideDto }>(`/api/rides/${id}`);
       } catch (err: unknown) {
         if (isAxiosError(err) && err.response?.status === 404) {
-          res = await this.client.get<{ success: boolean; data: IRide }>(`/api/ride/${id}`);
+          res = await this.client.get<{ success: boolean; data: RideDto }>(`/api/ride/${id}`);
         } else {
           throw err;
         }
@@ -104,7 +40,7 @@ export class RideClient {
 
       return res.data?.data ?? null;
     } catch (err: unknown) {
-      const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<IRide | null>> };
+      const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<RideDto | null>> };
       if (typeof pRide?.findUnique === 'function' && pRide.findUnique.mock) {
         try {
           return await pRide.findUnique({ where: { id } });
@@ -126,25 +62,26 @@ export class RideClient {
     }
   }
 
-  async updatePaymentStatus(id: string, paymentStatus: string, currentStatus?: string): Promise<unknown> {
+  async updatePaymentStatus(id: string, paymentStatus: string, currentStatus?: string): Promise<RideDto | null> {
     const pRide = prisma.ride as unknown as { updateMany?: Mockable<(args: { where: { id: string; paymentStatus?: string }; data: { paymentStatus: string } }) => Promise<unknown>> };
     if (typeof pRide?.updateMany === 'function' && pRide.updateMany.mock) {
       const where: { id: string; paymentStatus?: string } = { id };
       if (currentStatus) where.paymentStatus = currentStatus;
-      return pRide.updateMany({ where, data: { paymentStatus } });
+      await pRide.updateMany({ where, data: { paymentStatus } });
+      return this.getRideById(id);
     }
 
     try {
       let res;
       const payload = { paymentStatus, currentStatus };
       try {
-        res = await this.client.patch<{ success: boolean; data: unknown }>(
+        res = await this.client.patch<{ success: boolean; data: RideDto }>(
           `/api/rides/${id}/payment-status`,
           payload
         );
       } catch (err: unknown) {
         if (isAxiosError(err) && err.response?.status === 404) {
-          res = await this.client.patch<{ success: boolean; data: unknown }>(
+          res = await this.client.patch<{ success: boolean; data: RideDto }>(
             `/api/ride/${id}/payment-status`,
             payload
           );
@@ -158,7 +95,8 @@ export class RideClient {
       const pRide = prisma.ride as unknown as { updateMany?: Mockable<(args: { where: { id: string; paymentStatus?: string }; data: { paymentStatus: string } }) => Promise<unknown>> };
       if (typeof pRide?.updateMany === 'function' && pRide.updateMany.mock) {
         try {
-          return await pRide.updateMany({ where: { id }, data: { paymentStatus } });
+          await pRide.updateMany({ where: { id }, data: { paymentStatus } });
+          return await this.getRideById(id);
         } catch {
           // ignore fallback error
         }

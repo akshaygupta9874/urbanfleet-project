@@ -16,6 +16,19 @@ const logger = createLogger('ride-websocket-server');
 
 let globalWss: WebSocketServer | null = null;
 
+export function getSocketRoles(userPayload: Pick<AuthPayload, 'role' | 'roles'>): string[] {
+  const tokenRoles = Array.isArray(userPayload.roles)
+    ? userPayload.roles
+    : Array.isArray(userPayload.role)
+    ? userPayload.role
+    : userPayload.role
+    ? [userPayload.role]
+    : ['RIDER'];
+  return tokenRoles.includes('DRIVER') && !tokenRoles.includes('RIDER')
+    ? [...tokenRoles, 'RIDER']
+    : tokenRoles;
+}
+
 export function initRideWebSocketServer(
   server: http.Server,
   redis: RedisClientType,
@@ -84,11 +97,7 @@ export function initRideWebSocketServer(
 
   wss.on('connection', (ws: WebSocket, req: http.IncomingMessage, userPayload: AuthPayload) => {
     const authenticatedSocket = ws as AuthenticatedSocket;
-    const roles: string[] = Array.isArray(userPayload.role)
-      ? userPayload.role
-      : userPayload.role
-      ? [userPayload.role]
-      : ['RIDER'];
+    const roles = getSocketRoles(userPayload);
 
     const user: AuthenticatedSocketUser = {
       userId: userPayload.userId || '',

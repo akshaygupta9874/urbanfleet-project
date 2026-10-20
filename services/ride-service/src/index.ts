@@ -18,6 +18,7 @@ import { RideController } from './controllers/ride.controller.js';
 import { createRideRouter } from './routes/ride.routes.js';
 import { OutboxWorker } from './workers/outbox.worker.js';
 import { initRideWebSocketServer } from './websocket/ride-socket.server.js';
+import { initRidePaymentConsumer } from './consumers/payment.consumer.js';
 
 const logger = createLogger('ride-service');
 const redis = rideRedisClient;
@@ -26,10 +27,11 @@ const server = http.createServer(app);
 
 const port = process.env.PORT || 4004;
 
-// Connect Redis & Outbox Worker
+// Connect Redis, Outbox Worker & Payment Kafka Consumer
 redis.connect().catch(err => logger.error('Redis connect error:', err));
 const outboxWorker = new OutboxWorker(prisma);
 outboxWorker.start().catch(err => logger.error('Outbox worker start error:', err));
+initRidePaymentConsumer(prisma).catch(err => logger.error('Ride payment consumer error:', err));
 
 // Middlewares
 app.use((req, res, next) => {

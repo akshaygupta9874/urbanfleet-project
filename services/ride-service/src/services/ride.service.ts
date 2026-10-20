@@ -44,7 +44,7 @@ export class RideService {
     this.otpService = otpService;
   }
 
-  async createRide(input: CreateRideInput): Promise<Ride & { otp: string }> {
+  async createRide(input: CreateRideInput): Promise<Ride> {
     const fare = this.fareService.calculateFareEstimate(input.pickup, input.destination, input.vehicleCategory);
     const otp = this.otpService.generateRideOtp();
 
@@ -94,11 +94,17 @@ export class RideService {
         }
       });
 
-      return {
-        ...created,
-        otp
-      };
+      return created;
     });
+  }
+
+  async getRiderOtpForRide(rideId: string, riderId: string): Promise<string | null> {
+    const ride = await this.rideRepo.findById(rideId);
+    if (!ride) throw new NotFoundError('Ride not found');
+    if (ride.riderId !== riderId) {
+      throw new AppError('Forbidden: Only the rider can view the verification code', 403, 'FORBIDDEN');
+    }
+    return this.otpService.getRideOtp(rideId);
   }
 
   async getRideById(id: string, requestingUserId?: string, userRole?: string | string[]): Promise<RideWithOtp> {
@@ -115,22 +121,10 @@ export class RideService {
         throw new AppError('Forbidden: You are not authorized to view this ride', 403, 'FORBIDDEN');
       }
 
-      // Redact OTP if driver is viewing active ride
-      if (isDriver && !isRider && !isAdmin) {
-        return {
-          ...ride,
-          otp: null
-        };
-      }
-
-      // Rider and Admin can see the OTP if active
-      if (isRider || isAdmin) {
-        const otp = await this.otpService.getRideOtp(ride.id);
-        return {
-          ...ride,
-          otp
-        };
-      }
+      return {
+        ...ride,
+        otp: isRider ? await this.otpService.getRideOtp(ride.id) : null
+      };
     }
 
     return {
@@ -155,13 +149,18 @@ export class RideService {
     return this.rideRepo.findHistoryByDriverId(driverId);
   }
 
-  async getActiveRideForUser(userId: string, isDriver: boolean): Promise<Ride | null> {
-    return isDriver
+  async getActiveRideForUser(userId: string, isDriver: boolean): Promise<RideWithOtp | null> {
+    const activeRide = await (isDriver
       ? this.rideRepo.findActiveRideByDriverId(userId)
-      : this.rideRepo.findActiveRideByRiderId(userId);
+      : this.rideRepo.findActiveRideByRiderId(userId));
+    if (!activeRide) return null;
+    return {
+      ...activeRide,
+      otp: isDriver ? null : await this.otpService.getRideOtp(activeRide.id)
+    };
   }
 
-  async acceptRide(rideId: string, driverId: string): Promise<Ride> {
+  async acceptRide(rideId: string, driverId: string, otp?: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       // 1. Enforce single active ride per driver
       const existingActive = await tx.ride.findFirst({
@@ -294,7 +293,7 @@ export class RideService {
     return this.cancelRide(input.rideId, input.driverId, input.reason);
   }
 
-  async startRide(rideId: string, driverId: string, otp: string): Promise<Ride> {
+  async startRide(rideId: string, driverId: string, otp?: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
@@ -305,6 +304,10 @@ export class RideService {
 
       if (ride.status !== 'DRIVER_ARRIVING' && ride.status !== 'DRIVER_ASSIGNED') {
         throw new ConflictError(`Cannot start ride from status ${ride.status}. Driver must be arriving/assigned first.`);
+      }
+
+      if (!otp) {
+        throw new AppError('OTP is required to start ride', 400);
       }
 
       const isValidOtp = await this.otpService.verifyRideOtp(rideId, otp);

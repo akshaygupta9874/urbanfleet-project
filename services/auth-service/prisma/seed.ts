@@ -36,7 +36,7 @@ async function main() {
       firstName: 'John',
       lastName: 'Rider',
       phone: '+919876543210',
-      role: Role.RIDER,
+      roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     },
@@ -47,7 +47,7 @@ async function main() {
       firstName: 'John',
       lastName: 'Rider',
       phone: '+919876543210',
-      role: Role.RIDER,
+      roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     }
@@ -62,7 +62,7 @@ async function main() {
       firstName: 'Sarah',
       lastName: 'Rider',
       phone: '+919876543211',
-      role: Role.RIDER,
+      roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     },
@@ -73,7 +73,7 @@ async function main() {
       firstName: 'Sarah',
       lastName: 'Rider',
       phone: '+919876543211',
-      role: Role.RIDER,
+      roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     }
@@ -88,7 +88,7 @@ async function main() {
       firstName: 'Alex',
       lastName: 'Driver',
       phone: '+919876543220',
-      role: Role.DRIVER,
+      roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     },
@@ -99,7 +99,7 @@ async function main() {
       firstName: 'Alex',
       lastName: 'Driver',
       phone: '+919876543220',
-      role: Role.DRIVER,
+      roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     }
@@ -114,7 +114,7 @@ async function main() {
       firstName: 'Rajesh',
       lastName: 'Kumar',
       phone: '+919876543221',
-      role: Role.DRIVER,
+      roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     },
@@ -125,7 +125,7 @@ async function main() {
       firstName: 'Rajesh',
       lastName: 'Kumar',
       phone: '+919876543221',
-      role: Role.DRIVER,
+      roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
     }
@@ -140,7 +140,7 @@ async function main() {
       firstName: 'Fleet',
       lastName: 'Administrator',
       phone: '+919876543230',
-      role: Role.ADMIN,
+      roles: [Role.ADMIN],
       isEmailVerified: true,
       status: 'ACTIVE'
     },
@@ -151,28 +151,13 @@ async function main() {
       firstName: 'Fleet',
       lastName: 'Administrator',
       phone: '+919876543230',
-      role: Role.ADMIN,
+      roles: [Role.ADMIN],
       isEmailVerified: true,
       status: 'ACTIVE'
     }
   });
   console.log(`✅ Upserted Demo Admin: ${admin.email} (${admin.id})`);
 
-  // 6. Ensure verified driver profile akshaygupta9874@gmail.com has DRIVER role
-  try {
-    const akshayUser = await prisma.user.findFirst({
-      where: { email: 'akshaygupta9874@gmail.com' }
-    });
-    if (akshayUser && akshayUser.role !== Role.DRIVER) {
-      await prisma.user.update({
-        where: { id: akshayUser.id },
-        data: { role: Role.DRIVER }
-      });
-      console.log(`✅ Updated user akshaygupta9874@gmail.com to DRIVER role`);
-    }
-  } catch {
-    // Non-critical if user not present yet
-  }
 }
 
 main()

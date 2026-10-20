@@ -136,6 +136,7 @@ services:
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com}
+      NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
       - urbanfleet_internal
     depends_on:
@@ -168,6 +169,7 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
       - urbanfleet_internal
     depends_on:
@@ -230,6 +232,7 @@ services:
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_key}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-sample}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-your-razorpay-webhook-secret}
+      NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
       - urbanfleet_internal
     depends_on:
@@ -261,6 +264,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-test-sendgrid-key}
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-no-reply@urbanfleet.com}
+      NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
       - urbanfleet_internal
     depends_on:

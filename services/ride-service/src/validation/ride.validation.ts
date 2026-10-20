@@ -64,14 +64,18 @@ export const rideIdParamSchema = z.object({
   id: z.string().uuid('Invalid ride UUID'),
 });
 
+export const acceptRideSchema = z.object({
+  otp: z.string().regex(/^\d{4}$/, 'OTP must be exactly 4 digits').optional(),
+}).optional();
+
+export const startRideSchema = z.object({
+  otp: z.string().regex(/^\d{4}$/, 'OTP must be exactly 4 digits'),
+});
+
 export const paymentStatusSchema = z.object({
   paymentStatus: z.enum(['PENDING', 'PAID', 'CAPTURED', 'FAILED', 'REFUNDED'], {
     errorMap: () => ({ message: 'Invalid payment status. Must be one of: PENDING, PAID, CAPTURED, FAILED, REFUNDED' }),
   }),
-});
-
-export const startRideSchema = z.object({
-  otp: z.string().length(4, 'OTP must be exactly 4 digits'),
 });
 
 export const completeRideSchema = z.object({
@@ -90,7 +94,6 @@ export const rateRideSchema = z.object({
 
 export type EstimateFareDTO = z.infer<typeof estimateFareSchema>;
 export type RequestRideDTO = z.infer<typeof requestRideSchema>;
-export type StartRideDTO = z.infer<typeof startRideSchema>;
 export type CompleteRideDTO = z.infer<typeof completeRideSchema>;
 export type CancelRideDTO = z.infer<typeof cancelRideSchema>;
 export type RateRideDTO = z.infer<typeof rateRideSchema>;

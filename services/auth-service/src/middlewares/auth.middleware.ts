@@ -161,8 +161,8 @@ export const authMiddleware = asyncHandler(
           user = {
             id: dbUser.id,
             email: dbUser.email,
-            role: dbUser.role,
-            roles: [dbUser.role],
+            role: dbUser.roles[0] || 'RIDER',
+            roles: dbUser.roles,
             firstName: dbUser.firstName,
             lastName: dbUser.lastName,
           };

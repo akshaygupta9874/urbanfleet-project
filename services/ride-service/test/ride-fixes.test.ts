@@ -7,6 +7,22 @@ import { AppError, ConflictError } from '@urbanfleet/common';
 import { OutboxWorker } from '../src/workers/outbox.worker.js';
 import { registerDispatcher } from '../src/websocket/handlers/dispatcher.js';
 import { DriverEvents, RiderEvents } from '../src/websocket/event.constants.js';
+import { AcceptRideSchema, StartRideSchema } from '../src/websocket/validators/driver.validator.js';
+import type { RedisClientType } from 'redis';
+
+function createOtpService(redisOpen = true) {
+  const values = new Map<string, string>();
+  const redis = {
+    isOpen: redisOpen,
+    set: vi.fn(async (key: string, value: string) => {
+      values.set(key, value);
+      return 'OK';
+    }),
+    get: vi.fn(async (key: string) => values.get(key) ?? null),
+    del: vi.fn(async (key: string) => Number(values.delete(key))),
+  } as unknown as RedisClientType;
+  return { service: new OtpService(redis), redis };
+}
 
 describe('Ride Service Comprehensive Fixes Test Suite', () => {
 
@@ -50,7 +66,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
   // 2. Cryptographic OTP Generation & Verification
   // ==========================================
   describe('OtpService (Crypto Random & Timing-Safe with Store/Redis)', () => {
-    const otpService = new OtpService();
+    const { service: otpService, redis } = createOtpService();
 
     it('generates a 4-digit numeric OTP in range 1000-9999', () => {
       for (let i = 0; i < 50; i++) {
@@ -65,6 +81,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
     it('verifies correct OTP and rejects mismatched or empty OTPs', async () => {
       const otp = '4829';
       await otpService.storeRideOtp('test-ride-123', otp);
+      expect(redis.set).toHaveBeenCalledWith('ride:otp:test-ride-123', otp, { EX: 3600 });
       expect(await otpService.getRideOtp('test-ride-123')).toBe('4829');
       expect(await otpService.verifyRideOtp('test-ride-123', otp)).toBe(true);
       expect(await otpService.verifyRideOtp('test-ride-123', '1234')).toBe(false);
@@ -72,6 +89,19 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       expect(await otpService.verifyRideOtp('', otp)).toBe(false);
       await otpService.invalidateRideOtp('test-ride-123');
       expect(await otpService.getRideOtp('test-ride-123')).toBeNull();
+    });
+
+    it('does not verify a raw code without a Redis ride record and fails closed when Redis is unavailable', async () => {
+      expect(await otpService.verifyRideOtp('4829', '4829')).toBe(false);
+      const { service: unavailableOtpService } = createOtpService(false);
+      await expect(unavailableOtpService.storeRideOtp('ride-1', '4829')).rejects.toThrow(AppError);
+    });
+
+    it('accept event payload does not require OTP, start event payload requires 4-digit OTP', () => {
+      expect(AcceptRideSchema.safeParse({ rideId: 'ride-1' }).success).toBe(true);
+      expect(StartRideSchema.safeParse({ rideId: 'ride-1', otp: '4829' }).success).toBe(true);
+      expect(StartRideSchema.safeParse({ rideId: 'ride-1' }).success).toBe(false);
+      expect(StartRideSchema.safeParse({ rideId: 'ride-1', otp: '482' }).success).toBe(false);
     });
   });
 
@@ -171,7 +201,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       };
 
       mockFareService = new FareService();
-      mockOtpService = new OtpService();
+      mockOtpService = createOtpService().service;
 
       rideService = new RideService(
         mockRideRepo,
@@ -182,7 +212,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       );
     });
 
-    it('redacts OTP on getRideById for assigned driver prior to completion, allows rider and admin to view OTP', async () => {
+    it('reveals OTP only to the owning rider and redacts it from drivers and admins', async () => {
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED' });
       await mockOtpService.storeRideOtp('ride-test-1', '7890');
 
@@ -199,10 +229,10 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       const completedDriverView: any = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
       expect(completedDriverView.otp).toBeNull();
 
-      // 4. Admin can always see OTP from Redis
+      // 4. Admin cannot retrieve the rider-only OTP
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED' });
       const adminView: any = await rideService.getRideById('ride-test-1', 'admin-1', 'ADMIN');
-      expect(adminView.otp).toBe('7890');
+      expect(adminView.otp).toBeNull();
 
       // 5. Unrelated third-party is Forbidden (403)
       await expect(
@@ -237,28 +267,19 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       );
     });
 
-    it('startRide enforces driver ownership, DRIVER_ARRIVING status, and valid OTP verification', async () => {
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'DRIVER_ARRIVING', driverId: 'driver-xyz' });
+    it('allows driver to accept ride without OTP, requires correct OTP to start ride, and invalidates it when the ride starts', async () => {
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'SEARCHING', driverId: null });
       await mockOtpService.storeRideOtp('ride-test-1', '1234');
 
-      // Wrong driver
-      await expect(
-        rideService.startRide('ride-test-1', 'other-driver', '1234')
-      ).rejects.toThrow(AppError);
+      const accepted = await rideService.acceptRide('ride-test-1', 'driver-xyz');
+      expect(accepted.status).toBe('DRIVER_ASSIGNED');
+      expect(await mockOtpService.getRideOtp('ride-test-1')).toBe('1234');
 
-      // Invalid OTP
-      await expect(
-        rideService.startRide('ride-test-1', 'driver-xyz', '9999')
-      ).rejects.toThrow(AppError);
-
-      // Invalid status (e.g. still SEARCHING)
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'SEARCHING', driverId: 'driver-xyz' });
-      await expect(
-        rideService.startRide('ride-test-1', 'driver-xyz', '1234')
-      ).rejects.toThrow(ConflictError);
-
-      // Valid OTP & DRIVER_ARRIVING status starts the ride
       mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'DRIVER_ARRIVING', driverId: 'driver-xyz' });
+      await expect(rideService.startRide('ride-test-1', 'other-driver', '1234')).rejects.toThrow(AppError);
+      await expect(rideService.startRide('ride-test-1', 'driver-xyz')).rejects.toThrow(AppError);
+      await expect(rideService.startRide('ride-test-1', 'driver-xyz', '9999')).rejects.toThrow(AppError);
+
       const started = await rideService.startRide('ride-test-1', 'driver-xyz', '1234');
       expect(started.status).toBe('RIDE_STARTED');
       expect(mockOutboxRepo.stageEvent).toHaveBeenCalledWith(
@@ -329,7 +350,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       mockRideRepo.findActiveRideForDriver.mockResolvedValue({ id: 'existing-active-ride', status: 'RIDE_STARTED' });
 
       await expect(
-        rideService.acceptRide('ride-test-1', 'driver-xyz')
+        rideService.acceptRide('ride-test-1', 'driver-xyz', '0000')
       ).rejects.toThrow(ConflictError);
     });
 

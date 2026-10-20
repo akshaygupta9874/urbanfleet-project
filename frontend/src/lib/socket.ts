@@ -1,8 +1,14 @@
 import { getAccessToken } from "../apiInterceptor";
 import type { PaymentStatus } from "./payment";
 import type { Coordinates } from "../types/location";
+import type {
+  RideIdPayload,
+  RideLifecyclePayload,
+  RiderRideCreatedPayload,
+} from "../types/ride";
 
 const ServerEvents = {
+  RIDE_CREATED: "server:ride-created",
   RIDE_ACCEPTED: "server:ride-accepted",
   DRIVER_LOCATION: "server:driver-location",
   DRIVER_ARRIVED: "server:driver-arrived",
@@ -46,15 +52,16 @@ export type DriverEvent = (typeof DriverEvents)[keyof typeof DriverEvents];
 interface RiderSocketOptions {
   onReady: () => void;
   onError: (message: string) => void;
-  onRideAccepted: () => void;
+  onRideCreated: (payload: RiderRideCreatedPayload) => void;
+  onRideAccepted: (payload: RideLifecyclePayload) => void;
   onDriverLocation: (payload: DriverLocationPayload) => void;
-  onDriverArriving: () => void;
-  onRideStarted: () => void;
+  onDriverArriving: (payload: RideLifecyclePayload) => void;
+  onRideStarted: (payload: RideLifecyclePayload) => void;
   onPaymentCaptured: (payload: PaymentCapturedPayload) => void;
-  onRideArrivedAtDestination: () => void;
-  onRideCompleted: () => void;
+  onRideArrivedAtDestination: (payload: RideLifecyclePayload) => void;
+  onRideCompleted: (payload: RideLifecyclePayload) => void;
   onRideCancelled: (payload: RideCancelledPayload) => void;
-  onNoDriversAvailable: () => void;
+  onNoDriversAvailable: (payload: RideIdPayload) => void;
 }
 
 const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/+$/u, "");
@@ -85,32 +92,35 @@ export function connectRiderSocket(options: RiderSocketOptions): WebSocket {
       const message = JSON.parse(event.data.toString()) as ServerMessage<unknown>;
 
       switch (message.event) {
+        case ServerEvents.RIDE_CREATED:
+          options.onRideCreated(message.data as RiderRideCreatedPayload);
+          break;
         case ServerEvents.RIDE_ACCEPTED:
-          options.onRideAccepted();
+          options.onRideAccepted(message.data as RideLifecyclePayload);
           break;
         case ServerEvents.DRIVER_LOCATION:
           options.onDriverLocation(message.data as DriverLocationPayload);
           break;
         case ServerEvents.DRIVER_ARRIVED:
-          options.onDriverArriving();
+          options.onDriverArriving(message.data as RideLifecyclePayload);
           break;
         case ServerEvents.RIDE_STARTED:
-          options.onRideStarted();
+          options.onRideStarted(message.data as RideLifecyclePayload);
           break;
         case ServerEvents.PAYMENT_CAPTURED:
           options.onPaymentCaptured(message.data as PaymentCapturedPayload);
           break;
         case ServerEvents.ARRIVED_AT_DESTINATION:
-          options.onRideArrivedAtDestination();
+          options.onRideArrivedAtDestination(message.data as RideLifecyclePayload);
           break;
         case ServerEvents.RIDE_COMPLETED:
-          options.onRideCompleted();
+          options.onRideCompleted(message.data as RideLifecyclePayload);
           break;
         case ServerEvents.RIDE_CANCELLED:
           options.onRideCancelled(message.data as RideCancelledPayload);
           break;
         case ServerEvents.RIDE_NO_DRIVERS_AVAILABLE:
-          options.onNoDriversAvailable();
+          options.onNoDriversAvailable(message.data as RideIdPayload);
           break;
         case ServerEvents.ERROR:
           options.onError((message.data as { message?: string })?.message ?? "Socket error received.");

@@ -31,6 +31,7 @@ import {
 } from "./lib/payment";
 import { useAuthContext } from "./context/auth-context";
 import CityMapBackground from "./components/CityMapBackground";
+import type { RideDriver } from "./types/ride";
 
 interface FareBreakdown {
   baseFarePaise: number;
@@ -51,7 +52,7 @@ interface RideHistoryRide {
   duration: { estimated: number | null };
   status: string;
   paymentStatus?: PaymentStatus;
-  driver?: { id?: string; firstName?: string; lastName?: string; vehicleNumber?: string | null } | string | null;
+  driver: RideDriver | null;
   createdAt: string;
 }
 
@@ -99,12 +100,11 @@ function getBadgeStyle(map: Record<string, string>, key?: string | null) {
 }
 
 function driverInitial(ride: RideHistoryRide) {
-  if (typeof ride.driver === "string" || !ride.driver?.firstName) return "D";
+  if (!ride.driver?.firstName) return "D";
   return ride.driver.firstName.charAt(0).toUpperCase();
 }
 
 function driverDisplayName(ride: RideHistoryRide) {
-  if (typeof ride.driver === "string") return "Driver assigned";
   if (ride.driver?.firstName) return `${ride.driver.firstName} ${ride.driver.lastName ?? ""}`.trim();
   return "Driver assigned";
 }
@@ -198,7 +198,7 @@ export default function RideHistory() {
       return;
     }
 
-    const driverId = typeof currentRide.driver === "string" ? currentRide.driver : currentRide.driver?.id;
+    const driverId = currentRide.driver?.id;
     if (!driverId) {
       setError("Unable to determine the assigned driver for this ride.");
       return;
