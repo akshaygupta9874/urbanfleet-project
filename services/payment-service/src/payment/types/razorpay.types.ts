@@ -51,7 +51,7 @@ export interface RazorpayPayoutEntity {
     currency: string;
     status: string;
     mode: string;
-    /** The reference we supplied when creating the payout (our Payout._id). */
+    /** The reference we supplied when creating the payout (our Payout.id). */
     reference_id?: string | null;
     notes?: RazorpayNotes;
     utr?: string | null;

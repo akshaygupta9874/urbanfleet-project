@@ -12,8 +12,11 @@ const logger = createLogger('notification-dispatcher');
 
 export class NotificationDispatcher {
   private isRunning = false;
+  private notifRepo: NotificationRepository;
 
-  constructor(private notifRepo: NotificationRepository) {}
+  constructor(notifRepo: NotificationRepository) {
+    this.notifRepo = notifRepo;
+  }
 
   start() {
     this.isRunning = true;

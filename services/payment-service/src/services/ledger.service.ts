@@ -3,7 +3,11 @@ import { validateLedgerBalance } from '@urbanfleet/common';
 import crypto from 'crypto';
 
 export class LedgerService {
-  constructor(private ledgerRepo: LedgerRepository) {}
+  private ledgerRepo: LedgerRepository;
+
+  constructor(ledgerRepo: LedgerRepository) {
+    this.ledgerRepo = ledgerRepo;
+  }
 
   async recordPaymentCapture(tx: any, payment: any) {
     const transactionId = crypto.randomUUID();

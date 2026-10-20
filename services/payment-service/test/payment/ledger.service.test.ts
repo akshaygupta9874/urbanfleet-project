@@ -104,7 +104,7 @@ describe("posting rules", () => {
     expect(sum(rows, T.CREDIT, A.DRIVER)).toBe(20000);
     expect(rows.find((r) => r.account === A.DRIVER).ownerId).toBe(payment.driver);
     expect(rows.find((r) => r.account === A.RIDER).ownerId).toBe(payment.rider);
-    expect(rows.every((r) => r.idempotencyKey === `payment:${payment._id}:capture`)).toBe(true);
+    expect(rows.every((r) => r.idempotencyKey === `payment:${payment.id}:capture`)).toBe(true);
     expect(rows.every((r) => r.referenceType === LedgerReferenceType.PAYMENT)).toBe(true);
   });
 
@@ -145,7 +145,7 @@ describe("posting rules", () => {
     }
     expect(booking[0].idempotencyKey).toMatch(/:book$/);
     expect(undo[0].idempotencyKey).toMatch(/:undo$/);
-    expect(booking.every((r) => r.referenceType === LedgerReferenceType.REFUND && r.referenceId === payment._id)).toBe(true);
+    expect(booking.every((r) => r.referenceType === LedgerReferenceType.REFUND && r.referenceId === payment.id)).toBe(true);
   });
 
   it("payout disbursement and reversal move DRIVER <-> BANK", async () => {

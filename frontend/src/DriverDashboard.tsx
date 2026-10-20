@@ -41,7 +41,7 @@ type RideStatus =
   | "SEARCHING"
   | "DRIVER_ASSIGNED"
   | "DRIVER_ARRIVING"
-  | "STARTED"
+  | "RIDE_STARTED"
   | "ARRIVED_AT_DESTINATION"
   | "COMPLETED"
   | "CANCELLED";
@@ -62,7 +62,7 @@ interface FareBreakdown {
 }
 
 export interface Ride {
-  _id: string;
+  id: string;
   driver: string;
   pickup: RidePoint;
   destination: RidePoint;
@@ -84,7 +84,7 @@ export interface Ride {
 }
 
 interface DriverProfileData {
-  _id: string;
+  id: string;
   profilePhoto: { url: string; publicId: string };
   vehicleImages: { front: string; back: string; left: string; right: string; interior: string };
   vehicle: {
@@ -151,7 +151,7 @@ const ServerEvents = {
 
 type DriverStatus = "OFFLINE" | "ONLINE" | "AVAILABLE" | "BUSY";
 
-const BUSY_RIDE_STATUSES: RideStatus[] = ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "STARTED", "ARRIVED_AT_DESTINATION"];
+const BUSY_RIDE_STATUSES: RideStatus[] = ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"];
 const TERMINAL_RIDE_STATUSES: RideStatus[] = ["COMPLETED", "CANCELLED"];
 const HEARTBEAT_INTERVAL_MS = 10000;
 
@@ -189,7 +189,7 @@ const RIDE_STATUS_CONFIG: Record<
     description: "You're on your way to the rider.",
     step: 2,
   },
-  STARTED: {
+  RIDE_STARTED: {
     label: "Trip in progress",
     badge: "bg-[#3a1f0a]/90 text-[#ffe9be] border border-[#c58a3a]/60",
     description: "Trip is underway to the destination.",
@@ -264,7 +264,7 @@ const RIDE_STEPS: { key: RideStatus; label: string }[] = [
   { key: "SEARCHING", label: "Searching" },
   { key: "DRIVER_ASSIGNED", label: "Assigned" },
   { key: "DRIVER_ARRIVING", label: "Arriving" },
-  { key: "STARTED", label: "In trip" },
+  { key: "RIDE_STARTED", label: "In trip" },
   { key: "ARRIVED_AT_DESTINATION", label: "At destination" },
   { key: "COMPLETED", label: "Completed" },
 ];
@@ -482,7 +482,7 @@ export default function DriverDashboard() {
             line.forEach(([lon, lat]) => flatPoints.push({ lat, lng: lon }));
           });
           setRoutePolyline({
-            rideId: currentRide._id,
+            rideId: currentRide.id,
             points: flatPoints,
           });
         }
@@ -582,7 +582,7 @@ export default function DriverDashboard() {
             );
             break;
           case ServerEvents.RIDE_STARTED:
-            setCurrentRide((prev) => (prev ? { ...prev, status: "STARTED" } : prev));
+            setCurrentRide((prev) => (prev ? { ...prev, status: "RIDE_STARTED" } : prev));
             break;
           case ServerEvents.RIDE_COMPLETED: {
             setCurrentRide((prev) => {
@@ -778,7 +778,7 @@ export default function DriverDashboard() {
     } else if (event === DriverEvents.ARRIVED_AT_DESTINATION) {
       setCurrentRide((prev) => (prev ? { ...prev, status: "ARRIVED_AT_DESTINATION" } : prev));
     } else if (event === DriverEvents.START_RIDE) {
-      setCurrentRide((prev) => (prev ? { ...prev, status: "STARTED" } : prev));
+      setCurrentRide((prev) => (prev ? { ...prev, status: "RIDE_STARTED" } : prev));
     }
   };
 
@@ -1122,32 +1122,32 @@ export default function DriverDashboard() {
               <div className="w-full flex flex-col sm:flex-row gap-3">
                 {currentRide.status === "SEARCHING" && (
                   <>
-                    <Button onClick={() => handleAcceptRide(currentRide._id)} className="w-full bg-gradient-to-br from-emerald-900 to-emerald-950 text-emerald-100 hover:opacity-90 border border-emerald-500/30 h-11 active:scale-[0.98] transition-all font-semibold">
+                    <Button onClick={() => handleAcceptRide(currentRide.id)} className="w-full bg-gradient-to-br from-emerald-900 to-emerald-950 text-emerald-100 hover:opacity-90 border border-emerald-500/30 h-11 active:scale-[0.98] transition-all font-semibold">
                       <CheckCircle2 className="mr-2 h-4 w-4" /> Accept Ride Request
                     </Button>
-                    <Button onClick={() => handleRejectRide(currentRide._id)} variant="outline" className="w-full border-rose-500/30 bg-rose-950/20 text-rose-900 hover:bg-rose-950/30 h-11 active:scale-[0.98] transition-all font-semibold">
+                    <Button onClick={() => handleRejectRide(currentRide.id)} variant="outline" className="w-full border-rose-500/30 bg-rose-950/20 text-rose-900 hover:bg-rose-950/30 h-11 active:scale-[0.98] transition-all font-semibold">
                       <X className="mr-2 h-4 w-4" /> Decline
                     </Button>
                   </>
                 )}
                 {currentRide.status === "DRIVER_ASSIGNED" && (
-                  <Button onClick={() => sendRideAction(DriverEvents.ARRIVED_AT_PICKUP, currentRide._id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
+                  <Button onClick={() => sendRideAction(DriverEvents.ARRIVED_AT_PICKUP, currentRide.id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
                     <MapPin className="mr-2 h-4 w-4" /> Arrived at Pickup Location
                   </Button>
                 )}
                 {currentRide.status === "DRIVER_ARRIVING" && (
-                  <Button onClick={() => sendRideAction(DriverEvents.START_RIDE, currentRide._id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
+                  <Button onClick={() => sendRideAction(DriverEvents.START_RIDE, currentRide.id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
                     <ChevronRight className="mr-2 h-4 w-4" /> Start Trip
                   </Button>
                 )}
-                {currentRide.status === "STARTED" && (
-                  <Button onClick={() => sendRideAction(DriverEvents.ARRIVED_AT_DESTINATION, currentRide._id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
+                {currentRide.status === "RIDE_STARTED" && (
+                  <Button onClick={() => sendRideAction(DriverEvents.ARRIVED_AT_DESTINATION, currentRide.id)} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 h-11 active:scale-[0.98] transition-all font-semibold">
                     <MapPin className="mr-2 h-4 w-4" /> Arrived at Destination
                   </Button>
                 )}
                 {currentRide.status === "ARRIVED_AT_DESTINATION" && (
                   <Button
-                    onClick={() => sendRideAction(DriverEvents.COMPLETE_RIDE, currentRide._id)}
+                    onClick={() => sendRideAction(DriverEvents.COMPLETE_RIDE, currentRide.id)}
                     disabled={!canCompleteCurrentRide}
                     className="w-full bg-gradient-to-br from-emerald-900 to-emerald-950 text-emerald-100 hover:opacity-90 border border-emerald-500/30 h-11 active:scale-[0.98] transition-all font-semibold"
                   >
@@ -1155,7 +1155,7 @@ export default function DriverDashboard() {
                   </Button>
                 )}
                 {["DRIVER_ASSIGNED", "DRIVER_ARRIVING"].includes(currentRide.status) && (
-                  <Button onClick={() => handleCancelRide(currentRide._id)} variant="outline" className="w-full border-rose-500/30 bg-rose-950/20 text-rose-900 hover:bg-rose-950/30 h-11 active:scale-[0.98] transition-all font-semibold">
+                  <Button onClick={() => handleCancelRide(currentRide.id)} variant="outline" className="w-full border-rose-500/30 bg-rose-950/20 text-rose-900 hover:bg-rose-950/30 h-11 active:scale-[0.98] transition-all font-semibold">
                     <X className="mr-2 h-4 w-4" /> Cancel Ride
                   </Button>
                 )}
@@ -1234,7 +1234,7 @@ export default function DriverDashboard() {
           </div>
           <div className="h-[350px] w-full sm:h-[450px] lg:h-[520px]">
             <MapView center={mapCenter} zoom={13} markers={mapMarkers} path={
-              currentRide && routePolyline?.rideId === currentRide._id
+              currentRide && routePolyline?.rideId === currentRide.id
                 ? routePolyline.points
                 : []
             } />

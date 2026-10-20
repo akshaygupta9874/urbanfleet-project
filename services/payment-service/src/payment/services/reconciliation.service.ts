@@ -152,7 +152,7 @@ export class ReconciliationService {
       } catch (err) {
         summary.failed++;
         paymentLog.error("reconcile.payment_failed", {
-          paymentId: payment._id.toString(),
+          paymentId: payment.id.toString(),
         });
       }
     }
@@ -200,7 +200,7 @@ export class ReconciliationService {
             )) as unknown as { items: (RazorpayRefundEntity & { receipt?: string | null })[] };
 
             gatewayRefund = list.items.find(
-              (item) => item.receipt === record._id.toString()
+              (item) => item.receipt === record.id.toString()
             );
           }
 
@@ -224,8 +224,8 @@ export class ReconciliationService {
             ageMs > minutes(RECONCILE_UNSENT_REFUND_GIVE_UP_MINUTES)
           ) {
             const undone = await refundService.abandonUnsentRefund(
-              payment._id.toString(),
-              record._id.toString(),
+              payment.id.toString(),
+              record.id.toString(),
               "Refund never reached the payment gateway"
             );
 
@@ -236,8 +236,8 @@ export class ReconciliationService {
         } catch (err) {
           summary.failed++;
           paymentLog.error("reconcile.refund_failed", {
-            paymentId: payment._id.toString(),
-            refundId: record._id.toString(),
+            paymentId: payment.id.toString(),
+            refundId: record.id.toString(),
           });
         }
       }
@@ -273,7 +273,7 @@ export class ReconciliationService {
   private async healFromGateway(payment: IPayment): Promise<boolean> {
     if (!payment.gatewayOrderId) {
       paymentLog.warn("reconcile.payment_order_missing", {
-        paymentId: payment._id.toString(),
+        paymentId: payment.id.toString(),
       });
       return false;
     }
@@ -291,7 +291,7 @@ export class ReconciliationService {
     }
 
     paymentLog.warn("reconcile.missed_capture_found", {
-      paymentId: payment._id.toString(),
+      paymentId: payment.id.toString(),
       gatewayPaymentId: captured.id,
     });
 
@@ -303,7 +303,7 @@ export class ReconciliationService {
   private async checkLedger(payment: IPayment, issues: string[]): Promise<number> {
     const entries = await ledgerRepository.listByReference(
       LedgerReferenceType.PAYMENT,
-      payment._id
+      payment.id
     );
 
     const transactionIds = new Set(entries.map((entry) => entry.transactionId));
@@ -339,7 +339,7 @@ export class ReconciliationService {
 
     const refundEntries = await ledgerRepository.listByReference(
       LedgerReferenceType.REFUND,
-      payment._id
+      payment.id
     );
 
     let totals;

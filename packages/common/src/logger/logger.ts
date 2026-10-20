@@ -9,7 +9,11 @@ export interface LogContext {
 }
 
 export class StructuredLogger {
-  constructor(private serviceName: string) {}
+  private serviceName: string;
+
+  constructor(serviceName: string) {
+    this.serviceName = serviceName;
+  }
 
   private format(level: LogLevel, message: string, context?: LogContext): string {
     return JSON.stringify({

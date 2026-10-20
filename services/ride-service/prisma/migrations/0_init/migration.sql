@@ -2,7 +2,7 @@
 CREATE TYPE "UserRole" AS ENUM ('RIDER', 'DRIVER', 'ADMIN');
 
 -- CreateEnum
-CREATE TYPE "RideStatus" AS ENUM ('REQUESTED', 'SEARCHING', 'OFFERED', 'ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'ARRIVED', 'IN_PROGRESS', 'STARTED', 'ARRIVED_AT_DESTINATION', 'COMPLETED', 'CANCELLED');
+CREATE TYPE "RideStatus" AS ENUM ('SEARCHING', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION', 'COMPLETED', 'CANCELLED');
 
 -- CreateEnum
 CREATE TYPE "RidePaymentStatus" AS ENUM ('PENDING', 'PAID', 'CAPTURED', 'FAILED', 'REFUNDED');
@@ -30,7 +30,6 @@ CREATE TABLE "rides" (
     "base_fare_paise" INTEGER NOT NULL,
     "surge_multiplier" DECIMAL(3,2) NOT NULL DEFAULT 1.0,
     "total_fare_paise" INTEGER NOT NULL,
-    "otp" VARCHAR(6),
     "cancelled_by" VARCHAR(20),
     "cancellation_reason" TEXT,
     "accepted_at" TIMESTAMP(3),

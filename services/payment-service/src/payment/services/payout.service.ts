@@ -40,7 +40,7 @@ export class PayoutService {
    * Creates a PENDING payout for the driver's share of one captured payment.
    * NOTE: this only records the intent. Sending the money (RazorpayX payouts API)
    * is not part of this module; when it is added it must call markProcessing()
-   * with the gateway payout id, and pass our payout _id as `reference_id`.
+   * with the gateway payout id, and pass our payout id as `reference_id`.
    */
   async createPayout(input: {
     driverId: string;
@@ -176,7 +176,7 @@ export class PayoutService {
       if (res) {
         await ledgerService.recordPayoutDisbursement(
           {
-            payoutId: res._id,
+            payoutId: res.id,
             driverId: res.driver,
             amountPaise: res.amountPaise,
             transactionId,
@@ -263,7 +263,7 @@ export class PayoutService {
       if (res) {
         await ledgerService.recordPayoutReversal(
           {
-            payoutId: res._id,
+            payoutId: res.id,
             driverId: res.driver,
             amountPaise: res.amountPaise,
             transactionId,
@@ -303,13 +303,13 @@ export class PayoutService {
 
     if (payout.status === PayoutStatus.PENDING) {
       const cancelled = await this.cancelPending(
-        payout._id.toString(),
+        payout.id.toString(),
         "Cancelled: payment was refunded",
         session
       );
 
       if (cancelled) {
-        return { cancelledPayoutId: cancelled._id.toString(), clawbackRequired: false };
+        return { cancelledPayoutId: cancelled.id.toString(), clawbackRequired: false };
       }
     }
 
@@ -353,7 +353,7 @@ export class PayoutService {
       );
     }
 
-    const id = payout._id.toString();
+    const id = payout.id.toString();
     const events = RAZORPAY_WEBHOOK_EVENTS;
 
     switch (event) {

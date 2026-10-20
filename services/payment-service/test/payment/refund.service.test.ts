@@ -103,7 +103,7 @@ beforeEach(() => {
 const record = (
   over: Record<string, unknown> = {}
 ) => ({
-  _id: oid(),
+  id: oid(),
   amountPaise: 250,
   status: RefundStatus.PENDING,
   origin: RefundOrigin.APP,
@@ -158,7 +158,7 @@ function arrange(
     .spyOn(paymentRepository, "bookRefund")
     .mockImplementation(
       (async (
-        _id: string,
+        paymentId: string,
         _e: any,
         next: any,
         rec: any
@@ -282,7 +282,7 @@ const input = (
   payment: any,
   over: Record<string, unknown> = {}
 ) => ({
-  paymentId: payment._id,
+  paymentId: payment.id,
   reason: "Rider was overcharged",
   initiatedBy: oid(),
   ...over,
@@ -349,7 +349,7 @@ describe(
           h.book
             .mock
             .calls[0]![3]
-            ._id.toString();
+            .id.toString();
 
         expect(
           h.gateway
@@ -362,7 +362,7 @@ describe(
             notes: expect.objectContaining({
               refundRecordId: refundId,
               paymentId:
-                payment._id.toString(),
+                payment.id.toString(),
             }),
           })
         );
@@ -370,7 +370,7 @@ describe(
         expect(
           h.attach
         ).toHaveBeenCalledWith(
-          payment._id.toString(),
+          payment.id.toString(),
           refundId,
           [RefundStatus.PENDING],
           {
@@ -842,7 +842,7 @@ describe("initiateRefund - failures", () => {
       const h = arrange(payment);
 
       redis.store.set(
-        `lock:payment:refund:${payment._id}`,
+        `lock:payment:refund:${payment.id}`,
         "other"
       );
 
@@ -860,7 +860,7 @@ describe("initiateRefund - failures", () => {
 
       expect(
         redis.store.get(
-          `lock:payment:refund:${payment._id}`
+          `lock:payment:refund:${payment.id}`
         )
       ).toBe("other");
     }
@@ -960,8 +960,8 @@ describe(
         expect(
           update
         ).toHaveBeenCalledWith(
-          payment._id.toString(),
-          rec._id.toString(),
+          payment.id.toString(),
+          rec.id.toString(),
           [
             RefundStatus.PENDING,
             RefundStatus.PROCESSED,
@@ -1041,7 +1041,7 @@ describe(
 
             notes: {
               refundRecordId:
-                rec._id.toString(),
+                rec.id.toString(),
             },
           })
         );
@@ -1257,7 +1257,7 @@ describe(
         locate(payment);
 
         redis.store.set(
-          `lock:payment:refund:${payment._id}`,
+          `lock:payment:refund:${payment.id}`,
           "other"
         );
 
@@ -1325,8 +1325,8 @@ describe(
 
         expect(
           await refundService.abandonUnsentRefund(
-            payment._id.toString(),
-            sent._id.toString(),
+            payment.id.toString(),
+            sent.id.toString(),
             "x"
           )
         ).toBe(false);
@@ -1337,8 +1337,8 @@ describe(
 
         expect(
           await refundService.abandonUnsentRefund(
-            payment._id.toString(),
-            unsent._id.toString(),
+            payment.id.toString(),
+            unsent.id.toString(),
             "never reached gateway"
           )
         ).toBe(true);

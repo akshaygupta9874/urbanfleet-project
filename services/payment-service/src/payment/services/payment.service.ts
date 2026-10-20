@@ -389,7 +389,7 @@ class PaymentService {
         });
       } catch {
         paymentLog.error("payment.order_creation_uncertain", {
-          paymentId: reservation.payment._id.toString(),
+          paymentId: reservation.payment.id.toString(),
           rideId: rideIdStr,
         });
         throw new AppError(
@@ -397,17 +397,17 @@ class PaymentService {
           502,
           "PAYMENT_ORDER_CREATION_UNCERTAIN",
           true,
-          { paymentId: reservation.payment._id.toString() }
+          { paymentId: reservation.payment.id.toString() }
         );
       }
 
       const payment = await paymentRepository.setGatewayOrderId(
-        reservation.payment._id.toString(),
+        reservation.payment.id.toString(),
         order.id
       );
       if (!payment) {
         paymentLog.error("payment.order_id_persistence_failed", {
-          paymentId: reservation.payment._id.toString(),
+          paymentId: reservation.payment.id.toString(),
           rideId: rideIdStr,
           gatewayOrderId: order.id,
         });
@@ -416,12 +416,12 @@ class PaymentService {
           500,
           "PAYMENT_ORDER_PERSISTENCE_FAILED",
           true,
-          { paymentId: reservation.payment._id.toString() }
+          { paymentId: reservation.payment.id.toString() }
         );
       }
 
       paymentLog.info("payment.order_created", {
-        paymentId: payment._id.toString(),
+        paymentId: payment.id.toString(),
         rideId: rideIdStr,
         gatewayOrderId: order.id,
         amountPaise: payment.amountPaise,
@@ -448,7 +448,7 @@ class PaymentService {
         409,
         "PAYMENT_ORDER_CREATION_UNCERTAIN",
         true,
-        { paymentId: existing._id.toString() }
+        { paymentId: existing.id.toString() }
       );
     }
 
@@ -477,7 +477,7 @@ class PaymentService {
 
     const reopened =
       await paymentRepository.transitionStatus(
-        existing._id.toString(),
+        existing.id.toString(),
         PaymentStatus.FAILED,
         { status: PaymentStatus.CREATED }
       );
@@ -485,7 +485,7 @@ class PaymentService {
     if (!reopened) {
       // somebody moved it in the meantime (e.g. the money arrived) - report the truth
       const fresh =
-        await paymentRepository.findById(existing._id.toString());
+        await paymentRepository.findById(existing.id.toString());
 
       return this.toOrderResult(fresh ?? existing);
     }
@@ -504,7 +504,7 @@ class PaymentService {
   ): CreateOrderResult {
 
     return {
-      paymentId: payment._id.toString(),
+      paymentId: payment.id.toString(),
       gatewayOrderId: payment.gatewayOrderId,
       amountPaise: payment.amountPaise,
       currency: payment.currency,
@@ -607,7 +607,7 @@ class PaymentService {
     // CREATED (first attempt) or FAILED (retry on the same order) -> PENDING
     const updatedPayment =
       await paymentRepository.transitionStatus(
-        payment._id.toString(),
+        payment.id.toString(),
 
         [PaymentStatus.CREATED, PaymentStatus.FAILED],
 
@@ -633,7 +633,7 @@ class PaymentService {
       // The signature is valid, so the money is (about to be) captured. Do not fail the
       // request because Razorpay's read API hiccuped - the webhook will finish the job.
       paymentLog.warn("payment.verify_fetch_failed", {
-        paymentId: payment._id.toString(),
+        paymentId: payment.id.toString(),
         gatewayPaymentId: input.gatewayPaymentId,
       });
 
@@ -709,7 +709,7 @@ class PaymentService {
 
     if (payment.amountPaise !== entity.amount) {
       paymentLog.error("payment.amount_mismatch", {
-        paymentId: payment._id.toString(),
+        paymentId: payment.id.toString(),
         expectedPaise: payment.amountPaise,
         capturedPaise: entity.amount,
       });
@@ -737,7 +737,7 @@ class PaymentService {
       // 1) claim the capture (compare-and-swap). Nothing has been written before this point.
       const claimed =
         await paymentRepository.transitionStatus(
-          payment._id.toString(),
+          payment.id.toString(),
           CAPTURABLE_FROM_STATUSES,
           {
             ledgerTransactionId: transactionId,
@@ -792,7 +792,7 @@ class PaymentService {
 
     if (updatedRide) {
       paymentLog.info("payment.captured", {
-        paymentId: payment._id.toString(),
+        paymentId: payment.id.toString(),
         rideId: payment.ride.toString(),
         amountPaise: payment.amountPaise,
       });
@@ -802,7 +802,7 @@ class PaymentService {
         await rideClient.updatePaymentStatus(payment.ride.toString(), RidePaymentStatus.CAPTURED);
       } catch (err: any) {
         paymentLog.warn("payment.ride_service_sync_failed", {
-          paymentId: payment._id.toString(),
+          paymentId: payment.id.toString(),
           rideId: payment.ride.toString(),
           error: err.message,
         });
@@ -832,7 +832,7 @@ class PaymentService {
         }
       } catch (err) {
         paymentLog.error("payment.notify_failed", {
-          paymentId: payment._id.toString(),
+          paymentId: payment.id.toString(),
         });
       }
     }
@@ -873,7 +873,7 @@ class PaymentService {
     const result = await paymentRepository.transaction(async (tx) => {
       const updatedPayment =
         await paymentRepository.recordFailedAttempt(
-          payment._id.toString(),
+          payment.id.toString(),
           entity.id,
           FAILABLE_FROM_STATUSES,
           {
@@ -912,14 +912,14 @@ class PaymentService {
       );
     } catch (err: any) {
       paymentLog.warn("payment.ride_service_failed_sync_error", {
-        paymentId: payment._id.toString(),
+        paymentId: payment.id.toString(),
         rideId: payment.ride.toString(),
         error: err.message,
       });
     }
 
     paymentLog.info("payment.attempt_failed", {
-      paymentId: payment._id.toString(),
+      paymentId: payment.id.toString(),
       attemptNumber: result.attemptNumber,
       failureCode: entity.error_code ?? undefined,
     });
@@ -945,7 +945,7 @@ class PaymentService {
     }
 
     await paymentRepository.transitionStatus(
-      payment._id.toString(),
+      payment.id.toString(),
       [PaymentStatus.CREATED, PaymentStatus.PENDING],
       {
         status: PaymentStatus.AUTHORIZED,

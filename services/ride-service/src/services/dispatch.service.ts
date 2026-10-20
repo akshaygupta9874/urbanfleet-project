@@ -6,8 +6,11 @@ const logger = createLogger('dispatch-service');
 
 export class DispatchService {
   private readonly rejectedOffers = new Map<string, Set<string>>(); // rideId -> Set of rejected driverIds
+  private geoService: GeoService;
 
-  constructor(private geoService: GeoService) {}
+  constructor(geoService: GeoService) {
+    this.geoService = geoService;
+  }
 
   async recordDriverRejection(rideId: string, driverId: string) {
     let rejections = this.rejectedOffers.get(rideId);

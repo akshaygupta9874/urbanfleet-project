@@ -8,9 +8,9 @@ export interface DriverRegistrationResponse {
 }
 
 export interface DriverProfile {
-  _id: string;
+  id: string;
   user: {
-    _id: string;
+    id: string;
     firstName: string;
     lastName: string;
     email: string;

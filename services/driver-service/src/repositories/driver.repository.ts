@@ -1,7 +1,11 @@
 import { PrismaClient, DriverProfile, Vehicle } from '../db/client.js';
 
 export class DriverRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async findByUserId(userId: string): Promise<(DriverProfile & { vehicles: Vehicle[] }) | null> {
     return this.prisma.driverProfile.findUnique({

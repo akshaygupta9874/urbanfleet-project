@@ -55,10 +55,16 @@ export interface DriverDocumentSummary {
 }
 
 export class DocumentService {
+  private docRepo: DocumentRepository;
+  private driverRepo?: DriverRepository;
+
   constructor(
-    private docRepo: DocumentRepository,
-    private driverRepo?: DriverRepository
-  ) {}
+    docRepo: DocumentRepository,
+    driverRepo?: DriverRepository
+  ) {
+    this.docRepo = docRepo;
+    this.driverRepo = driverRepo;
+  }
 
   /**
    * Uploads or renews a driver document.

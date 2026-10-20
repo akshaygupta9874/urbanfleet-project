@@ -1,7 +1,11 @@
 import { PrismaClient, Payment } from '../db/client.js';
 
 export class PaymentRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async findById(id: string, tx?: any): Promise<Payment | null> {
     const client = tx || this.prisma;

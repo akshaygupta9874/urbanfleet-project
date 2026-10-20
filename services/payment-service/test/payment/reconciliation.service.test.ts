@@ -24,25 +24,25 @@ describe("reconcilePayment - ledger checks", () => {
   it("a consistent captured payment has no issues", async () => {
     const p = paid();
     ledgerFor(p, captureLegs());
-    const report = await reconciliationService.reconcilePayment(p._id.toString());
+    const report = await reconciliationService.reconcilePayment(p.id.toString());
     expect(report).toMatchObject({ status: PaymentStatus.CAPTURED, issues: [], healed: false, ledgerEntryCount: 3, ledgerTransactionId: "tx-cap" });
   });
 
   it("detects wrong legs, duplicate postings and a missing ledger id", async () => {
     let p = paid();
     ledgerFor(p, [leg("tx-cap", A.RIDER, T.DEBIT, 1000), leg("tx-cap", A.PLATFORM, T.CREDIT, 300), leg("tx-cap", A.DRIVER, T.CREDIT, 650)]);
-    let issues = (await reconciliationService.reconcilePayment(p._id.toString())).issues.join("|");
+    let issues = (await reconciliationService.reconcilePayment(p.id.toString())).issues.join("|");
     expect(issues).toMatch(/unbalanced/);
     expect(issues).toMatch(/DRIVER credit/);
 
     p = paid();
     ledgerFor(p, [...captureLegs("tx-cap"), ...captureLegs("tx-dup")]);
-    issues = (await reconciliationService.reconcilePayment(p._id.toString())).issues.join("|");
+    issues = (await reconciliationService.reconcilePayment(p.id.toString())).issues.join("|");
     expect(issues).toMatch(/exactly one capture ledger transaction/);
 
     p = paid({ ledgerTransactionId: undefined });
     ledgerFor(p, captureLegs());
-    issues = (await reconciliationService.reconcilePayment(p._id.toString())).issues.join("|");
+    issues = (await reconciliationService.reconcilePayment(p.id.toString())).issues.join("|");
     expect(issues).toMatch(/no ledgerTransactionId/);
   });
 
@@ -59,11 +59,11 @@ describe("reconcilePayment - ledger checks", () => {
     ];
     const p = paid({ status: PaymentStatus.PARTIALLY_REFUNDED, refundedAmountPaise: 250, refunds: records });
     ledgerFor(p, captureLegs(), refundLegs);
-    expect((await reconciliationService.reconcilePayment(p._id.toString())).issues).toEqual([]);
+    expect((await reconciliationService.reconcilePayment(p.id.toString())).issues).toEqual([]);
 
     const tampered = paid({ status: PaymentStatus.PARTIALLY_REFUNDED, refundedAmountPaise: 250, refunds: records });
     ledgerFor(tampered, captureLegs(), refundLegs.slice(0, 3).map((l) => (l.account === A.DRIVER ? { ...l, amountPaise: 100 } : l)));
-    const issues = (await reconciliationService.reconcilePayment(tampered._id.toString())).issues.join("|");
+    const issues = (await reconciliationService.reconcilePayment(tampered.id.toString())).issues.join("|");
     expect(issues).toMatch(/DRIVER refund reversal/);
   });
 
@@ -71,7 +71,7 @@ describe("reconcilePayment - ledger checks", () => {
     const p = paid({ refundedAmountPaise: 0 });
     ledgerFor(p, captureLegs());
     vi.spyOn(razorpayClient.payments, "fetch").mockResolvedValue(capturedEntity({ amount: 1000, amount_refunded: 200 }) as any);
-    const issues = (await reconciliationService.reconcilePayment(p._id.toString(), { checkGateway: true })).issues.join("|");
+    const issues = (await reconciliationService.reconcilePayment(p.id.toString(), { checkGateway: true })).issues.join("|");
     expect(issues).toMatch(/Gateway refunded 200 but we booked 0/);
   });
 
@@ -91,7 +91,7 @@ describe("healing missed webhooks", () => {
     const fetchPayments = vi.spyOn(razorpayClient.orders, "fetchPayments");
 
     const report = await reconciliationService.reconcilePayment(
-      reserved._id.toString()
+      reserved.id.toString()
     );
 
     expect(report.issues.join(" ")).toMatch(/order creation is incomplete or uncertain/i);
@@ -100,12 +100,12 @@ describe("healing missed webhooks", () => {
 
   it("a stuck PENDING payment that the gateway shows as captured is recorded", async () => {
     const stuck = makePayment({ status: PaymentStatus.PENDING });
-    const findById = vi.spyOn(paymentRepository, "findById").mockResolvedValueOnce(stuck).mockResolvedValue(paid({ _id: stuck._id }));
+    const findById = vi.spyOn(paymentRepository, "findById").mockResolvedValueOnce(stuck).mockResolvedValue(paid({ id: stuck.id }));
     vi.spyOn(razorpayClient.orders, "fetchPayments").mockResolvedValue({ items: [capturedEntity({ status: "failed", captured: false, id: "pay_old" }), capturedEntity()] } as any);
     const capture = vi.spyOn(paymentService, "handlePaymentCaptured").mockResolvedValue();
     vi.spyOn(ledgerRepository, "listByReference").mockImplementation((async (t: LedgerReferenceType) => (t === LedgerReferenceType.PAYMENT ? captureLegs() : [])) as any);
 
-    const report = await reconciliationService.reconcilePayment(stuck._id.toString());
+    const report = await reconciliationService.reconcilePayment(stuck.id.toString());
     expect(capture).toHaveBeenCalledWith(expect.objectContaining({ id: "pay_TEST1", status: "captured" }));
     expect(report.healed).toBe(true);
     expect(report.status).toBe(PaymentStatus.CAPTURED);
@@ -137,7 +137,7 @@ describe("healing missed webhooks", () => {
 describe("pending refunds sweep", () => {
   const old = (minutes: number) => new Date(Date.now() - minutes * 60_000);
   const withRefund = (rec: Record<string, unknown>) =>
-    makePayment({ status: PaymentStatus.PARTIALLY_REFUNDED, gatewayPaymentId: "pay_TEST1", refunds: [{ _id: oid(), status: RefundStatus.PENDING, amountPaise: 250, createdAt: old(30), ...rec }] });
+    makePayment({ status: PaymentStatus.PARTIALLY_REFUNDED, gatewayPaymentId: "pay_TEST1", refunds: [{ id: oid(), status: RefundStatus.PENDING, amountPaise: 250, createdAt: old(30), ...rec }] });
 
   it("asks the gateway about acknowledged refunds and applies processed / failed", async () => {
     vi.spyOn(paymentRepository, "findWithPendingRefunds").mockResolvedValue([withRefund({ gatewayRefundId: "rfnd_1" }), withRefund({ gatewayRefundId: "rfnd_2" })]);
@@ -149,7 +149,7 @@ describe("pending refunds sweep", () => {
 
   it("finds an unacknowledged refund at the gateway through our receipt", async () => {
     const p = withRefund({});
-    const id = p.refunds[0]._id.toString();
+    const id = p.refunds[0].id.toString();
     vi.spyOn(paymentRepository, "findWithPendingRefunds").mockResolvedValue([p]);
     vi.spyOn(razorpayClient.payments, "fetchMultipleRefund").mockResolvedValue({ items: [{ id: "rfnd_9", receipt: id, status: "pending", payment_id: "pay_TEST1", amount: 250 }] } as any);
     const apply = vi.spyOn(refundService, "handleGatewayRefundEvent").mockResolvedValue();

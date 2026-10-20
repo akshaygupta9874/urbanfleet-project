@@ -53,12 +53,11 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       expect(formatted.driverId).toBe('driver-uuid-1');
       expect(formatted.driver).toBe('driver-uuid-1');
       expect(formatted.id).toBe('ride-uuid-1');
-      expect(formatted._id).toBe('ride-uuid-1');
     });
 
     it('sets both riderId and rider from nested object format', () => {
       const incomingRide = {
-        _id: 'ride-uuid-2',
+        id: 'ride-uuid-2',
         rider: { id: 'rider-nested-2' },
         driver: { id: 'driver-nested-2' },
         status: 'ARRIVED_AT_DESTINATION',

@@ -83,7 +83,7 @@ function toPaymentView(
 
   if (Array.isArray(payment.refunds)) {
     view.refunds = payment.refunds.map((refund) => ({
-      _id: refund._id,
+      id: refund.id,
       amountPaise: refund.amountPaise,
       status: refund.status,
       createdAt: refund.createdAt,

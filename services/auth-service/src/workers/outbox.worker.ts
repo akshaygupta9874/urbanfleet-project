@@ -9,8 +9,11 @@ export class OutboxWorker {
   private isProcessing = false;
   private intervalId: NodeJS.Timeout | null = null;
   private workerId = `auth-outbox-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  private outboxRepo: OutboxRepository;
 
-  constructor(private outboxRepo: OutboxRepository) {}
+  constructor(outboxRepo: OutboxRepository) {
+    this.outboxRepo = outboxRepo;
+  }
 
   start(intervalMs = 3000): void {
     if (this.isRunning) return;

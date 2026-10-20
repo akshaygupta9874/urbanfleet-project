@@ -8,12 +8,22 @@ import { razorpayClient } from '../config/razorpay.config.js';
 import crypto from 'crypto';
 
 export class PaymentService {
+  private paymentRepo: PaymentRepository;
+  private refundRepo: RefundRepository;
+  private ledgerService: LedgerService;
+  private outboxRepo: OutboxRepository;
+
   constructor(
-    private paymentRepo: PaymentRepository,
-    private refundRepo: RefundRepository,
-    private ledgerService: LedgerService,
-    private outboxRepo: OutboxRepository
-  ) {}
+    paymentRepo: PaymentRepository,
+    refundRepo: RefundRepository,
+    ledgerService: LedgerService,
+    outboxRepo: OutboxRepository
+  ) {
+    this.paymentRepo = paymentRepo;
+    this.refundRepo = refundRepo;
+    this.ledgerService = ledgerService;
+    this.outboxRepo = outboxRepo;
+  }
 
   async createOrder(
     rideIdOrInput: string | { ride?: string; rider?: string; rideId?: string; riderId?: string; idempotencyKey?: string },

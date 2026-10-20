@@ -740,7 +740,7 @@ Every single function and endpoint currently existing in `backend/src` is preser
 * `fare.service.ts` (4): `calculateFareEstimate`, `calculateDynamicSurge`, `calculateCancellationFee`, `computeDistanceAndDuration`.
 * `dispatch.service.ts` (5): `findNearbyDrivers`, `dispatchRideOffer`, `broadcastRideRequest`, `handleDriverResponse`, `expireStaleOffers`.
 * `geo.service.ts` (5): `updateDriverLocation`, `getDriverLocation`, `removeDriverLocation`, `searchNearbyDrivers`, `getDistanceBetweenPoints`.
-* `otp.service.ts` (3): `generateRideOtp`, `verifyRideOtp`, `invalidateRideOtp`.
+* `otp.service.ts` (5): `generateRideOtp`, `storeRideOtp`, `getRideOtp`, `verifyRideOtp`, `invalidateRideOtp` (Redis-backed `ride:otp:<rideId>`).
 
 #### 4. `payment-service` (13 Methods across 3 Services)
 * `payment.service.ts` (5): `createOrder`, `verifyPaymentSignature`, `processWebhook`, `getPaymentDetails`, `issueRefund`.
@@ -1020,11 +1020,11 @@ generator client {
 }
 
 enum RideStatus {
-  REQUESTED
-  OFFERED
-  ACCEPTED
-  ARRIVED
-  IN_PROGRESS
+  SEARCHING
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVING
+  RIDE_STARTED
+  ARRIVED_AT_DESTINATION
   COMPLETED
   CANCELLED
 }
@@ -1049,7 +1049,7 @@ model Ride {
   driverId           String?           @map("driver_id") @db.Uuid
   vehicleCategory    String            @default("SEDAN") @map("vehicle_category") @db.VarChar(20)
 
-  status             RideStatus        @default(REQUESTED)
+  status             RideStatus        @default(SEARCHING)
   paymentStatus      RidePaymentStatus @default(PENDING) @map("payment_status")
   rideSequence       Int               @default(1) @map("ride_sequence") // Monotonic aggregate sequence
 
@@ -1068,7 +1068,6 @@ model Ride {
   surgeMultiplier    Decimal           @default(1.0) @map("surge_multiplier") @db.Decimal(3, 2)
   totalFarePaise     Int               @map("total_fare_paise")
 
-  otp                String?           @db.VarChar(6)
   cancelledBy        String?           @map("cancelled_by") @db.VarChar(20)
   cancellationReason String?           @map("cancellation_reason")
 

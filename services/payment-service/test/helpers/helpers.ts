@@ -28,7 +28,7 @@ export const oid = () => randomUUID();
 
 export function makePayment(over: Record<string, unknown> = {}) {
   const payment: any = {
-    _id: oid(),
+    id: oid(),
     ride: oid(),
     rider: oid(),
     driver: oid(),

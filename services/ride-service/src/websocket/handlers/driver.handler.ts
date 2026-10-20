@@ -229,7 +229,7 @@ async function handleUpdateLocation(
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.getDriverCurrentRide(driverId);
-      if (ride && ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'ARRIVED', 'STARTED', 'IN_PROGRESS'].includes(ride.status)) {
+      if (ride && ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'].includes(ride.status)) {
         emitDriverLocation(ride.riderId, {
           rideId: ride.id,
           latitude: result.data.latitude,

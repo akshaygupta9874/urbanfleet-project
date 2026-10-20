@@ -170,7 +170,7 @@ class RefundService {
                 initiatedBy: input.initiatedBy,
             });
 
-            const refundId = booked.record._id.toString();
+            const refundId = booked.record.id.toString();
 
             // ---- 2. SEND ---------------------------------------------------
             let gatewayRefund: { id: string; status: string };
@@ -303,7 +303,7 @@ class RefundService {
             return;
         }
 
-        const paymentId = located._id.toString();
+        const paymentId = located.id.toString();
 
         const release =
             await acquireLock(
@@ -335,7 +335,7 @@ class RefundService {
                 payment.refunds.find(
                     (item) =>
                         noteRefundId !== undefined &&
-                        item._id.toString() === noteRefundId
+                        item.id.toString() === noteRefundId
                 );
 
             if (kind === "failed") {
@@ -346,7 +346,7 @@ class RefundService {
 
                 await this.compensateRefund(
                     paymentId,
-                    record._id.toString(),
+                    record.id.toString(),
                     "Gateway reported the refund as failed"
                 );
 
@@ -363,14 +363,14 @@ class RefundService {
                     // Needs a human: do not silently re-book.
                     paymentLog.error("refund.event_after_compensation", {
                         paymentId,
-                        refundId: record._id.toString(),
+                        refundId: record.id.toString(),
                         gatewayRefundId: entity.id,
                         kind,
                     });
                     return;
                 }
 
-                const set: Partial<Omit<IRefundRecord, "_id">> = {};
+                const set: Partial<Omit<IRefundRecord, "id">> = {};
 
                 if (!record.gatewayRefundId) {
                     set.gatewayRefundId = entity.id;
@@ -384,7 +384,7 @@ class RefundService {
                 if (Object.keys(set).length > 0) {
                     await paymentRepository.updateRefundRecord(
                         paymentId,
-                        record._id.toString(),
+                        record.id.toString(),
                         [RefundStatus.PENDING, RefundStatus.PROCESSED],
                         set
                     );
@@ -461,7 +461,7 @@ class RefundService {
             const payment = await paymentRepository.findById(paymentId);
 
             const record = payment?.refunds.find(
-                (item) => item._id.toString() === refundId
+                (item) => item.id.toString() === refundId
             );
 
             if (
@@ -524,13 +524,13 @@ class RefundService {
         const { updated, record } = await paymentRepository.transaction(async (tx) => {
             const payoutEffect =
                 await payoutService.handleRefundBooked(
-                    payment._id,
+                    payment.id,
                     split.driverPaise,
                     tx
                 );
 
             const rec: IRefundRecord = {
-                _id: refundId,
+                id: refundId,
                 gatewayRefundId: args.gatewayRefundId,
                 amountPaise: args.amountPaise,
                 status: args.status,
@@ -547,7 +547,7 @@ class RefundService {
 
             const updatedPayment =
                 await paymentRepository.bookRefund(
-                    payment._id.toString(),
+                    payment.id.toString(),
                     {
                         status: payment.status,
                         refundedAmountPaise: payment.refundedAmountPaise,
@@ -606,7 +606,7 @@ class RefundService {
             }
 
             const record = payment.refunds.find(
-                (item) => item._id.toString() === refundId
+                (item) => item.id.toString() === refundId
             );
 
             if (!record || record.status === RefundStatus.FAILED) {
@@ -654,7 +654,7 @@ class RefundService {
                 await ledgerService.recordRefundCompensation(
                     {
                         payment,
-                        refundId: record._id,
+                        refundId: record.id,
                         amountPaise: record.amountPaise,
                         split: {
                             driverPaise: record.driverReversalPaise,
@@ -697,7 +697,7 @@ class RefundService {
     ): InitiateRefundResult {
 
         const record = payment.refunds.find(
-            (item) => item._id.toString() === refundId
+            (item) => item.id.toString() === refundId
         );
 
         return {

@@ -34,7 +34,7 @@ type RideStatus =
   | "SEARCHING"
   | "DRIVER_ASSIGNED"
   | "DRIVER_ARRIVING"
-  | "STARTED"
+  | "RIDE_STARTED"
   | "ARRIVED_AT_DESTINATION"
   | "COMPLETED"
   | "CANCELLED";
@@ -59,8 +59,7 @@ interface FareBreakdown {
   totalPaise?: number;
 }
 interface DriverInfo {
-  _id: string;
-  id?: string;
+  id: string;
   firstName?: string;
   lastName?: string;
   vehicleNumber?: string | null;
@@ -69,7 +68,7 @@ interface DriverInfo {
   vehicle?: { registrationNumber?: string; model?: string; color?: string };
 }
 interface Ride {
-  _id: string;
+  id: string;
   pickup: RidePoint;
   destination: RidePoint;
   fare: { estimated: number; final?: number | null; breakdown?: FareBreakdown | null };
@@ -88,7 +87,7 @@ const STATUS_STEPS: { key: RideStatus; label: string }[] = [
   { key: "SEARCHING", label: "Searching" },
   { key: "DRIVER_ASSIGNED", label: "Assigned" },
   { key: "DRIVER_ARRIVING", label: "Arriving" },
-  { key: "STARTED", label: "On trip" },
+  { key: "RIDE_STARTED", label: "On trip" },
   { key: "ARRIVED_AT_DESTINATION", label: "Arrived" },
   { key: "COMPLETED", label: "Complete" },
 ];
@@ -97,7 +96,7 @@ const STATUS_META: Record<RideStatus, { title: string; subtitle: string; accent:
   SEARCHING: { title: "Finding your driver…", subtitle: "Matching you with the nearest luxury ride", accent: "#b8722c" },
   DRIVER_ASSIGNED: { title: "Driver assigned", subtitle: "Your driver is preparing to head over", accent: "#c58a3a" },
   DRIVER_ARRIVING: { title: "Driver is arriving", subtitle: "Head to your pickup spot", accent: "#d4a359" },
-  STARTED: { title: "You're on your way", subtitle: "Sit back and enjoy the journey", accent: "#6b3a12" },
+  RIDE_STARTED: { title: "You're on your way", subtitle: "Sit back and enjoy the journey", accent: "#6b3a12" },
   ARRIVED_AT_DESTINATION: {
     title: "Arrived at destination",
     subtitle: "Payment is required before trip completion",
@@ -387,11 +386,11 @@ export default function RideDetails() {
         setToast("Driver is arriving at pickup");
       },
       onRideStarted: () => {
-        setRide((p) => (p ? { ...p, status: "STARTED" } : p));
+        setRide((p) => (p ? { ...p, status: "RIDE_STARTED" } : p));
         setToast("Ride started");
       },
       onPaymentCaptured: (payload) => {
-        if (payload.ride?._id === rideId) {
+        if (payload.ride?.id === rideId) {
           setRide((p) => (p ? { ...p, ...payload.ride } : p));
           setToast("Payment confirmed. Your driver can complete the ride.");
         }
@@ -428,7 +427,7 @@ export default function RideDetails() {
     if (!ride) return;
     setIsCancelling(true);
     try {
-      await appApi.patch(`/ride/${ride._id}/cancel`, {
+      await appApi.patch(`/ride/${ride.id}/cancel`, {
         cancellationReason: "Rider cancelled from ride details",
       });
       setRide((p) => (p ? { ...p, status: "CANCELLED" } : p));
@@ -441,7 +440,7 @@ export default function RideDetails() {
   }
 
   async function handlePayNow() {
-    if (!ride || !user?._id) {
+    if (!ride || !user?.id) {
       setError("Unable to start payment from this ride right now.");
       return;
     }
@@ -457,7 +456,7 @@ export default function RideDetails() {
     let currentRide = ride;
     try {
       const response = await appApi.get<{ message: string; ride: Ride }>(
-        `/ride/${currentRide._id}/fare-preview`
+        `/ride/${currentRide.id}/fare-preview`
       );
       currentRide = response.data.ride;
       setRide(currentRide);
@@ -473,7 +472,7 @@ export default function RideDetails() {
       return;
     }
 
-    const driverId = currentRide.driver?._id || currentRide.driver?.id || (typeof currentRide.driver === "string" ? currentRide.driver : "");
+    const driverId = currentRide.driver?.id || (typeof currentRide.driver === "string" ? currentRide.driver : "");
     if (!driverId) {
       setError("Driver information is unavailable.");
       return;
@@ -485,7 +484,7 @@ export default function RideDetails() {
 
     try {
       const paymentOrder = await createPaymentOrder({
-        rideId: currentRide._id,
+        rideId: currentRide.id,
         driverId,
         fareBreakdown: {
           baseFarePaise: currentRide.fare.breakdown?.baseFarePaise ?? 0,
@@ -496,7 +495,7 @@ export default function RideDetails() {
           driverEarningPaise: currentRide.fare.breakdown?.driverEarningPaise ?? 0,
           totalPaise: currentRide.fare.breakdown?.totalPaise ?? 0,
         },
-        idempotencyKey: `${currentRide._id}-${user._id}`,
+        idempotencyKey: `${currentRide.id}-${user.id}`,
       });
 
       const Razorpay = await loadRazorpayCheckout();
@@ -647,7 +646,7 @@ export default function RideDetails() {
                 <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-70" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-600" />
               </span>
-              Ride #{ride._id.slice(-6)}
+              Ride #{ride.id.slice(-6)}
             </div>
 
             <div className="grid h-12 w-12 place-items-center rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0]/95 text-[#3a1f0a] shadow-xl backdrop-blur-xl">

@@ -36,7 +36,6 @@ export interface UnbalancedTransaction {
 
 function formatLedgerEntry(row: any): ILedgerEntry {
     return {
-        _id: row.id,
         id: row.id,
         transactionId: row.transactionId,
         account: row.account as LedgerAccount,

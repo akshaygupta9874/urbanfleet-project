@@ -8,15 +8,10 @@ generator client {
 }
 
 enum RideStatus {
-  REQUESTED
   SEARCHING
-  OFFERED
-  ACCEPTED
   DRIVER_ASSIGNED
   DRIVER_ARRIVING
-  ARRIVED
-  IN_PROGRESS
-  STARTED
+  RIDE_STARTED
   ARRIVED_AT_DESTINATION
   COMPLETED
   CANCELLED
@@ -62,7 +57,6 @@ model Ride {
   surgeMultiplier    Decimal           @default(1.0) @map("surge_multiplier") @db.Decimal(3, 2)
   totalFarePaise     Int               @default(0) @map("total_fare_paise")
 
-  otp                String?           @db.VarChar(6)
   cancelledBy        String?           @map("cancelled_by") @db.VarChar(20)
   cancellationReason String?           @map("cancellation_reason")
 

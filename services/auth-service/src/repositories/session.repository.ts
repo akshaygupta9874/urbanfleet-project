@@ -1,7 +1,11 @@
 import { PrismaClient, Session } from '../db/client.js';
 
 export class SessionRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async create(data: {
     id?: string;

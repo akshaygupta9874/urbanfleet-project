@@ -4,7 +4,11 @@ import { createLogger } from '@urbanfleet/common';
 const logger = createLogger('notification-service');
 
 export class NotificationService {
-  constructor(private notifRepo: NotificationRepository) {}
+  private notifRepo: NotificationRepository;
+
+  constructor(notifRepo: NotificationRepository) {
+    this.notifRepo = notifRepo;
+  }
 
   async sendEmail(to: string, subject: string, html: string, idempotencyKey: string) {
     logger.info(`Staging email to ${to}: ${subject} [Key: ${idempotencyKey}]`);

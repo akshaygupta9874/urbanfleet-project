@@ -7,8 +7,10 @@ const GEO_KEY = 'ride:drivers:locations';
 
 export class GeoService {
   private presenceService?: DriverPresenceService;
+  private redis: RedisClientType;
 
-  constructor(private redis: RedisClientType, presenceService?: DriverPresenceService) {
+  constructor(redis: RedisClientType, presenceService?: DriverPresenceService) {
+    this.redis = redis;
     this.presenceService = presenceService;
   }
 

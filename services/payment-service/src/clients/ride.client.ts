@@ -12,8 +12,8 @@ export interface IRide {
 
 export function formatRide(ride: any): any {
   if (!ride) return null;
-  const riderId = ride.riderId ?? ride.rider_id ?? (typeof ride.rider === "object" ? (ride.rider?.id || ride.rider?._id) : ride.rider);
-  const driverId = ride.driverId ?? ride.driver_id ?? (typeof ride.driver === "object" ? (ride.driver?.id || ride.driver?._id) : ride.driver);
+  const riderId = ride.riderId ?? ride.rider_id ?? (typeof ride.rider === "object" ? ride.rider?.id : ride.rider);
+  const driverId = ride.driverId ?? ride.driver_id ?? (typeof ride.driver === "object" ? ride.driver?.id : ride.driver);
   let fareBreakdown = ride.fareBreakdown || ride.fare?.breakdown;
   if (!fareBreakdown && (ride.totalFarePaise !== undefined || ride.totalFare !== undefined)) {
     const total = Number(ride.totalFarePaise ?? ride.totalFare);
@@ -31,8 +31,7 @@ export function formatRide(ride: any): any {
   }
   return {
     ...ride,
-    id: ride.id || ride._id,
-    _id: ride.id || ride._id,
+    id: ride.id,
     riderId: riderId ? String(riderId) : undefined,
     driverId: driverId ? String(driverId) : null,
     rider: riderId ? String(riderId) : undefined,
@@ -42,9 +41,13 @@ export function formatRide(ride: any): any {
 }
 
 export class RideClient {
+  private baseUrl: string;
+
   constructor(
-    private baseUrl: string = process.env.RIDE_SERVICE_URL || 'http://localhost:4004'
-  ) {}
+    baseUrl: string = process.env.RIDE_SERVICE_URL || 'http://localhost:4004'
+  ) {
+    this.baseUrl = baseUrl;
+  }
 
   async getRideById(id: string): Promise<any> {
     // In unit test environments where prisma.ride is mocked/spied on, delegate for compatibility

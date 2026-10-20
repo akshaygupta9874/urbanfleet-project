@@ -8,11 +8,19 @@ import { UnauthorizedError, BadRequestError, ForbiddenError, AuthenticatedReques
 import asyncHandler from '../middlewares/asyncHandler.js';
 
 export class AuthController {
+  private authService: AuthService;
+  private userService: UserService;
+  private twoFactorService: TwoFactorService;
+
   constructor(
-    private authService: AuthService,
-    private userService: UserService,
-    private twoFactorService: TwoFactorService
-  ) {}
+    authService: AuthService,
+    userService: UserService,
+    twoFactorService: TwoFactorService
+  ) {
+    this.authService = authService;
+    this.userService = userService;
+    this.twoFactorService = twoFactorService;
+  }
 
   register = asyncHandler(async (req: Request, res: Response) => {
     const result = await this.authService.register({

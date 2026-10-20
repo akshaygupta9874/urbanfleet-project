@@ -8,7 +8,6 @@ import { AppError } from "../../utils/AppError.js";
 function formatPayout(row: any): IPayout {
     if (!row) return null as any;
     return {
-        _id: row.id,
         id: row.id,
         payment: row.paymentId,
         paymentId: row.paymentId,

@@ -34,7 +34,7 @@ import { useAuthContext } from "./context/auth-context";
 import CityMapBackground from "./components/CityMapBackground";
 
 interface RideHistoryRide {
-  _id: string;
+  id: string;
   pickup: { address: string };
   destination: { address: string };
   fare: { estimated: number; final?: number | null; breakdown?: FareBreakdownPayload | null };
@@ -42,7 +42,7 @@ interface RideHistoryRide {
   duration: { estimated: number | null };
   status: string;
   paymentStatus?: PaymentStatus;
-  driver?: { _id?: string; firstName?: string; lastName?: string; vehicleNumber?: string | null } | string | null;
+  driver?: { id?: string; firstName?: string; lastName?: string; vehicleNumber?: string | null } | string | null;
   createdAt: string;
 }
 
@@ -65,9 +65,12 @@ const containerVariants: Variants = {
 
 // ---------- Theme Styles (Golden Brown & Parchment) ----------
 const RIDE_STATUS_STYLES: Record<string, string> = {
+  SEARCHING: "bg-amber-500/20 text-amber-950 border-amber-500/40 animate-pulse",
+  DRIVER_ASSIGNED: "bg-amber-500/20 text-amber-950 border-amber-500/40",
+  DRIVER_ARRIVING: "bg-amber-500/20 text-amber-950 border-amber-500/40",
+  RIDE_STARTED: "bg-amber-500/20 text-amber-950 border-amber-500/40 animate-pulse",
+  ARRIVED_AT_DESTINATION: "bg-amber-500/20 text-amber-950 border-amber-500/40",
   COMPLETED: "bg-emerald-500/15 text-emerald-900 border-emerald-500/30",
-  ONGOING: "bg-amber-500/20 text-amber-950 border-amber-500/40 animate-pulse",
-  IN_PROGRESS: "bg-amber-500/20 text-amber-950 border-amber-500/40 animate-pulse",
   CANCELLED: "bg-stone-500/15 text-stone-700 border-stone-500/30",
 };
 
@@ -150,7 +153,7 @@ export default function RideHistory() {
   }, [rides]);
 
   const handlePay = async (ride: RideHistoryRide) => {
-    if (!user?._id) {
+    if (!user?.id) {
       setError("Unable to determine your account. Please sign in again.");
       return;
     }
@@ -170,7 +173,7 @@ export default function RideHistory() {
     if (!currentRide.fare.breakdown || currentRide.fare.final == null) {
       try {
         const response = await appApi.get<{ message: string; ride: RideHistoryRide }>(
-          `/ride/${currentRide._id}/fare-preview`
+          `/ride/${currentRide.id}/fare-preview`
         );
         currentRide = response.data.ride;
       } catch (err: unknown) {
@@ -186,22 +189,22 @@ export default function RideHistory() {
       return;
     }
 
-    const driverId = typeof currentRide.driver === "string" ? currentRide.driver : currentRide.driver?._id;
+    const driverId = typeof currentRide.driver === "string" ? currentRide.driver : currentRide.driver?.id;
     if (!driverId) {
       setError("Unable to determine the assigned driver for this ride.");
       return;
     }
 
-    setProcessingRideId(currentRide._id);
+    setProcessingRideId(currentRide.id);
     setError("");
     setMessage("");
 
     try {
       const paymentOrder = await createPaymentOrder({
-        rideId: currentRide._id,
+        rideId: currentRide.id,
         driverId,
         fareBreakdown: currentRide.fare.breakdown,
-        idempotencyKey: `${currentRide._id}-${user._id}`,
+        idempotencyKey: `${currentRide.id}-${user.id}`,
       });
 
       const Razorpay = await loadRazorpayCheckout();
@@ -217,7 +220,7 @@ export default function RideHistory() {
             const verifyResult = await verifyPaymentSignature(response);
             setRides((current) =>
               current.map((entry) =>
-                entry._id === ride._id
+                entry.id === ride.id
                   ? { ...entry, paymentStatus: verifyResult.status }
                   : entry,
               ),
@@ -381,7 +384,7 @@ export default function RideHistory() {
         ) : (
           <div className="grid gap-5">
             {filteredRides.map((ride, index) => {
-              const isProcessing = processingRideId === ride._id;
+              const isProcessing = processingRideId === ride.id;
               const canPay = ride.status === "COMPLETED" && ride.paymentStatus === "PENDING";
               const displayFare = ride.fare.final ? `₹${ride.fare.final / 100}` : `₹${ride.fare.estimated}`;
 
@@ -390,7 +393,7 @@ export default function RideHistory() {
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  key={ride._id}
+                  key={ride.id}
                   className="group overflow-hidden rounded-3xl border border-[#7a4416]/25 bg-gradient-to-b from-[#fffaf0] via-[#fff4dc]/90 to-[#f7e2b8]/90 shadow-lg transition-all hover:border-[#b8722c] hover:shadow-xl"
                 >
                   <div className="grid gap-6 p-6 md:grid-cols-[1.6fr_1fr_1fr] items-center">
@@ -498,7 +501,7 @@ export default function RideHistory() {
 
                         <button
                           title="Support / Report Issue"
-                          onClick={() => alert(`Support ticket requested for ride #${ride._id.slice(-6).toUpperCase()}`)}
+                          onClick={() => alert(`Support ticket requested for ride #${ride.id.slice(-6).toUpperCase()}`)}
                           className="p-2.5 rounded-xl border border-[#7a4416]/20 bg-[#fffaf0] text-[#7a4416] hover:text-[#2e1808] hover:border-[#b8722c] transition-colors shadow-sm"
                         >
                           <HelpCircle className="h-4 w-4" />
@@ -540,7 +543,7 @@ export default function RideHistory() {
                   <div className="bg-[#fffaf0] p-4 rounded-2xl border border-[#7a4416]/20 space-y-2 shadow-sm">
                     <div className="flex justify-between text-[#6b3a12]/80">
                       <span>Ride ID</span>
-                      <span className="font-mono text-[#2e1808]">#{selectedRideForModal._id.toUpperCase()}</span>
+                      <span className="font-mono text-[#2e1808]">#{selectedRideForModal.id.toUpperCase()}</span>
                     </div>
                     <div className="flex justify-between text-[#6b3a12]/80">
                       <span>Booking Status</span>

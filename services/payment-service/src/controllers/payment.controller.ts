@@ -5,10 +5,16 @@ import asyncHandler from '../middlewares/asyncHandler.js';
 import { AuthenticatedRequest, AppError } from '@urbanfleet/common';
 
 export class PaymentController {
+  private paymentService: PaymentService;
+  private payoutService: PayoutService;
+
   constructor(
-    private paymentService: PaymentService,
-    private payoutService: PayoutService
-  ) {}
+    paymentService: PaymentService,
+    payoutService: PayoutService
+  ) {
+    this.paymentService = paymentService;
+    this.payoutService = payoutService;
+  }
 
   createPaymentOrder = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.userId || req.user?.userId || req.user?.id;

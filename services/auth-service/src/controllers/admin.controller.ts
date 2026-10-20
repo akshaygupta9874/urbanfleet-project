@@ -3,7 +3,11 @@ import { AdminService } from '../services/admin.service.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
 
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  private adminService: AdminService;
+
+  constructor(adminService: AdminService) {
+    this.adminService = adminService;
+  }
 
   getSystemStats = asyncHandler(async (req: Request, res: Response) => {
     const stats = await this.adminService.getSystemStats();

@@ -9,8 +9,11 @@ const workerId = `worker-${process.pid}-${Math.random().toString(36).substring(7
 export class OutboxWorker {
   private isRunning = false;
   private producer: Producer | null = null;
+  private prisma: PrismaClient;
 
-  constructor(private prisma: PrismaClient) {}
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async start() {
     const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');

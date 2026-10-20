@@ -2,10 +2,16 @@ import { PayoutRepository } from '../repositories/payout.repository.js';
 import { LedgerService } from './ledger.service.js';
 
 export class PayoutService {
+  private payoutRepo: PayoutRepository;
+  private ledgerService: LedgerService;
+
   constructor(
-    private payoutRepo: PayoutRepository,
-    private ledgerService: LedgerService
-  ) {}
+    payoutRepo: PayoutRepository,
+    ledgerService: LedgerService
+  ) {
+    this.payoutRepo = payoutRepo;
+    this.ledgerService = ledgerService;
+  }
 
   async createPayoutRequest(driverId: string, rideId: string, amountPaise: number) {
     return this.payoutRepo.create({

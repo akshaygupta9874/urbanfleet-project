@@ -53,7 +53,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
   // ==========================================
   // 2. Cryptographic OTP Generation & Verification
   // ==========================================
-  describe('OtpService (Crypto Random & Timing-Safe)', () => {
+  describe('OtpService (Crypto Random & Timing-Safe with Store/Redis)', () => {
     const otpService = new OtpService();
 
     it('generates a 4-digit numeric OTP in range 1000-9999', () => {
@@ -66,13 +66,16 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       }
     });
 
-    it('verifies correct OTP and rejects mismatched or empty OTPs', () => {
+    it('verifies correct OTP and rejects mismatched or empty OTPs', async () => {
       const otp = '4829';
-      expect(otpService.verifyRideOtp('4829', otp)).toBe(true);
-      expect(otpService.verifyRideOtp('1234', otp)).toBe(false);
-      expect(otpService.verifyRideOtp('', otp)).toBe(false);
-      expect(otpService.verifyRideOtp('482', otp)).toBe(false);
-      expect(otpService.verifyRideOtp(null as any, otp)).toBe(false);
+      await otpService.storeRideOtp('test-ride-123', otp);
+      expect(await otpService.getRideOtp('test-ride-123')).toBe('4829');
+      expect(await otpService.verifyRideOtp('test-ride-123', otp)).toBe(true);
+      expect(await otpService.verifyRideOtp('test-ride-123', '1234')).toBe(false);
+      expect(await otpService.verifyRideOtp('test-ride-123', '')).toBe(false);
+      expect(await otpService.verifyRideOtp('', otp)).toBe(false);
+      await otpService.invalidateRideOtp('test-ride-123');
+      expect(await otpService.getRideOtp('test-ride-123')).toBeNull();
     });
   });
 
@@ -125,8 +128,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       id: 'ride-test-1',
       riderId: 'rider-abc',
       driverId: 'driver-xyz',
-      status: 'ACCEPTED',
-      otp: '7890',
+      status: 'DRIVER_ASSIGNED',
       paymentStatus: 'PENDING',
       cancellationReason: null,
       cancelledBy: null,
@@ -185,9 +187,10 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
     });
 
     it('redacts OTP on getRideById for assigned driver prior to completion, allows rider and admin to view OTP', async () => {
-      mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'ACCEPTED', otp: '7890' });
+      mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED' });
+      await mockOtpService.storeRideOtp('ride-test-1', '7890');
 
-      // 1. Rider can see OTP
+      // 1. Rider can see OTP from Redis
       const riderView: any = await rideService.getRideById('ride-test-1', 'rider-abc', 'RIDER');
       expect(riderView.otp).toBe('7890');
 
@@ -195,13 +198,13 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       const driverView: any = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
       expect(driverView.otp).toBeNull();
 
-      // 3. Assigned driver CAN see OTP once completed
-      mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'COMPLETED', otp: '7890' });
+      // 3. Assigned driver cannot see OTP once completed
+      mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'COMPLETED' });
       const completedDriverView: any = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
-      expect(completedDriverView.otp).toBe('7890');
+      expect(completedDriverView.otp).toBeNull();
 
-      // 4. Admin can always see OTP
-      mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'ACCEPTED', otp: '7890' });
+      // 4. Admin can always see OTP from Redis
+      mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED' });
       const adminView: any = await rideService.getRideById('ride-test-1', 'admin-1', 'ADMIN');
       expect(adminView.otp).toBe('7890');
 
@@ -211,8 +214,8 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       ).rejects.toThrow(AppError);
     });
 
-    it('driverArrived enforces driver ownership and current status ACCEPTED', async () => {
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'ACCEPTED', driverId: 'driver-xyz' });
+    it('driverArrived enforces driver ownership and current status DRIVER_ASSIGNED', async () => {
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED', driverId: 'driver-xyz' });
 
       // Wrong driver cannot mark arrived
       await expect(
@@ -220,15 +223,15 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       ).rejects.toThrow(AppError);
 
       // Wrong status cannot mark arrived
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'IN_PROGRESS', driverId: 'driver-xyz' });
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'RIDE_STARTED', driverId: 'driver-xyz' });
       await expect(
         rideService.driverArrived('ride-test-1', 'driver-xyz')
       ).rejects.toThrow(ConflictError);
 
-      // Success marks ARRIVED and stages RIDE_DRIVER_ARRIVED outbox event
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'ACCEPTED', driverId: 'driver-xyz' });
+      // Success marks DRIVER_ARRIVING and stages RIDE_DRIVER_ARRIVED outbox event
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED', driverId: 'driver-xyz' });
       const arrived = await rideService.driverArrived('ride-test-1', 'driver-xyz');
-      expect(arrived.status).toBe('ARRIVED');
+      expect(arrived.status).toBe('DRIVER_ARRIVING');
       expect(mockOutboxRepo.stageEvent).toHaveBeenCalledWith(
         mockTx,
         expect.objectContaining({
@@ -238,8 +241,9 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       );
     });
 
-    it('startRide enforces driver ownership, ARRIVED status, and valid OTP verification', async () => {
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'ARRIVED', driverId: 'driver-xyz', otp: '1234' });
+    it('startRide enforces driver ownership, DRIVER_ARRIVING status, and valid OTP verification', async () => {
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'DRIVER_ARRIVING', driverId: 'driver-xyz' });
+      await mockOtpService.storeRideOtp('ride-test-1', '1234');
 
       // Wrong driver
       await expect(
@@ -252,25 +256,28 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       ).rejects.toThrow(AppError);
 
       // Invalid status (e.g. still SEARCHING)
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'SEARCHING', driverId: 'driver-xyz', otp: '1234' });
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'SEARCHING', driverId: 'driver-xyz' });
       await expect(
         rideService.startRide('ride-test-1', 'driver-xyz', '1234')
       ).rejects.toThrow(ConflictError);
 
-      // Valid OTP & ARRIVED status starts the ride
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'ARRIVED', driverId: 'driver-xyz', otp: '1234' });
+      // Valid OTP & DRIVER_ARRIVING status starts the ride
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'DRIVER_ARRIVING', driverId: 'driver-xyz' });
       const started = await rideService.startRide('ride-test-1', 'driver-xyz', '1234');
-      expect(started.status).toBe('IN_PROGRESS');
+      expect(started.status).toBe('RIDE_STARTED');
       expect(mockOutboxRepo.stageEvent).toHaveBeenCalledWith(
         mockTx,
         expect.objectContaining({
           eventType: 'RIDE_STARTED',
         })
       );
+
+      // OTP was invalidated from Redis
+      expect(await mockOtpService.getRideOtp('ride-test-1')).toBeNull();
     });
 
-    it('arriveAtDestination transitions ride from IN_PROGRESS to ARRIVED_AT_DESTINATION', async () => {
-      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'IN_PROGRESS', driverId: 'driver-xyz' });
+    it('arriveAtDestination transitions ride from RIDE_STARTED to ARRIVED_AT_DESTINATION', async () => {
+      mockTx.ride.findUnique.mockResolvedValue({ ...baseRide, status: 'RIDE_STARTED', driverId: 'driver-xyz' });
 
       const atDest = await rideService.arriveAtDestination({ rideId: 'ride-test-1', driverId: 'driver-xyz' });
       expect(atDest.status).toBe('ARRIVED_AT_DESTINATION');
@@ -286,14 +293,14 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       expect(canCompleteRide({ status: 'ARRIVED_AT_DESTINATION', paymentStatus: 'CAPTURED' })).toBe(true);
       expect(canCompleteRide({ status: 'ARRIVED_AT_DESTINATION', paymentStatus: 'PAID' })).toBe(true);
       expect(canCompleteRide({ status: 'ARRIVED_AT_DESTINATION', paymentStatus: 'PENDING' })).toBe(false);
-      expect(canCompleteRide({ status: 'IN_PROGRESS', paymentStatus: 'CAPTURED' })).toBe(false);
+      expect(canCompleteRide({ status: 'RIDE_STARTED', paymentStatus: 'CAPTURED' })).toBe(false);
     });
 
     it('cancelRide calculates cancellation fee for rider after grace period, zero fee for driver', async () => {
       // Rider cancels after 4 minutes -> cancellation fee applies
       mockTx.ride.findUnique.mockResolvedValue({
         ...baseRide,
-        status: 'ACCEPTED',
+        status: 'DRIVER_ASSIGNED',
         acceptedAt: new Date(Date.now() - 250000), // ~4 mins ago
       });
 
@@ -305,7 +312,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       // Driver cancels -> ₹0 fee
       mockTx.ride.findUnique.mockResolvedValue({
         ...baseRide,
-        status: 'ACCEPTED',
+        status: 'DRIVER_ASSIGNED',
         acceptedAt: new Date(Date.now() - 250000),
       });
       const driverCancel: any = await rideService.cancelRide('ride-test-1', 'driver-xyz', 'Vehicle puncture');
@@ -322,7 +329,8 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
 
     it('acceptRide prevents driver from accepting multiple active rides concurrently', async () => {
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'SEARCHING', driverId: null });
-      mockRideRepo.findActiveRideForDriver.mockResolvedValue({ id: 'existing-active-ride', status: 'IN_PROGRESS' });
+      mockTx.ride.findFirst.mockResolvedValue({ id: 'existing-active-ride', status: 'RIDE_STARTED' });
+      mockRideRepo.findActiveRideForDriver.mockResolvedValue({ id: 'existing-active-ride', status: 'RIDE_STARTED' });
 
       await expect(
         rideService.acceptRide('ride-test-1', 'driver-xyz')

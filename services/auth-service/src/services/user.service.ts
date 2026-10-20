@@ -18,7 +18,11 @@ function sanitizeUser(user: any) {
 }
 
 export class UserService {
-  constructor(private userRepo: UserRepository) {}
+  private userRepo: UserRepository;
+
+  constructor(userRepo: UserRepository) {
+    this.userRepo = userRepo;
+  }
 
   async getUserById(id: string) {
     const user = await this.userRepo.findById(id);

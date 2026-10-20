@@ -31,11 +31,10 @@ export function formatRideForFrontend(ride: any) {
     totalPaise: totalFarePaise,
   };
 
-  const id = ride.id || ride._id;
+  const id = ride.id;
 
   return {
     ...ride,
-    _id: id,
     id,
     pickupAddress: ride.pickupAddress || ride.pickup?.address || 'Pickup Location',
     pickupLat,
@@ -75,7 +74,6 @@ export function formatRideForFrontend(ride: any) {
     paymentStatus: ride.paymentStatus || 'PENDING',
     driver: ride.driverId
       ? {
-          _id: ride.driverId,
           id: ride.driverId,
           firstName: ride.driver?.user?.firstName || 'Assigned',
           lastName: ride.driver?.user?.lastName || 'Driver',
@@ -97,11 +95,19 @@ export function formatRideForFrontend(ride: any) {
 }
 
 export class RideController {
+  private rideService: RideService;
+  private fareService: FareService;
+  private dispatchService?: DispatchService;
+
   constructor(
-    private rideService: RideService,
-    private fareService: FareService,
-    private dispatchService?: DispatchService
-  ) {}
+    rideService: RideService,
+    fareService: FareService,
+    dispatchService?: DispatchService
+  ) {
+    this.rideService = rideService;
+    this.fareService = fareService;
+    this.dispatchService = dispatchService;
+  }
 
   estimateFare = asyncHandler(async (req: Request, res: Response) => {
     const pickup = req.body?.pickup;

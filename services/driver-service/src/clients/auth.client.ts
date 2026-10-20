@@ -9,9 +9,13 @@ export interface AuthUser {
 }
 
 export class AuthClient {
+  private baseUrl: string;
+
   constructor(
-    private baseUrl: string = process.env.AUTH_SERVICE_URL || 'http://localhost:4001'
-  ) {}
+    baseUrl: string = process.env.AUTH_SERVICE_URL || 'http://localhost:4001'
+  ) {
+    this.baseUrl = baseUrl;
+  }
 
   async getUserById(userId: string): Promise<AuthUser | null> {
     try {

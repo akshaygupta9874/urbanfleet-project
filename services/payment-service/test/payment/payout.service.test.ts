@@ -9,12 +9,12 @@ import { PaymentStatus, PayoutStatus, RefundStatus } from "../../src/payment/typ
 import { fakeSession, makePayment, oid } from "../helpers/helpers.js";
 
 const payout = (over: Record<string, unknown> = {}): any => ({
-  _id: oid(), driver: oid(), payment: oid(), ride: oid(), amountPaise: 700, status: PayoutStatus.PENDING, ...over,
+  id: oid(), driver: oid(), payment: oid(), ride: oid(), amountPaise: 700, status: PayoutStatus.PENDING, ...over,
 });
 
 describe("createPayout", () => {
   const paid = (over = {}) => makePayment({ status: PaymentStatus.CAPTURED, ...over });
-  const args = (p: any, over = {}) => ({ driverId: p.driver, paymentId: p._id, rideId: p.ride, amountPaise: 700, ...over });
+  const args = (p: any, over = {}) => ({ driverId: p.driver, paymentId: p.id, rideId: p.ride, amountPaise: 700, ...over });
 
   it("creates a PENDING payout for the driver's share", async () => {
     const p = paid();
@@ -72,14 +72,14 @@ describe("state changes", () => {
     const ledger = vi.spyOn(ledgerService, "recordPayoutDisbursement").mockResolvedValue("tx");
     vi.spyOn(payoutRepository, "findById").mockResolvedValue({ ...p, status: PayoutStatus.PROCESSED } as any);
 
-    await payoutService.markProcessed(p._id.toString(), "pout_1", "UTR123");
+    await payoutService.markProcessed(p.id.toString(), "pout_1", "UTR123");
     const [, from, update] = transition.mock.calls[0]!;
     expect(from).toEqual([PayoutStatus.PENDING, PayoutStatus.PROCESSING]);
     expect(update).toMatchObject({ status: PayoutStatus.PROCESSED, gatewayPayoutId: "pout_1", utr: "UTR123" });
     expect(ledger).toHaveBeenCalledTimes(1);
-    expect(ledger.mock.calls[0]![0]).toMatchObject({ payoutId: p._id, driverId: p.driver, amountPaise: 700, transactionId: (update as any).ledgerTransactionId });
+    expect(ledger.mock.calls[0]![0]).toMatchObject({ payoutId: p.id, driverId: p.driver, amountPaise: 700, transactionId: (update as any).ledgerTransactionId });
 
-    await payoutService.markProcessed(p._id.toString()); // duplicate webhook
+    await payoutService.markProcessed(p.id.toString()); // duplicate webhook
     expect(ledger).toHaveBeenCalledTimes(1);
   });
 
@@ -96,7 +96,7 @@ describe("state changes", () => {
     vi.spyOn(payoutRepository, "findById").mockResolvedValue(processed);
     vi.spyOn(payoutRepository, "transition").mockResolvedValue({ ...processed, status: PayoutStatus.REVERSED } as any);
     const reversal = vi.spyOn(ledgerService, "recordPayoutReversal").mockResolvedValue("tx");
-    await payoutService.markReversed(processed._id.toString(), "beneficiary bank returned");
+    await payoutService.markReversed(processed.id.toString(), "beneficiary bank returned");
     expect(reversal).toHaveBeenCalledWith(
       expect.objectContaining({ amountPaise: 700, driverId: processed.driver, reason: "beneficiary bank returned" }),
       expect.anything()
@@ -106,7 +106,7 @@ describe("state changes", () => {
     const pending = payout({ status: PayoutStatus.PROCESSING });
     vi.spyOn(payoutRepository, "findById").mockResolvedValue(pending);
     const t = vi.spyOn(payoutRepository, "transition").mockResolvedValue({ ...pending, status: PayoutStatus.FAILED } as any);
-    await payoutService.markReversed(pending._id.toString());
+    await payoutService.markReversed(pending.id.toString());
     expect(reversal).not.toHaveBeenCalled();
     expect(t.mock.calls.at(-1)![2]).toMatchObject({ status: PayoutStatus.FAILED });
 
@@ -137,7 +137,7 @@ describe("refund side effects", () => {
     vi.spyOn(payoutRepository, "findLiveByPayment").mockResolvedValue(p);
     const t = vi.spyOn(payoutRepository, "transition").mockResolvedValue({ ...p, status: PayoutStatus.CANCELLED } as any);
     const result = await payoutService.handleRefundBooked(oid(), 100, session);
-    expect(result).toEqual({ cancelledPayoutId: p._id.toString(), clawbackRequired: false });
+    expect(result).toEqual({ cancelledPayoutId: p.id.toString(), clawbackRequired: false });
     expect(t.mock.calls[0]![1]).toEqual([PayoutStatus.PENDING]);
   });
 
@@ -167,7 +167,7 @@ describe("balances and webhook entry point", () => {
     const processed = vi.spyOn(payoutService, "markProcessed").mockResolvedValue({ ...p, status: PayoutStatus.PROCESSED } as any);
     const failed = vi.spyOn(payoutService, "markFailed").mockResolvedValue(p);
     const reversed = vi.spyOn(payoutService, "markReversed").mockResolvedValue(p);
-    const entity = (o = {}) => ({ id: "pout_1", reference_id: p._id.toString(), utr: "UTR9", failure_reason: null, ...o }) as any;
+    const entity = (o = {}) => ({ id: "pout_1", reference_id: p.id.toString(), utr: "UTR9", failure_reason: null, ...o }) as any;
 
     await payoutService.handleGatewayPayoutEvent("payout.initiated", entity());
     await payoutService.handleGatewayPayoutEvent("payout.processed", entity());
@@ -175,8 +175,8 @@ describe("balances and webhook entry point", () => {
     await payoutService.handleGatewayPayoutEvent("payout.rejected", entity());
     await payoutService.handleGatewayPayoutEvent("payout.reversed", entity());
 
-    expect(processing).toHaveBeenCalledWith(p._id.toString(), "pout_1");
-    expect(processed).toHaveBeenCalledWith(p._id.toString(), "pout_1", "UTR9");
+    expect(processing).toHaveBeenCalledWith(p.id.toString(), "pout_1");
+    expect(processed).toHaveBeenCalledWith(p.id.toString(), "pout_1", "UTR9");
     expect(failed).toHaveBeenCalledTimes(2);
     expect(failed.mock.calls[0]![1]).toBe("bad account");
     expect(reversed).toHaveBeenCalledTimes(1);

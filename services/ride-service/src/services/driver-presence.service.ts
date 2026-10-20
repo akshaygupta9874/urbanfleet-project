@@ -13,10 +13,16 @@ export interface DriverPresence {
 }
 
 export class DriverPresenceService {
+  private redis: RedisClientType;
+  private geoService?: GeoService;
+
   constructor(
-    private redis: RedisClientType,
-    private geoService?: GeoService
-  ) {}
+    redis: RedisClientType,
+    geoService?: GeoService
+  ) {
+    this.redis = redis;
+    this.geoService = geoService;
+  }
 
   private presenceKey(driverId: string): string {
     return `ride:driver:presence:${driverId}`;

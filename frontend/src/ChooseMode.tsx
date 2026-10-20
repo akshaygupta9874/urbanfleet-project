@@ -158,8 +158,8 @@ export default function ChooseMode() {
             const selectedMultiplier = RIDE_MODES.find((mode) => mode.id === selectedMode)?.multiplier ?? 1.2;
             const calculatedFare = Math.round((2500 + Math.round(distanceKm * 500) + 400) * selectedMultiplier);
 
-            const response = await appApi.post<{ message: string; ride: { _id?: string; id?: string } }>("/ride", {
-                rider: user?._id || user?.id,
+            const response = await appApi.post<{ message: string; ride: { id: string } }>("/ride", {
+                rider: user?.id,
                 vehicleType: selectedMode,
                 pickup: { address: rideData.pickup, coordinates: rideData.pickupCoords },
                 destination: { address: rideData.destination, coordinates: rideData.destinationCoords },
@@ -169,7 +169,7 @@ export default function ChooseMode() {
             });
 
             sessionStorage.removeItem("pendingRide");
-            const targetRideId = response.data.ride?._id || response.data.ride?.id;
+            const targetRideId = response.data.ride?.id;
             navigate(`/ride/${targetRideId}`, { replace: true });
         } catch (err: unknown) {
             const axiosError = err as { response?: { data?: { message?: string; errors?: { rider?: string[] } } } };

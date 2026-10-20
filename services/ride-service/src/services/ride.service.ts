@@ -8,13 +8,25 @@ import { NotFoundError, ConflictError, AppError } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 
 export class RideService {
+  private rideRepo: RideRepository;
+  private ratingRepo: RatingRepository;
+  private outboxRepo: OutboxRepository;
+  private fareService: FareService;
+  private otpService: OtpService;
+
   constructor(
-    private rideRepo: RideRepository,
-    private ratingRepo: RatingRepository,
-    private outboxRepo: OutboxRepository,
-    private fareService: FareService,
-    private otpService: OtpService
-  ) {}
+    rideRepo: RideRepository,
+    ratingRepo: RatingRepository,
+    outboxRepo: OutboxRepository,
+    fareService: FareService,
+    otpService: OtpService
+  ) {
+    this.rideRepo = rideRepo;
+    this.ratingRepo = ratingRepo;
+    this.outboxRepo = outboxRepo;
+    this.fareService = fareService;
+    this.otpService = otpService;
+  }
 
   async createRide(input: {
     riderId: string;
@@ -45,10 +57,12 @@ export class RideService {
         surgeMultiplier: fare.surgeMultiplier,
         totalFarePaise: fare.totalFarePaise,
         vehicleCategory: input.vehicleCategory || 'SEDAN',
-        otp,
         status: 'SEARCHING',
         rideSequence: 1
       }, tx);
+
+      // Store OTP in Redis (not in PostgreSQL database)
+      await this.otpService.storeRideOtp(created.id, otp);
 
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
@@ -70,7 +84,10 @@ export class RideService {
         }
       });
 
-      return created;
+      return {
+        ...created,
+        otp
+      };
     });
   }
 
@@ -89,15 +106,27 @@ export class RideService {
       }
 
       // Redact OTP if driver is viewing active ride
-      if (isDriver && !isRider && !isAdmin && !['COMPLETED', 'CANCELLED'].includes(ride.status)) {
+      if (isDriver && !isRider && !isAdmin) {
         return {
           ...ride,
           otp: null
         };
       }
+
+      // Rider and Admin can see the OTP if active
+      if (isRider || isAdmin) {
+        const otp = await this.otpService.getRideOtp(ride.id);
+        return {
+          ...ride,
+          otp
+        };
+      }
     }
 
-    return ride;
+    return {
+      ...ride,
+      otp: null
+    };
   }
 
   async getActiveRide(riderId: string) {
@@ -128,7 +157,7 @@ export class RideService {
       const existingActive = await tx.ride.findFirst({
         where: {
           driverId,
-          status: { in: ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'ARRIVED', 'IN_PROGRESS', 'STARTED', 'ARRIVED_AT_DESTINATION'] }
+          status: { in: ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] }
         }
       });
       if (existingActive && existingActive.id !== rideId) {
@@ -138,7 +167,7 @@ export class RideService {
       // 2. Concurrency-safe ride state check
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
-      if (ride.status !== 'REQUESTED' && ride.status !== 'SEARCHING') {
+      if (ride.status !== 'SEARCHING') {
         throw new ConflictError('Ride is no longer available for acceptance');
       }
       if (ride.driverId && ride.driverId !== driverId) {
@@ -148,7 +177,7 @@ export class RideService {
       const nextSequence = ride.rideSequence + 1;
       const updated = await this.rideRepo.update(rideId, {
         driverId,
-        status: 'ACCEPTED',
+        status: 'DRIVER_ASSIGNED',
         acceptedAt: new Date(),
         rideSequence: nextSequence
       }, tx);
@@ -176,14 +205,14 @@ export class RideService {
         throw new AppError('Unauthorized: Only assigned driver can update arrival status', 403, 'FORBIDDEN');
       }
 
-      const validPreviousStatuses = ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING'];
+      const validPreviousStatuses = ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING'];
       if (!validPreviousStatuses.includes(ride.status)) {
         throw new ConflictError(`Cannot mark arrived from status ${ride.status}`);
       }
 
       const nextSequence = ride.rideSequence + 1;
       const updated = await this.rideRepo.update(rideId, {
-        status: 'ARRIVED',
+        status: 'DRIVER_ARRIVING',
         arrivedAt: new Date(),
         rideSequence: nextSequence
       }, tx);
@@ -215,7 +244,7 @@ export class RideService {
         throw new AppError('Unauthorized: Only assigned driver can arrive at destination', 403, 'FORBIDDEN');
       }
 
-      if (ride.status !== 'IN_PROGRESS' && ride.status !== 'STARTED') {
+      if (ride.status !== 'RIDE_STARTED') {
         throw new ConflictError(`Cannot arrive at destination from status ${ride.status}`);
       }
 
@@ -252,21 +281,24 @@ export class RideService {
         throw new AppError('Unauthorized: Only assigned driver can start this ride', 403, 'FORBIDDEN');
       }
 
-      if (ride.status !== 'ARRIVED') {
-        throw new ConflictError(`Cannot start ride from status ${ride.status}. Driver must mark arrived first.`);
+      if (ride.status !== 'DRIVER_ARRIVING' && ride.status !== 'DRIVER_ASSIGNED') {
+        throw new ConflictError(`Cannot start ride from status ${ride.status}. Driver must be arriving/assigned first.`);
       }
 
-      if (!this.otpService.verifyRideOtp(ride.otp, otp)) {
+      const isValidOtp = await this.otpService.verifyRideOtp(rideId, otp);
+      if (!isValidOtp) {
         throw new AppError('Invalid ride verification OTP', 400);
       }
 
       const nextSequence = ride.rideSequence + 1;
       const updated = await this.rideRepo.update(rideId, {
-        status: 'IN_PROGRESS',
+        status: 'RIDE_STARTED',
         startedAt: new Date(),
-        otp: this.otpService.invalidateRideOtp(),
         rideSequence: nextSequence
       }, tx);
+
+      // Invalidate OTP in Redis upon successful start
+      await this.otpService.invalidateRideOtp(rideId);
 
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,
@@ -291,7 +323,7 @@ export class RideService {
         throw new AppError('Unauthorized: Only assigned driver can complete this ride', 403, 'FORBIDDEN');
       }
 
-      const validCompleteStatuses = ['IN_PROGRESS', 'STARTED', 'ARRIVED_AT_DESTINATION'];
+      const validCompleteStatuses = ['RIDE_STARTED', 'ARRIVED_AT_DESTINATION'];
       if (!validCompleteStatuses.includes(ride.status)) {
         throw new ConflictError(`Cannot complete a ride in status ${ride.status}`);
       }
@@ -368,6 +400,9 @@ export class RideService {
         rideSequence: nextSequence,
         ...(cancellationFeePaise > 0 ? { totalFarePaise: cancellationFeePaise } : {})
       }, tx);
+
+      // Invalidate OTP in Redis upon cancellation
+      await this.otpService.invalidateRideOtp(rideId);
 
       await this.outboxRepo.stageEvent(tx, {
         topic: EventTopics.RIDE_EVENTS,

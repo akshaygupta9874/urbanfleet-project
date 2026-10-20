@@ -10,7 +10,6 @@ import { AuthContext } from "./auth-context";
 type UserRole = "RIDER" | "DRIVER" | "ADMIN";
 
 export interface User {
-  _id?: string;
   id?: string;
   firstName?: string;
   lastName?: string;
@@ -43,10 +42,10 @@ async function requestAuthentication(): Promise<{ accessToken: string; user: Use
       : ["RIDER"];
     const firstName = (rawUser.firstName as string) || "";
     const lastName = (rawUser.lastName as string) || "";
+    const id = (rawUser.id as string) || "";
     const normalizedUser: User = {
       ...rawUser,
-      _id: rawUser._id || rawUser.id,
-      id: rawUser.id || rawUser._id,
+      id,
       firstName,
       lastName,
       role: roles,
@@ -111,10 +110,10 @@ export const AuthContextProvider = ({
       : ["RIDER"];
     const firstName = authenticatedUser.firstName || "";
     const lastName = authenticatedUser.lastName || "";
+    const id = authenticatedUser.id || "";
     const normalizedUser: User = {
       ...authenticatedUser,
-      _id: authenticatedUser._id || authenticatedUser.id,
-      id: authenticatedUser.id || authenticatedUser._id,
+      id,
       firstName,
       lastName,
       role: roles,

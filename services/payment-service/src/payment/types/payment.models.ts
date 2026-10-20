@@ -17,7 +17,7 @@ import type {
 
 /** One refund attempt (sub-document of Payment.refunds). */
 export interface IRefundRecord {
-  _id: string;
+  id: string;
   gatewayRefundId?: string;
   amountPaise: Paise;
   status: RefundStatus;
@@ -39,7 +39,7 @@ export interface IRefundRecord {
 }
 
 export interface IPayment {
-  _id: string;
+  id: string;
   ride: string;
   rider: string;
   driver: string;
@@ -79,7 +79,7 @@ export interface IPayment {
 }
 
 export interface ILedgerEntry {
-  _id: string;
+  id: string;
   transactionId: string;
   account: LedgerAccount;
   ownerId?: string;
@@ -99,7 +99,7 @@ export interface ILedgerEntry {
 }
 
 export interface IPayout {
-  _id: string;
+  id: string;
   payment: string;
   ride: string;
   driver: string;

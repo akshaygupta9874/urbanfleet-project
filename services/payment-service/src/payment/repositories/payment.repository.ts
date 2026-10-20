@@ -39,7 +39,6 @@ function formatPayment(row: any): IPayment {
     }
 
     return {
-        _id: row.id,
         id: row.id,
         ride: row.rideId,
         rideId: row.rideId,
@@ -198,7 +197,7 @@ class PaymentRepository {
         const client = getClient(session);
         const rows = (await client.$queryRawUnsafe(
             `SELECT * FROM payments WHERE refunds::jsonb @> $1::jsonb LIMIT 1`,
-            JSON.stringify([{ _id: refundId }])
+            JSON.stringify([{ id: refundId }])
         )) as any[];
         return rows && rows.length > 0 ? formatPayment(rows[0]) : null;
     }
@@ -347,7 +346,7 @@ class PaymentRepository {
         paymentId: string,
         refundId: string,
         fromStatuses: readonly RefundStatus[],
-        set: Partial<Omit<IRefundRecord, "_id">>,
+        set: Partial<Omit<IRefundRecord, "id">>,
         session?: ClientSession
     ): Promise<IPayment | null> {
         const client = getClient(session);
@@ -358,7 +357,7 @@ class PaymentRepository {
 
         const idx = current.refunds.findIndex(
             (r) =>
-                r._id.toString() === refundId &&
+                r.id.toString() === refundId &&
                 fromStatuses.includes(r.status)
         );
 
@@ -398,7 +397,7 @@ class PaymentRepository {
 
         const idx = current.refunds.findIndex(
             (r) =>
-                r._id.toString() === refundId &&
+                r.id.toString() === refundId &&
                 (r.status === RefundStatus.PENDING ||
                     r.status === RefundStatus.PROCESSED)
         );

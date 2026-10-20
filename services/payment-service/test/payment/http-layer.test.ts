@@ -115,7 +115,7 @@ describe("controllers", () => {
   });
 
   it("getPayment: participant sees a sanitised view, stranger gets 403, admin sees everything", async () => {
-    const payment = makePayment({ refunds: [{ _id: oid(), amountPaise: 5, status: RefundStatus.PROCESSED, createdAt: new Date(), initiatedBy: oid(), driverReversalPaise: 3, platformReversalPaise: 2, ledgerTransactionId: "t" }], metadata: { a: 1 }, ledgerTransactionId: "tx" });
+    const payment = makePayment({ refunds: [{ id: oid(), amountPaise: 5, status: RefundStatus.PROCESSED, createdAt: new Date(), initiatedBy: oid(), driverReversalPaise: 3, platformReversalPaise: 2, ledgerTransactionId: "t" }], metadata: { a: 1 }, ledgerTransactionId: "tx" });
     vi.spyOn(paymentRepository, "findById").mockResolvedValue(payment);
 
     asUser([UserRole.RIDER]);
@@ -124,7 +124,7 @@ describe("controllers", () => {
     expect(res.body.data).not.toHaveProperty("idempotencyKey");
     expect(res.body.data).not.toHaveProperty("metadata");
     expect(res.body.data).not.toHaveProperty("ledgerTransactionId");
-    expect(Object.keys(res.body.data.refunds[0]).sort()).toEqual(["_id", "amountPaise", "createdAt", "processedAt", "status"]);
+    expect(Object.keys(res.body.data.refunds[0]).sort()).toEqual(["amountPaise", "createdAt", "id", "processedAt", "status"]);
 
     let out = await call(controller.getPayment, { userId: oid().toString(), params: { paymentId: "x" } });
     expect(out.next.mock.calls[0]![0]).toMatchObject({ statusCode: 403 });

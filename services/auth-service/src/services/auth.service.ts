@@ -19,12 +19,22 @@ import {
 const logger = createLogger('auth-service');
 
 export class AuthService {
+  private userRepo: UserRepository;
+  private sessionRepo: SessionRepository;
+  private auditRepo: AuditRepository;
+  private outboxRepo?: OutboxRepository;
+
   constructor(
-    private userRepo: UserRepository,
-    private sessionRepo: SessionRepository,
-    private auditRepo: AuditRepository,
-    private outboxRepo?: OutboxRepository
-  ) {}
+    userRepo: UserRepository,
+    sessionRepo: SessionRepository,
+    auditRepo: AuditRepository,
+    outboxRepo?: OutboxRepository
+  ) {
+    this.userRepo = userRepo;
+    this.sessionRepo = sessionRepo;
+    this.auditRepo = auditRepo;
+    this.outboxRepo = outboxRepo;
+  }
 
   async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, 12);
@@ -187,7 +197,6 @@ export class AuthService {
     return {
       user: {
         id: user.id,
-        _id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -264,7 +273,6 @@ export class AuthService {
       requires2FA: false,
       user: {
         id: user.id,
-        _id: user.id,
         email: user.email,
         firstName,
         lastName,
@@ -314,7 +322,6 @@ export class AuthService {
     return {
       user: {
         id: user.id,
-        _id: user.id,
         email: user.email,
         firstName,
         lastName,
@@ -389,7 +396,6 @@ export class AuthService {
       refreshToken: newRefreshToken,
       user: {
         id: user.id,
-        _id: user.id,
         email: user.email,
         firstName,
         lastName,
@@ -726,7 +732,6 @@ export class AuthService {
 
     const userPayload = {
       id: user.id,
-      _id: user.id,
       email: user.email,
       firstName,
       lastName,

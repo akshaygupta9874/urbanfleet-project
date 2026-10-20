@@ -1,7 +1,11 @@
 import { PrismaClient, Payout } from '../db/client.js';
 
 export class PayoutRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async create(data: any, tx?: any): Promise<Payout> {
     const client = tx || this.prisma;

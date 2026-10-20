@@ -1,7 +1,11 @@
 import { PrismaClient, Ride } from '../db/client.js';
 
 export class RideRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async findById(id: string, tx?: any): Promise<Ride | null> {
     const client = tx || this.prisma;
@@ -12,7 +16,7 @@ export class RideRepository {
     return this.prisma.ride.findFirst({
       where: {
         riderId,
-        status: { in: ['REQUESTED', 'SEARCHING', 'OFFERED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS', 'STARTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'ARRIVED_AT_DESTINATION'] }
+        status: { in: ['SEARCHING', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -22,7 +26,7 @@ export class RideRepository {
     return this.prisma.ride.findFirst({
       where: {
         driverId,
-        status: { in: ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'ARRIVED', 'IN_PROGRESS', 'STARTED', 'ARRIVED_AT_DESTINATION'] }
+        status: { in: ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] }
       },
       orderBy: { createdAt: 'desc' }
     });

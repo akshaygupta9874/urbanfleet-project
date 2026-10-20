@@ -47,11 +47,9 @@ export function formatDriverProfileForFrontend(profile: any) {
 
   return {
     ...profile,
-    _id: profile.id,
     id: profile.id,
     totalEarningsPaise,
     user: profile.user || {
-      _id: profile.userId,
       id: profile.userId,
       firstName: profile.firstName || 'UrbanFleet',
       lastName: profile.lastName || 'Driver',
@@ -93,6 +91,10 @@ export function formatDriverProfileForFrontend(profile: any) {
 }
 
 export class DriverController {
+  private driverService: DriverService;
+  private documentService: DocumentService;
+  private cloudinaryService: CloudinaryService;
+
   private getAuthenticatedUserId(req: AuthenticatedRequest): string {
     const userId = req.userId || req.user?.userId || req.user?.id;
     if (!userId) {
@@ -102,10 +104,14 @@ export class DriverController {
   }
 
   constructor(
-    private driverService: DriverService,
-    private documentService: DocumentService,
-    private cloudinaryService: CloudinaryService = defaultCloudinaryService
-  ) {}
+    driverService: DriverService,
+    documentService: DocumentService,
+    cloudinaryService: CloudinaryService = defaultCloudinaryService
+  ) {
+    this.driverService = driverService;
+    this.documentService = documentService;
+    this.cloudinaryService = cloudinaryService;
+  }
 
   registerDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const files = (req.files as DriverUploadFiles) || {};
@@ -315,7 +321,6 @@ export class DriverController {
         message: 'Driver profile created successfully. Awaiting verification.',
         data: {
           id: profile.id,
-          _id: profile.id,
           verificationStatus: profile.verificationStatus,
         },
       });

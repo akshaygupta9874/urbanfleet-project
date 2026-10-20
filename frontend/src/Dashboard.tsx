@@ -29,7 +29,8 @@ type RideStatus =
   | "SEARCHING"
   | "DRIVER_ASSIGNED"
   | "DRIVER_ARRIVING"
-  | "STARTED"
+  | "RIDE_STARTED"
+  | "ARRIVED_AT_DESTINATION"
   | "COMPLETED"
   | "CANCELLED";
 
@@ -39,7 +40,7 @@ interface RidePoint {
 }
 
 interface Ride {
-  _id: string;
+  id: string;
   pickup: RidePoint;
   destination: RidePoint;
   fare: { estimated: number; final?: number | null };
@@ -117,7 +118,7 @@ export default function Dashboard() {
         if (cancelled) return;
         const ride = response.data.ride;
         if (ride && ride.status !== "COMPLETED" && ride.status !== "CANCELLED") {
-          navigate(`/ride/${ride._id}`, { replace: true });
+          navigate(`/ride/${ride.id}`, { replace: true });
           return;
         }
       } catch {
@@ -268,7 +269,7 @@ export default function Dashboard() {
       setRideError("Please select both pickup and destination from the suggestions.");
       return;
     }
-    if (!user?._id) {
+    if (!user?.id) {
       setRideError("Unable to determine your profile. Please sign in again.");
       return;
     }

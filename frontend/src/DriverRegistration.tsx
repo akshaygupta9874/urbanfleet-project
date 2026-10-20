@@ -171,14 +171,14 @@ export default function DriverRegistration() {
     setError("");
     setStatus("");
 
-    if (!user?._id) {
+    if (!user?.id) {
       setError("Unable to determine your account. Please log in again.");
       return;
     }
 
     const formData = new FormData();
 
-    formData.append("userId", user._id);
+    formData.append("userId", user.id);
 
     formData.append(
       "vehicle",

@@ -1,7 +1,11 @@
 import { PrismaClient, OutboxEvent } from '../db/client.js';
 
 export class OutboxRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async stageEvent(
     tx: any,

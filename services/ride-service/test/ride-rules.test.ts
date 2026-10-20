@@ -19,7 +19,7 @@ describe('Ride Lifecycle State Rules', () => {
 
     expect(
       canCompleteRide({
-        status: 'STARTED',
+        status: 'RIDE_STARTED',
         paymentStatus: 'CAPTURED'
       })
     ).toBe(false);

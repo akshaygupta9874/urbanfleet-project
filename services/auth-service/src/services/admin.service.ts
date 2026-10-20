@@ -1,7 +1,11 @@
 import { UserRepository } from '../repositories/user.repository.js';
 
 export class AdminService {
-  constructor(private userRepo: UserRepository) {}
+  private userRepo: UserRepository;
+
+  constructor(userRepo: UserRepository) {
+    this.userRepo = userRepo;
+  }
 
   async getSystemStats() {
     const totalUsers = await this.userRepo.count();

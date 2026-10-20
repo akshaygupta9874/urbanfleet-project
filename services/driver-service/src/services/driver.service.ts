@@ -2,7 +2,11 @@ import { DriverRepository } from '../repositories/driver.repository.js';
 import { NotFoundError, ConflictError } from '@urbanfleet/common';
 
 export class DriverService {
-  constructor(private driverRepo: DriverRepository) {}
+  private driverRepo: DriverRepository;
+
+  constructor(driverRepo: DriverRepository) {
+    this.driverRepo = driverRepo;
+  }
 
   async createDriverProfile(userId: string, licenseNumber: string) {
     const existing = await this.driverRepo.findByUserId(userId);
@@ -57,7 +61,6 @@ export class DriverService {
 
     return {
       id: profile.id,
-      _id: profile.id,
       userId: profile.userId,
       rating: Number(profile.rating || 5.0),
       totalTrips: profile.totalTrips || 0,

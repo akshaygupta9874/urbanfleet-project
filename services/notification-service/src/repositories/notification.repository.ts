@@ -1,7 +1,11 @@
 import { PrismaClient, NotificationRecord } from '../db/client.js';
 
 export class NotificationRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async create(data: any): Promise<NotificationRecord> {
     return this.prisma.notificationRecord.create({ data });

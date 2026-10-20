@@ -40,7 +40,7 @@ const withoutZeroLegs = (
 
 type PaymentForPosting = Pick<
     IPayment,
-    | "_id"
+    | "id"
     | "ride"
     | "rider"
     | "driver"
@@ -233,11 +233,11 @@ class LedgerService {
                     },
                 ]),
                 referenceType: LedgerReferenceType.PAYMENT,
-                referenceId: payment._id,
+                referenceId: payment.id,
                 transactionId,
-                idempotencyKey: `payment:${payment._id.toString()}:capture`,
+                idempotencyKey: `payment:${payment.id.toString()}:capture`,
                 metadata: {
-                    paymentId: payment._id.toString(),
+                    paymentId: payment.id.toString(),
                     rideId: payment.ride.toString(),
                     gatewayOrderId: payment.gatewayOrderId,
                     gatewayPaymentId: payment.gatewayPaymentId,
@@ -292,12 +292,12 @@ class LedgerService {
                     },
                 ]),
                 referenceType: LedgerReferenceType.REFUND,
-                referenceId: payment._id,
+                referenceId: payment.id,
                 transactionId: args.transactionId,
                 idempotencyKey:
-                    `refund:${payment._id.toString()}:${refundId.toString()}:book`,
+                    `refund:${payment.id.toString()}:${refundId.toString()}:book`,
                 metadata: {
-                    paymentId: payment._id.toString(),
+                    paymentId: payment.id.toString(),
                     refundId: refundId.toString(),
                     reason,
                 },
@@ -346,12 +346,12 @@ class LedgerService {
                     },
                 ]),
                 referenceType: LedgerReferenceType.REFUND,
-                referenceId: payment._id,
+                referenceId: payment.id,
                 transactionId: args.transactionId,
                 idempotencyKey:
-                    `refund:${payment._id.toString()}:${refundId.toString()}:undo`,
+                    `refund:${payment.id.toString()}:${refundId.toString()}:undo`,
                 metadata: {
-                    paymentId: payment._id.toString(),
+                    paymentId: payment.id.toString(),
                     refundId: refundId.toString(),
                     reason,
                 },

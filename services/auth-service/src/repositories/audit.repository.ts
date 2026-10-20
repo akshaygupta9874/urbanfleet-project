@@ -1,7 +1,11 @@
 import { PrismaClient, AuditLog } from '../db/client.js';
 
 export class AuditRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async record(data: {
     userId?: string;

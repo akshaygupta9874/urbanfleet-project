@@ -13,7 +13,11 @@ export interface CreateDocumentInput {
 }
 
 export class DocumentRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async findById(id: string): Promise<Document | null> {
     return this.prisma.document.findUnique({

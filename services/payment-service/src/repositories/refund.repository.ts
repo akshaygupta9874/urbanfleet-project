@@ -1,7 +1,11 @@
 import { PrismaClient, Refund } from '../db/client.js';
 
 export class RefundRepository {
-  constructor(private prisma: PrismaClient) {}
+  private prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async create(tx: any, data: any): Promise<Refund> {
     return tx.refund.create({ data });

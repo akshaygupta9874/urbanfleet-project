@@ -75,15 +75,10 @@ import { razorpayClient } from "../../src/config/razorpay.config.js";
 import { prisma } from "../../src/db/client.js";
 
 const RideStatus = {
-  REQUESTED: 'REQUESTED',
   SEARCHING: 'SEARCHING',
-  OFFERED: 'OFFERED',
-  ACCEPTED: 'ACCEPTED',
   DRIVER_ASSIGNED: 'DRIVER_ASSIGNED',
   DRIVER_ARRIVING: 'DRIVER_ARRIVING',
-  ARRIVED: 'ARRIVED',
-  IN_PROGRESS: 'IN_PROGRESS',
-  STARTED: 'STARTED',
+  RIDE_STARTED: 'RIDE_STARTED',
   ARRIVED_AT_DESTINATION: 'ARRIVED_AT_DESTINATION',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
@@ -191,7 +186,6 @@ describe("handlePaymentCaptured", () => {
       opts.ride === undefined
         ? {
           id: payment.ride.toString(),
-          _id: payment.ride,
           driverId: payment.driver.toString(),
           driver: payment.driver,
           riderId: payment.rider.toString(),
@@ -309,7 +303,6 @@ describe("handlePaymentCaptured", () => {
 
       vi.spyOn(prisma.ride, "findUnique").mockResolvedValue({
         id: payment.ride.toString(),
-        _id: payment.ride,
         driverId: payment.driver.toString(),
         driver: payment.driver,
         riderId: payment.rider.toString(),
@@ -509,7 +502,7 @@ describe(
         );
 
         expect(record).toHaveBeenCalledWith(
-          payment._id.toString(),
+          payment.id.toString(),
           "pay_F1",
           expect.arrayContaining([
             PaymentStatus.FAILED,
@@ -663,7 +656,7 @@ describe("createOrder", () => {
   };
 
   const makeRide = (over: any = {}) => {
-    const id = (over._id ?? oid()).toString();
+    const id = (over.id ?? oid()).toString();
     const riderId = (over.rider ?? oid()).toString();
     const driverId = (over.driver ?? oid()).toString();
     const effectiveBreakdown = {
@@ -672,7 +665,6 @@ describe("createOrder", () => {
     };
     const ride: any = {
       id,
-      _id: id,
       riderId,
       rider: riderId,
       driverId,
@@ -696,7 +688,7 @@ describe("createOrder", () => {
     ride: any,
     rider = ride.rider
   ) => ({
-    ride: ride._id,
+    ride: ride.id,
     rider,
     idempotencyKey:
       "key-" + "x".repeat(20),
@@ -823,7 +815,7 @@ describe("createOrder", () => {
           amount: 1000,
           currency: "INR",
           receipt:
-            ride._id.toString(),
+            ride.id.toString(),
           payment_capture: true,
         })
       );
@@ -861,7 +853,7 @@ describe("createOrder", () => {
     const pendingReservation = makePayment({
       gatewayOrderId: undefined,
       status: PaymentStatus.CREATED,
-      ride: ride._id,
+      ride: ride.id,
     });
 
     vi.spyOn(prisma.ride, "findUnique").mockResolvedValue(ride as any);
@@ -942,7 +934,7 @@ describe("createOrder", () => {
       const failed = makePayment({
         status: PaymentStatus.FAILED,
         attemptNumber: 2,
-        ride: ride._id,
+        ride: ride.id,
       });
 
       vi.spyOn(
@@ -987,7 +979,7 @@ describe("createOrder", () => {
         );
 
       expect(t).toHaveBeenCalledWith(
-        failed._id.toString(),
+        failed.id.toString(),
         PaymentStatus.FAILED,
         {
           status:

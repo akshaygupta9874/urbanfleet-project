@@ -34,7 +34,7 @@ export interface RideCancelledPayload {
 }
 
 export interface PaymentCapturedPayload {
-  ride: { _id: string; paymentStatus: PaymentStatus };
+  ride: { id: string; paymentStatus: PaymentStatus };
 }
 
 export const DriverEvents = {

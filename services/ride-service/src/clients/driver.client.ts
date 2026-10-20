@@ -9,9 +9,13 @@ export interface DriverProfile {
 }
 
 export class DriverClient {
+  private baseUrl: string;
+
   constructor(
-    private baseUrl: string = process.env.DRIVER_SERVICE_URL || 'http://localhost:4002'
-  ) {}
+    baseUrl: string = process.env.DRIVER_SERVICE_URL || 'http://localhost:4002'
+  ) {
+    this.baseUrl = baseUrl;
+  }
 
   async getDriverById(driverId: string): Promise<DriverProfile | null> {
     try {

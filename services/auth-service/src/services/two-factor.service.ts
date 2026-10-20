@@ -40,10 +40,16 @@ export interface TwoFactorVerificationResult {
 }
 
 export class TwoFactorService {
+  private userRepo: UserRepository;
+  private auditRepo?: AuditRepository;
+
   constructor(
-    private userRepo: UserRepository,
-    private auditRepo?: AuditRepository
-  ) {}
+    userRepo: UserRepository,
+    auditRepo?: AuditRepository
+  ) {
+    this.userRepo = userRepo;
+    this.auditRepo = auditRepo;
+  }
 
   /**
    * Helper to hash recovery codes using SHA-256 before database storage.
