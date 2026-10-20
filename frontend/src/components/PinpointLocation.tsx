@@ -8,12 +8,13 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { searchPlaces } from "../services/geoapify.service";
 import { getGeoapifyPoint, type GeoapifyFeature } from "../types/geoapify";
+import type { Coordinates } from "../types/location";
 
 interface PinpointLocationProps {
   isOpen: boolean;
   onClose: () => void;
-  initialCoords: { latitude: number; longitude: number } | null;
-  onConfirm: (address: string, coords: { latitude: number; longitude: number }) => void;
+  initialCoords: Coordinates | null;
+  onConfirm: (address: string, coords: Coordinates) => void;
   reverseGeocodeFn: (lat: number, lng: number) => Promise<string>;
   title?: string;
 }

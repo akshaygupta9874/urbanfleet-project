@@ -5,15 +5,14 @@ import { AppError } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
 
 export interface UserContext {
-  id: string;
   userId: string;
-  email?: string;
-  role?: string | string[];
-  roles?: string[];
+  email: string;
+  roles: string[];
 }
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  roles?: string[];
   role?: string[];
   user?: UserContext;
 }
@@ -45,7 +44,8 @@ export const authMiddleware = asyncHandler(
     ) {
       request.userId = 'internal-service';
       request.role = ['ADMIN'];
-      request.user = { id: 'internal-service', userId: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
+      request.roles = ['ADMIN'];
+      request.user = { userId: 'internal-service', email: 'internal@urbanfleet.local', roles: ['ADMIN'] };
       return next();
     }
 
@@ -94,14 +94,16 @@ export const authMiddleware = asyncHandler(
       throw new AppError('Your session is invalid. Please sign in again.', 401, 'INVALID_SESSION');
     }
 
+    const userRoles = Array.isArray(decodedData.roles)
+      ? decodedData.roles
+      : (typeof decodedData.role === 'string' ? [decodedData.role] : ['RIDER']);
     request.userId = userId;
-    request.role = Array.isArray(decodedData.roles) ? decodedData.roles : [decodedData.role as string || 'RIDER'];
+    request.roles = userRoles;
+    request.role = userRoles;
     request.user = {
       userId,
-      id: userId,
-      email: decodedData.email,
-      role: decodedData.role,
-      roles: request.role,
+      email: decodedData.email || '',
+      roles: userRoles,
     };
 
     next();
@@ -110,10 +112,10 @@ export const authMiddleware = asyncHandler(
 
 export const requireRole = (...allowedRoles: string[]) => {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (!req.userId && !req.user) {
+    if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.role || (req.user?.roles ? req.user.roles : []);
+    const roles: string[] = req.roles ?? req.role ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

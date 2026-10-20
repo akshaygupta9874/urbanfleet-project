@@ -8,12 +8,13 @@ import { useAuthContext } from "./context/auth-context";
 import LoadingScreen from './components/LoadingScreen';
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from './types/geoapify';
 import CityMapBackground from './components/CityMapBackground';
+import type { Coordinates, LocationPoint } from "./types/location";
 
 interface PendingRide {
     pickup: string;
     destination: string;
-    pickupCoords: { latitude: number; longitude: number };
-    destinationCoords: { latitude: number; longitude: number };
+    pickupCoords: Coordinates;
+    destinationCoords: Coordinates;
     routeDistance: number | null;
     routeDuration: number | null;
 }
@@ -158,18 +159,26 @@ export default function ChooseMode() {
             const selectedMultiplier = RIDE_MODES.find((mode) => mode.id === selectedMode)?.multiplier ?? 1.2;
             const calculatedFare = Math.round((2500 + Math.round(distanceKm * 500) + 400) * selectedMultiplier);
 
-            const response = await appApi.post<{ message: string; ride: { id: string } }>("/ride", {
+            const pickup: LocationPoint = {
+                address: rideData.pickup,
+                coordinates: rideData.pickupCoords,
+            };
+            const destination: LocationPoint = {
+                address: rideData.destination,
+                coordinates: rideData.destinationCoords,
+            };
+            const response = await appApi.post<{ success: boolean; data: { id: string } }>("/ride", {
                 rider: user?.id,
                 vehicleType: selectedMode,
-                pickup: { address: rideData.pickup, coordinates: rideData.pickupCoords },
-                destination: { address: rideData.destination, coordinates: rideData.destinationCoords },
+                pickup,
+                destination,
                 fare: { estimated: calculatedFare },
                 distance: { estimated: distanceKm },
                 duration: { estimated: rideData.routeDuration ? Math.round(rideData.routeDuration/60) : 14 },
             });
 
             sessionStorage.removeItem("pendingRide");
-            const targetRideId = response.data.ride?.id;
+            const targetRideId = response.data.data?.id;
             navigate(`/ride/${targetRideId}`, { replace: true });
         } catch (err: unknown) {
             const axiosError = err as { response?: { data?: { message?: string; errors?: { rider?: string[] } } } };

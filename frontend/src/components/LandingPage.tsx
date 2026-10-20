@@ -27,6 +27,7 @@ import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } f
 import PinpointLocation from "./PinpointLocation";
 import { useAuthContext } from "../context/auth-context";
 import CityMapBackground from "./CityMapBackground";
+import type { Coordinates } from "../types/location";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -150,8 +151,8 @@ export default function LandingPage() {
   // Input & Pricing States
   const [pickup, setPickup] = useState("");
   const [destination, setDestination] = useState("");
-  const [pickupCoords, setPickupCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [destinationCoords, setDestinationCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [pickupCoords, setPickupCoords] = useState<Coordinates | null>(null);
+  const [destinationCoords, setDestinationCoords] = useState<Coordinates | null>(null);
 
   const [pickupSuggestions, setPickupSuggestions] = useState<GeoapifyFeature[]>([]);
   const [destinationSuggestions, setDestinationSuggestions] = useState<GeoapifyFeature[]>([]);
@@ -304,13 +305,13 @@ export default function LandingPage() {
     );
   };
 
-  const handleConfirmPickup = (confirmedAddress: string, coords: { latitude: number; longitude: number }) => {
+  const handleConfirmPickup = (confirmedAddress: string, coords: Coordinates) => {
     setPickup(confirmedAddress);
     setPickupCoords(coords);
     setIsPickupMapOpen(false);
   };
 
-  const handleConfirmDestination = (confirmedAddress: string, coords: { latitude: number; longitude: number }) => {
+  const handleConfirmDestination = (confirmedAddress: string, coords: Coordinates) => {
     setDestination(confirmedAddress);
     setDestinationCoords(coords);
     setIsDestinationMapOpen(false);

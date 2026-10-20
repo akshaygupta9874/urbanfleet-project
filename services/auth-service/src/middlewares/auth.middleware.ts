@@ -8,11 +8,9 @@ import { getPublicKey } from '../crypto/keys.js';
 import { validateSessionInRedis, getCachedUser, cacheUser } from '../redis/token-cache.js';
 
 export interface UserPayloadContext {
-  id: string;
-  userId?: string;
-  email?: string;
-  role?: string | string[];
-  roles?: string[];
+  userId: string;
+  email: string;
+  roles: string[];
   firstName?: string;
   lastName?: string;
   driverId?: string;
@@ -21,8 +19,8 @@ export interface UserPayloadContext {
 export interface AuthMiddlewareUser {
   id: string;
   email: string;
+  roles: string[];
   role?: string;
-  roles?: string[];
   firstName?: string;
   lastName?: string;
   driverId?: string;
@@ -31,6 +29,7 @@ export interface AuthMiddlewareUser {
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  roles?: string[];
   role?: string[];
   driverId?: string;
   user?: UserPayloadContext;
@@ -64,8 +63,9 @@ export const authMiddleware = asyncHandler(
       crypto.timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
     ) {
       request.userId = 'internal-service';
+      request.roles = ['ADMIN'];
       request.role = ['ADMIN'];
-      request.user = { id: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
+      request.user = { userId: 'internal-service', email: 'internal@urbanfleet.local', roles: ['ADMIN'] };
       return next();
     }
 
@@ -87,7 +87,9 @@ export const authMiddleware = asyncHandler(
     // In test environment, support test bearer tokens or bypass
     if (process.env.NODE_ENV === 'test' && (token === 'valid_jwt_token' || token === 'test-token')) {
       request.userId = 'usr-1';
-      request.user = { id: 'usr-1', email: 'test@example.com', role: 'RIDER' };
+      request.roles = ['RIDER'];
+      request.role = ['RIDER'];
+      request.user = { userId: 'usr-1', email: 'test@example.com', roles: ['RIDER'] };
       return next();
     }
 
@@ -182,8 +184,9 @@ export const authMiddleware = asyncHandler(
     }
 
     // 5. Attach payload to Request and proceed
-    const userRoles = Array.isArray(user.roles) ? user.roles : [user.role || 'RIDER'];
+    const userRoles = Array.isArray(user.roles) ? user.roles : ['RIDER'];
     request.userId = user.id;
+    request.roles = userRoles;
     request.role = userRoles;
     if (user.driver?.id || user.driverId) {
       request.driverId = user.driver?.id || user.driverId;
@@ -193,9 +196,7 @@ export const authMiddleware = asyncHandler(
 
     request.user = {
       userId: user.id,
-      id: user.id,
       email: user.email,
-      role: user.role,
       roles: userRoles,
       firstName,
       lastName,
@@ -208,10 +209,10 @@ export const authMiddleware = asyncHandler(
 
 export const requireRole = (...allowedRoles: string[]) => {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (!req.userId && !req.user) {
+    if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.role || (req.user?.roles ? req.user.roles : []);
+    const roles: string[] = req.roles ?? req.role ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

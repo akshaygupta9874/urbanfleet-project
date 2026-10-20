@@ -246,7 +246,7 @@ class PaymentService {
     if (existing) {
       return this.resumeOrder(
         existing,
-        ride.fareBreakdown?.totalPaise
+        ride.fare?.breakdown?.totalPaise
       );
     }
 
@@ -270,7 +270,7 @@ class PaymentService {
       );
     }
 
-    const fareBreakdown = latestRide.fareBreakdown as IFareBreakdown | undefined;
+    const fareBreakdown = latestRide.fare?.breakdown;
 
     if (!fareBreakdown) {
       throw new AppError(
@@ -339,7 +339,7 @@ class PaymentService {
             return { payment: existingForRide[0]!, alreadyExists: true };
           }
 
-          const lockedFare = lockedRide.fareBreakdown as IFareBreakdown | undefined;
+          const lockedFare = lockedRide.fare?.breakdown;
           const lockedRiderId = lockedRide.riderId?.toString();
           const lockedDriverId = lockedRide.driverId?.toString() || (isCancelled ? lockedRiderId : undefined);
           if (!lockedDriverId || !lockedFare) {

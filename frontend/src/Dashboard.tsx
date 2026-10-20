@@ -24,6 +24,7 @@ import { searchPlaces, reverseGeocode } from "./services/geoapify.service";
 import PinpointLocation from "./components/PinpointLocation";
 import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
+import type { Coordinates, LocationPoint } from "./types/location";
 
 type RideStatus =
   | "SEARCHING"
@@ -34,15 +35,10 @@ type RideStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-interface RidePoint {
-  address: string;
-  coordinates: { latitude: number; longitude: number };
-}
-
 interface Ride {
   id: string;
-  pickup: RidePoint;
-  destination: RidePoint;
+  pickup: LocationPoint;
+  destination: LocationPoint;
   fare: { estimated: number; final?: number | null };
   distance: { estimated: number | null };
   duration: { estimated: number | null };
@@ -61,10 +57,8 @@ export default function Dashboard() {
 
   const [pickup, setPickup] = useState("");
   const [destination, setDestination] = useState("");
-  const [pickupCoords, setPickupCoords] =
-    useState<{ latitude: number; longitude: number } | null>(null);
-  const [destinationCoords, setDestinationCoords] =
-    useState<{ latitude: number; longitude: number } | null>(null);
+  const [pickupCoords, setPickupCoords] = useState<Coordinates | null>(null);
+  const [destinationCoords, setDestinationCoords] = useState<Coordinates | null>(null);
 
   const [pickupSuggestions, setPickupSuggestions] = useState<GeoapifyFeature[]>([]);
   const [destinationSuggestions, setDestinationSuggestions] = useState<GeoapifyFeature[]>([]);
@@ -89,7 +83,11 @@ export default function Dashboard() {
     async function loadDriver() {
       try {
         const res = await appApi.get("/driver/profile");
-        setDriverProfile(res.data.data);
+        const profile = res.data.data;
+        setDriverProfile(profile);
+        if (profile?.isVerified) {
+          sessionStorage.setItem("isDriverVerified", "true");
+        }
       } catch {
         setDriverProfile(null);
       } finally {
@@ -114,9 +112,9 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const response = await appApi.get<{ message: string; ride: Ride }>("/ride/current");
+        const response = await appApi.get<{ success: boolean; data: Ride }>("/ride/current");
         if (cancelled) return;
-        const ride = response.data.ride;
+        const ride = response.data.data;
         if (ride && ride.status !== "COMPLETED" && ride.status !== "CANCELLED") {
           navigate(`/ride/${ride.id}`, { replace: true });
           return;
@@ -248,13 +246,13 @@ export default function Dashboard() {
     );
   };
 
-  const handleConfirmPickup = (confirmedAddress: string, coords: { latitude: number; longitude: number }) => {
+  const handleConfirmPickup = (confirmedAddress: string, coords: Coordinates) => {
     setPickup(confirmedAddress);
     setPickupCoords(coords);
     setIsPickupMapOpen(false);
   };
 
-  const handleConfirmDestination = (confirmedAddress: string, coords: { latitude: number; longitude: number }) => {
+  const handleConfirmDestination = (confirmedAddress: string, coords: Coordinates) => {
     setDestination(confirmedAddress);
     setDestinationCoords(coords);
     setIsDestinationMapOpen(false);
@@ -354,6 +352,16 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2.5">
+              {(driverProfile?.isVerified || user?.roles?.includes("DRIVER")) && (
+                <button
+                  onClick={() => navigate("/driver-dashboard")}
+                  className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-[#c58a3a]/40 bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] text-xs font-semibold shadow-md hover:opacity-95 active:scale-95 transition-all"
+                  aria-label="Switch to Driver Dashboard"
+                >
+                  <Car className="h-4 w-4 text-[#ffd88a]" />
+                  <span className="hidden sm:inline">Driver Console</span>
+                </button>
+              )}
               <button
                 onClick={() => navigate("/history")}
                 className="group relative grid h-10 w-10 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] shadow-sm hover:bg-[#fff4dc] active:scale-95 transition-all"

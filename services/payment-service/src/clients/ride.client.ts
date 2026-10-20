@@ -12,7 +12,6 @@ export interface IRide {
   totalFarePaise?: number;
   totalFare?: number;
   baseFarePaise?: number;
-  fareBreakdown?: IFareBreakdown;
   fare?: { breakdown?: IFareBreakdown; [key: string]: unknown };
   [key: string]: unknown;
 }
@@ -30,15 +29,18 @@ type Mockable<T> = T & { mock?: unknown };
 
 export function formatRide(ride: IRide | Record<string, unknown> | null | undefined): IRide | null {
   if (!ride) return null;
-  const riderId = String(ride.riderId ?? '');
-  const driverId = ride.driverId ? String(ride.driverId) : null;
-  let fareBreakdown = ride.fareBreakdown;
-  if (!fareBreakdown && ride.totalFarePaise !== undefined) {
-    const total = Number(ride.totalFarePaise);
+  const rideData = ride as IRide;
+  const normalizedRide = { ...rideData };
+  delete normalizedRide.fareBreakdown;
+  const riderId = String(rideData.riderId ?? '');
+  const driverId = rideData.driverId ? String(rideData.driverId) : null;
+  let breakdown = rideData.fare?.breakdown;
+  if (!breakdown && rideData.totalFarePaise !== undefined) {
+    const total = Number(rideData.totalFarePaise);
     const platform = Math.round(total * 0.10);
     const driver = total - platform;
-    fareBreakdown = {
-      baseFarePaise: Number(ride.baseFarePaise ?? total),
+    breakdown = {
+      baseFarePaise: Number(rideData.baseFarePaise ?? total),
       distanceFarePaise: 0,
       timeFarePaise: 0,
       surgePaise: 0,
@@ -48,14 +50,21 @@ export function formatRide(ride: IRide | Record<string, unknown> | null | undefi
     };
   }
   return {
-    ...ride,
+    ...normalizedRide,
     id: String(ride.id),
     riderId: riderId ?? '',
     driverId,
     rider: riderId,
     driver: driverId,
     status: String(ride.status || ''),
-    fareBreakdown: fareBreakdown as IFareBreakdown | undefined,
+    ...(breakdown
+      ? {
+          fare: {
+            ...rideData.fare,
+            breakdown,
+          },
+        }
+      : {}),
   };
 }
 

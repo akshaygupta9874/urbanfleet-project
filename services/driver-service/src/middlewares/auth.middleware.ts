@@ -7,11 +7,9 @@ import { authClient } from '../clients/auth.client.js';
 import { prisma } from '../db/client.js';
 
 export interface DriverUserContext {
-  id: string;
   userId: string;
-  email?: string;
-  role?: string | string[];
-  roles?: string[];
+  email: string;
+  roles: string[];
   firstName?: string;
   lastName?: string;
   driverId?: string;
@@ -20,8 +18,8 @@ export interface DriverUserContext {
 export interface DriverUserRecord {
   id: string;
   email?: string;
+  roles: string[];
   role?: string;
-  roles?: string[];
   firstName?: string;
   lastName?: string;
   driverId?: string;
@@ -31,6 +29,7 @@ export interface DriverUserRecord {
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  roles?: string[];
   role?: string[];
   driverId?: string;
   user?: DriverUserContext;
@@ -172,15 +171,14 @@ export const authMiddleware = asyncHandler(
     }
 
     // Attach to Request
-    const userRoles = Array.isArray(user.roles) ? user.roles : [user.role || 'DRIVER'];
+    const userRoles = Array.isArray(user.roles) ? user.roles : ['DRIVER'];
     request.userId = userId;
+    request.roles = userRoles;
     request.role = userRoles;
     request.driverId = driverId;
     request.user = {
       userId,
-      id: userId,
-      email: user.email,
-      role: user.role,
+      email: user.email || '',
       roles: userRoles,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -196,7 +194,7 @@ export const requireRole = (...allowedRoles: string[]) => {
     if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.role || [];
+    const roles: string[] = req.roles ?? req.role ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

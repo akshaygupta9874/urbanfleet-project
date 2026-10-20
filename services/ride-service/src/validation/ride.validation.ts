@@ -1,78 +1,14 @@
 import { z } from 'zod';
 
-const coordinatesSchema = z.object({
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  lat: z.number().min(-90).max(90).optional(),
-  lng: z.number().min(-180).max(180).optional(),
-}).refine(
-  (c) => (c.latitude !== undefined || c.lat !== undefined) && (c.longitude !== undefined || c.lng !== undefined),
-  { message: 'Coordinates must contain latitude/lat and longitude/lng' }
-);
+export const coordinatesSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
 
 export const locationSchema = z.object({
-  address: z.string().optional().default('Unknown Location'),
-  coordinates: coordinatesSchema.optional(),
-  lat: z.number().min(-90).max(90).optional(),
-  lng: z.number().min(-180).max(180).optional(),
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-}).refine(
-  (data) => {
-    const lat = data.lat ?? data.latitude ?? data.coordinates?.lat ?? data.coordinates?.latitude;
-    const lng = data.lng ?? data.longitude ?? data.coordinates?.lng ?? data.coordinates?.longitude;
-    return lat !== undefined && lng !== undefined;
-  },
-  { message: 'Valid latitude and longitude are required' }
-);
-
-export interface CoordinateInput {
-  latitude?: number;
-  longitude?: number;
-  lat?: number;
-  lng?: number;
-  coordinates?: {
-    latitude?: number;
-    longitude?: number;
-    lat?: number;
-    lng?: number;
-  };
-  address?: string;
-}
-
-export interface NormalizedLocation {
-  lat: number;
-  lng: number;
-  address: string;
-}
-
-export function normalizeLocation(input: CoordinateInput | Record<string, unknown> | null | undefined): NormalizedLocation {
-  if (!input) {
-    throw new Error('Location is required');
-  }
-  const inputRecord = input as Record<string, unknown>;
-  const coords = (inputRecord.coordinates && typeof inputRecord.coordinates === 'object')
-    ? (inputRecord.coordinates as Record<string, unknown>)
-    : undefined;
-
-  const lat =
-    inputRecord.lat ??
-    inputRecord.latitude ??
-    coords?.lat ??
-    coords?.latitude;
-  const lng =
-    inputRecord.lng ??
-    inputRecord.longitude ??
-    coords?.lng ??
-    coords?.longitude;
-  const address = inputRecord.address || 'Unknown Location';
-
-  return {
-    lat: Number(lat),
-    lng: Number(lng),
-    address: String(address),
-  };
-}
+  address: z.string().trim().min(1),
+  coordinates: coordinatesSchema,
+});
 
 export const vehicleCategorySchema = z.preprocess(
   (val: unknown) => (typeof val === 'string' ? val.toUpperCase() : val),
@@ -89,7 +25,7 @@ export const requestRideSchema = z.preprocess(
   (val: unknown) => {
     if (val && typeof val === 'object') {
       const obj = val as Record<string, unknown>;
-      const rawCategory = obj.vehicleCategory || 'CAR';
+      const rawCategory = obj.vehicleCategory || obj.vehicleType || 'CAR';
       const fareObj = (obj.fare && typeof obj.fare === 'object') ? (obj.fare as Record<string, unknown>) : undefined;
       const rawFare = obj.estimatedFare ?? fareObj?.estimated ?? obj.fare;
       const distObj = (obj.distance && typeof obj.distance === 'object') ? (obj.distance as Record<string, unknown>) : undefined;
@@ -143,25 +79,13 @@ export const completeRideSchema = z.object({
   actualDuration: z.number().int().positive().optional(),
 });
 
-export const cancelRideSchema = z.preprocess(
-  (val: unknown) => {
-    if (val && typeof val === 'object') {
-      const obj = val as Record<string, unknown>;
-      const reason = obj.reason || 'Ride cancelled by user';
-      return { ...obj, reason };
-    }
-    return val;
-  },
-  z.object({
-    reason: z.string().max(300).optional().default('Ride cancelled by user'),
-    cancellationReason: z.string().optional(),
-  })
-);
+export const cancelRideSchema = z.object({
+  cancellationReason: z.string().max(300).optional().default('Ride cancelled by user'),
+});
 
 export const rateRideSchema = z.object({
   score: z.number().int().min(1, 'Rating must be at least 1').max(5, 'Rating cannot exceed 5'),
-  review: z.string().max(500).optional(),
-  feedback: z.string().max(500).optional(),
+  feedback: z.string().max(500).optional().default(''),
 });
 
 export type EstimateFareDTO = z.infer<typeof estimateFareSchema>;

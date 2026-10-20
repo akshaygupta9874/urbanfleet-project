@@ -6,3 +6,4 @@ export * from './ledger/ledger-validator.js';
 export * from './middlewares/auth-request.interface.js';
 export * from './clients/service-client.js';
 export * from './utils/bigint-serializer.js';
+export * from './types/ride-contracts.js';

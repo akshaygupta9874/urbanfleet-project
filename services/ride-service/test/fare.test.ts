@@ -5,8 +5,8 @@ describe('Ride Service Fare Calculations', () => {
   const fareService = new FareService();
 
   it('should compute distance and duration between two coordinates using Haversine', () => {
-    const pickup = { lat: 19.0760, lng: 72.8777 }; // BKC Mumbai
-    const destination = { lat: 19.0896, lng: 72.8656 }; // Airport
+    const pickup = { latitude: 19.0760, longitude: 72.8777 }; // BKC Mumbai
+    const destination = { latitude: 19.0896, longitude: 72.8656 }; // Airport
     const { distanceKm, durationMinutes } = fareService.computeDistanceAndDuration(pickup, destination);
 
     expect(distanceKm).toBeGreaterThan(1.0);
@@ -14,8 +14,8 @@ describe('Ride Service Fare Calculations', () => {
   });
 
   it('should calculate fare estimates with base fare, dynamic distance, and surge', () => {
-    const pickup = { lat: 19.0760, lng: 72.8777 };
-    const destination = { lat: 19.1136, lng: 72.8697 }; // Andheri
+    const pickup = { address: 'Mumbai', coordinates: { latitude: 19.0760, longitude: 72.8777 } };
+    const destination = { address: 'Andheri', coordinates: { latitude: 19.1136, longitude: 72.8697 } };
     const estimate = fareService.calculateFareEstimate(pickup, destination);
 
     expect(estimate.baseFarePaise).toBe(5000); // ₹50

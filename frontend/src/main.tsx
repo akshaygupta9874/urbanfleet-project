@@ -38,8 +38,8 @@ createRoot(document.getElementById('root')!).render(
   <Route path="/reset-password/:token?" element={<ResetPasswordPage />} />
   <Route path="/token/:token" element={<VerifyEmail />} />
 
-  {/* Rider */}
-  <Route element={<ProtectedRoutes allowedroles={["RIDER"]} />}>
+  {/* Rider routes - accessible to both RIDER and DRIVER */}
+  <Route element={<ProtectedRoutes allowedroles={["RIDER", "DRIVER"]} />}>
     <Route path="/choose" element={<ChooseMode />} />
     <Route path="/dashboard" element={<Dashboard />} />
     <Route path="/history" element={<RideHistory />} />

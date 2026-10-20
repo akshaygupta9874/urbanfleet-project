@@ -36,7 +36,7 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
   // ==========================================
   // 1. Ride Client & Normalization
   // ==========================================
-  describe('formatRide Dual Aliases & Resilient Properties', () => {
+  describe('formatRide Canonical Shape & Resilient Properties', () => {
     it('sets both riderId and rider, driverId and driver from standard ride-service response', () => {
       const incomingRide = {
         id: 'ride-uuid-1',
@@ -78,6 +78,27 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       const formatted = formatRide(incomingRide);
       expect(formatted.driverId).toBeNull();
       expect(formatted.driver).toBeNull();
+    });
+
+    it('reads the fare breakdown from the canonical nested ride field', () => {
+      const breakdown = {
+        baseFarePaise: 100,
+        distanceFarePaise: 200,
+        timeFarePaise: 0,
+        surgePaise: 0,
+        platformCommissionPaise: 30,
+        driverEarningPaise: 270,
+        totalPaise: 300,
+      };
+      const formatted = formatRide({
+        id: 'ride-uuid-4',
+        riderId: 'rider-uuid-4',
+        fareBreakdown: { ...breakdown, totalPaise: 999 },
+        fare: { estimated: 300, final: 300, breakdown },
+      });
+
+      expect(formatted.fare?.breakdown).toEqual(breakdown);
+      expect(formatted).not.toHaveProperty('fareBreakdown');
     });
   });
 

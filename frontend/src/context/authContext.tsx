@@ -14,7 +14,6 @@ export interface User {
   firstName?: string;
   lastName?: string;
   email?: string;
-  role?: UserRole[];
   roles?: UserRole[];
 }
 
@@ -36,20 +35,17 @@ async function requestAuthentication(): Promise<{ accessToken: string; user: Use
       return null;
     }
     const roles: UserRole[] = Array.isArray(rawUser.roles)
-      ? rawUser.roles
-      : Array.isArray(rawUser.role)
-      ? rawUser.role
+      ? (rawUser.roles as UserRole[])
       : ["RIDER"];
     const firstName = (rawUser.firstName as string) || "";
     const lastName = (rawUser.lastName as string) || "";
     const id = (rawUser.id as string) || "";
     const normalizedUser: User = {
-      ...rawUser,
       id,
+      email: typeof rawUser.email === "string" ? rawUser.email : undefined,
       firstName,
       lastName,
-      role: roles,
-      roles: roles,
+      roles,
     };
     return { accessToken, user: normalizedUser };
   } catch {
@@ -105,8 +101,6 @@ export const AuthContextProvider = ({
   const establishSession = useCallback((accessToken: string, authenticatedUser: User) => {
     const roles: UserRole[] = Array.isArray(authenticatedUser.roles)
       ? authenticatedUser.roles
-      : Array.isArray(authenticatedUser.role)
-      ? authenticatedUser.role
       : ["RIDER"];
     const firstName = authenticatedUser.firstName || "";
     const lastName = authenticatedUser.lastName || "";
@@ -116,8 +110,7 @@ export const AuthContextProvider = ({
       id,
       firstName,
       lastName,
-      role: roles,
-      roles: roles,
+      roles,
     };
     setAccessToken(accessToken);
     setUser(normalizedUser);

@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import type { Coordinates, LocationPoint } from '@urbanfleet/common';
 
 export interface AuthenticatedSocketUser {
   userId: string;
@@ -58,8 +59,16 @@ export interface HeartbeatPayload {
 }
 
 export interface RiderLocationPayload {
-  latitude: number;
-  longitude: number;
+  rideId: string;
+  riderId: string;
+  location: Coordinates;
+  timestamp: number;
+}
+
+export interface RiderRideRequestPayload {
+  pickup: LocationPoint;
+  destination: LocationPoint;
+  vehicleCategory?: string;
 }
 
 export interface RideProgressPayload {

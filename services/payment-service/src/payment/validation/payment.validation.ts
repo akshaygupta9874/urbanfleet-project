@@ -6,22 +6,7 @@ const ID_PATTERN = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 export const idSchema = z.string().trim().refine((val) => ID_PATTERN.test(val), 'Invalid id');
 export const objectIdSchema = idSchema;
 
-/**
- * @deprecated The fare is NEVER taken from the client - the server prices the ride from
- * its own stored fare. Kept only so existing imports keep compiling.
- */
-export const fareBreakdownSchema = z.object({
-  baseFarePaise: z.number().int().nonnegative(),
-  distanceFarePaise: z.number().int().nonnegative(),
-  timeFarePaise: z.number().int().nonnegative(),
-  surgePaise: z.number().int().nonnegative().default(0),
-  platformCommissionPaise: z.number().int().nonnegative(),
-  driverEarningPaise: z.number().int().nonnegative(),
-  totalPaise: z.number().int().positive(),
-});
-
-// Only rideId matters. `driverId`, `fareBreakdown` (and `idempotencyKey`) sent by older
-// clients are silently dropped by zod: the server derives all of them itself.
+// The server derives the rider, driver, fare, and idempotency key from trusted records.
 export const createOrderSchema = z.object({
   body: z.object({
     rideId: objectIdSchema,

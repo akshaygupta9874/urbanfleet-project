@@ -1,3 +1,5 @@
+import type { Coordinates, LocationPoint } from '@urbanfleet/common';
+
 const PLATFORM_COMMISSION_PERCENT = 10;
 const BASE_FARE_PAISE = 2500; // ₹25
 const PER_KILOMETER_PAISE = 500; // ₹5/km
@@ -20,22 +22,6 @@ export interface IFareBreakdown {
   totalPaise: number;
 }
 
-export type CoordinatePoint =
-  | {
-      lat?: number;
-      lng?: number;
-      latitude?: number;
-      longitude?: number;
-      coordinates?:
-        | { lat?: number; lng?: number; latitude?: number; longitude?: number }
-        | [number, number]
-        | number[];
-    }
-  | [number, number]
-  | number[]
-  | null
-  | undefined;
-
 export interface FareEstimateResult {
   distanceKm: number;
   durationMinutes: number;
@@ -47,40 +33,17 @@ export interface FareEstimateResult {
 }
 
 export class FareService {
-  normalizeCoords(point: CoordinatePoint): { lat: number; lng: number } {
-    if (!point) return { lat: 0, lng: 0 };
-    if (Array.isArray(point)) {
-      return { lat: Number(point[1] ?? 0), lng: Number(point[0] ?? 0) };
-    }
-    const pointRecord = point as Record<string, unknown>;
-    if (Array.isArray(pointRecord.coordinates)) {
-      const coords = pointRecord.coordinates as number[];
-      return { lat: Number(coords[1] ?? 0), lng: Number(coords[0] ?? 0) };
-    }
-    const nestedCoords =
-      pointRecord.coordinates && typeof pointRecord.coordinates === 'object'
-        ? (pointRecord.coordinates as Record<string, unknown>)
-        : undefined;
-
-    const lat = pointRecord.lat ?? pointRecord.latitude ?? nestedCoords?.lat ?? nestedCoords?.latitude ?? 0;
-    const lng = pointRecord.lng ?? pointRecord.longitude ?? nestedCoords?.lng ?? nestedCoords?.longitude ?? 0;
-    return { lat: Number(lat), lng: Number(lng) };
-  }
-
   computeDistanceAndDuration(
-    pickupInput: CoordinatePoint,
-    destinationInput: CoordinatePoint
+    pickup: Coordinates,
+    destination: Coordinates
   ): { distanceKm: number; durationMinutes: number } {
-    const pickup = this.normalizeCoords(pickupInput);
-    const destination = this.normalizeCoords(destinationInput);
-
     const R = 6371; // Earth radius in km
-    const dLat = ((destination.lat - pickup.lat) * Math.PI) / 180;
-    const dLng = ((destination.lng - pickup.lng) * Math.PI) / 180;
+    const dLat = ((destination.latitude - pickup.latitude) * Math.PI) / 180;
+    const dLng = ((destination.longitude - pickup.longitude) * Math.PI) / 180;
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((pickup.lat * Math.PI) / 180) *
-        Math.cos((destination.lat * Math.PI) / 180) *
+      Math.cos((pickup.latitude * Math.PI) / 180) *
+        Math.cos((destination.latitude * Math.PI) / 180) *
         Math.sin(dLng / 2) *
         Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
@@ -99,12 +62,15 @@ export class FareService {
   }
 
   calculateFareEstimate(
-    pickup: CoordinatePoint,
-    destination: CoordinatePoint,
+    pickup: LocationPoint,
+    destination: LocationPoint,
     vehicleType = 'car',
     demandFactor = 1.0
   ): FareEstimateResult {
-    const { distanceKm, durationMinutes } = this.computeDistanceAndDuration(pickup, destination);
+    const { distanceKm, durationMinutes } = this.computeDistanceAndDuration(
+      pickup.coordinates,
+      destination.coordinates
+    );
     const multiplier = VEHICLE_MULTIPLIERS[vehicleType.toLowerCase()] ?? 1.2;
     const baseFarePaise = 5000; // 50 INR base
     const perKmPaise = Math.round(1500 * multiplier); // 15 INR/km adjusted for vehicle category

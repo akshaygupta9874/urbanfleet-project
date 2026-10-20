@@ -39,21 +39,8 @@ export type PaymentStatus =
   | "PARTIALLY_REFUNDED"
   | "CANCELLED";
 
-export interface FareBreakdownPayload {
-  baseFarePaise: number;
-  distanceFarePaise: number;
-  timeFarePaise: number;
-  surgePaise: number;
-  platformCommissionPaise: number;
-  driverEarningPaise: number;
-  totalPaise: number;
-}
-
 export interface CreatePaymentOrderInput {
   rideId: string;
-  driverId: string;
-  fareBreakdown: FareBreakdownPayload;
-  idempotencyKey: string;
 }
 
 export interface CreatePaymentOrderResult {

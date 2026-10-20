@@ -10,12 +10,15 @@ import { Button } from "./ui/button";
 
 export type VerificationStatus =
   | "PENDING"
+  | "UNDER_REVIEW"
+  | "VERIFIED"
   | "APPROVED"
-  | "REJECTED";
+  | "REJECTED"
+  | "SUSPENDED";
 
 interface Driver {
   verificationStatus: VerificationStatus;
-  isVerified: boolean;
+  isVerified?: boolean;
 }
 
 interface DriverCTAProps {
@@ -72,59 +75,82 @@ export default function DriverCTA({
     );
   }
 
-  switch (driver.verificationStatus) {
-    case "PENDING":
-      return (
-        <CardWrapper
-          icon={
-            <Clock3 className="h-7 w-7 text-amber-700" />
-          }
-          title="Application Under Review"
-          description="Our team is reviewing your submitted documents."
-        >
-          <CTAButton disabled>
-            Pending Review
-          </CTAButton>
-        </CardWrapper>
-      );
+  const isApproved =
+    Boolean(driver.isVerified) ||
+    driver.verificationStatus === "APPROVED" ||
+    driver.verificationStatus === "VERIFIED";
 
-    case "REJECTED":
-      return (
-        <CardWrapper
-          icon={
-            <XCircle className="h-7 w-7 text-rose-700" />
-          }
-          title="Application Rejected"
-          description="Please update your documents and submit your application again."
+  if (isApproved) {
+    return (
+      <CardWrapper
+        icon={
+          <CheckCircle2 className="h-7 w-7 text-emerald-700" />
+        }
+        title="You're Approved!"
+        description="Go online and start accepting ride requests."
+      >
+        <CTAButton
+          onClick={() => navigate("/driver-dashboard")}
         >
-          <CTAButton
-            onClick={() => navigate("/driver-registration")}
-          >
-            Resubmit Application
-          </CTAButton>
-        </CardWrapper>
-      );
-
-    case "APPROVED":
-      return (
-        <CardWrapper
-          icon={
-            <CheckCircle2 className="h-7 w-7 text-emerald-700" />
-          }
-          title="You're Approved!"
-          description="Go online and start accepting ride requests."
-        >
-          <CTAButton
-            onClick={() => navigate("/driver-dashboard")}
-          >
-            Enter Driver Dashboard
-          </CTAButton>
-        </CardWrapper>
-      );
-
-    default:
-      return null;
+          Enter Driver Dashboard
+        </CTAButton>
+      </CardWrapper>
+    );
   }
+
+  const isPending =
+    driver.verificationStatus === "PENDING" ||
+    driver.verificationStatus === "UNDER_REVIEW";
+
+  if (isPending) {
+    return (
+      <CardWrapper
+        icon={
+          <Clock3 className="h-7 w-7 text-amber-700" />
+        }
+        title="Application Under Review"
+        description="Our team is reviewing your submitted documents."
+      >
+        <CTAButton disabled>
+          Pending Review
+        </CTAButton>
+      </CardWrapper>
+    );
+  }
+
+  const isRejected =
+    driver.verificationStatus === "REJECTED" ||
+    driver.verificationStatus === "SUSPENDED";
+
+  if (isRejected) {
+    return (
+      <CardWrapper
+        icon={
+          <XCircle className="h-7 w-7 text-rose-700" />
+        }
+        title="Application Rejected"
+        description="Please update your documents and submit your application again."
+      >
+        <CTAButton
+          onClick={() => navigate("/driver-registration")}
+        >
+          Resubmit Application
+        </CTAButton>
+      </CardWrapper>
+    );
+  }
+
+  return (
+    <CardWrapper
+      icon={<Car className="h-7 w-7 text-[#b8722c]" />}
+      title="Driver Partner"
+      description="Access your driver portal."
+    >
+      <CTAButton onClick={() => navigate("/driver-dashboard")}>
+        Enter Driver Dashboard
+      </CTAButton>
+    </CardWrapper>
+  );
 }
 
 interface CardWrapperProps {

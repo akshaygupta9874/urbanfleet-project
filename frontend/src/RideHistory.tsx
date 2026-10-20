@@ -27,17 +27,26 @@ import {
   createPaymentOrder,
   loadRazorpayCheckout,
   verifyPaymentSignature,
-  type FareBreakdownPayload,
   type PaymentStatus,
 } from "./lib/payment";
 import { useAuthContext } from "./context/auth-context";
 import CityMapBackground from "./components/CityMapBackground";
 
+interface FareBreakdown {
+  baseFarePaise: number;
+  distanceFarePaise: number;
+  timeFarePaise: number;
+  surgePaise: number;
+  platformCommissionPaise: number;
+  driverEarningPaise: number;
+  totalPaise: number;
+}
+
 interface RideHistoryRide {
   id: string;
   pickup: { address: string };
   destination: { address: string };
-  fare: { estimated: number; final?: number | null; breakdown?: FareBreakdownPayload | null };
+  fare: { estimated: number; final?: number | null; breakdown?: FareBreakdown | null };
   distance: { estimated: number | null };
   duration: { estimated: number | null };
   status: string;
@@ -117,8 +126,8 @@ export default function RideHistory() {
   useEffect(() => {
     async function loadRideHistory() {
       try {
-        const response = await appApi.get<{ totalRides: number; rides: RideHistoryRide[] }>("/ride/history");
-        setRides(response.data.rides);
+        const response = await appApi.get<{ success: boolean; data: RideHistoryRide[] }>("/ride/history");
+        setRides(response.data.data);
       } catch {
         setError("Unable to load ride history. Please refresh the page.");
       } finally {
@@ -172,10 +181,10 @@ export default function RideHistory() {
 
     if (!currentRide.fare.breakdown || currentRide.fare.final == null) {
       try {
-        const response = await appApi.get<{ message: string; ride: RideHistoryRide }>(
+        const response = await appApi.get<{ success: boolean; data: RideHistoryRide }>(
           `/ride/${currentRide.id}/fare-preview`
         );
-        currentRide = response.data.ride;
+        currentRide = response.data.data;
       } catch (err: unknown) {
         const axiosErr = err as { response?: { data?: { message?: string } } };
         const serverMsg = axiosErr?.response?.data?.message;
@@ -202,9 +211,6 @@ export default function RideHistory() {
     try {
       const paymentOrder = await createPaymentOrder({
         rideId: currentRide.id,
-        driverId,
-        fareBreakdown: currentRide.fare.breakdown,
-        idempotencyKey: `${currentRide.id}-${user.id}`,
       });
 
       const Razorpay = await loadRazorpayCheckout();

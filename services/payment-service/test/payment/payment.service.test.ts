@@ -661,7 +661,7 @@ describe("createOrder", () => {
     const driverId = (over.driver ?? oid()).toString();
     const effectiveBreakdown = {
       ...fare,
-      ...(over.fare?.breakdown ?? over.fareBreakdown ?? {}),
+      ...(over.fare?.breakdown ?? {}),
     };
     const ride: any = {
       id,
@@ -674,11 +674,9 @@ describe("createOrder", () => {
       fare: {
         breakdown: effectiveBreakdown,
       },
-      fareBreakdown: effectiveBreakdown,
       estimatedFarePaise: effectiveBreakdown.totalPaise ?? 1000,
       ...over,
     };
-    ride.fareBreakdown = effectiveBreakdown;
     ride.fare = { breakdown: effectiveBreakdown };
     currentRide = ride;
     return ride;

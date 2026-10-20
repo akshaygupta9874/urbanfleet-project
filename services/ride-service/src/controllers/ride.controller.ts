@@ -1,76 +1,19 @@
 import { Request, Response } from 'express';
 import { Ride, RidePaymentStatus } from '../db/client.js';
 import { RideService, CreateRideInput, RideWithOtp, CancelledRideResult } from '../services/ride.service.js';
-import { FareService, IFareBreakdown, CoordinatePoint } from '../services/fare.service.js';
+import { FareService } from '../services/fare.service.js';
 import type { DispatchService } from '../services/dispatch.service.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
-import { AuthenticatedRequest, AppError } from '@urbanfleet/common';
-
-export interface FormattedLocation {
-  address: string;
-  coordinates: {
-    latitude: number;
-    longitude: number;
-  };
-}
-
-export interface FormattedFare {
-  estimated: number;
-  final: number | null;
-  breakdown: IFareBreakdown;
-  fareBreakdown: IFareBreakdown;
-}
-
-export interface FormattedDriver {
-  id: string;
-  firstName: string;
-  lastName: string;
-  vehicleNumber: string;
-  phone: string;
-  user: {
-    firstName: string;
-    lastName: string;
-    phone: string;
-  };
-  vehicle: {
-    registrationNumber: string;
-    model: string;
-    color: string;
-  };
-}
-
-export interface FormattedRide {
-  id: string;
-  pickupAddress: string;
-  pickupLat: number;
-  pickupLng: number;
-  destinationAddress: string;
-  destinationLat: number;
-  destinationLng: number;
-  pickup: FormattedLocation;
-  destination: FormattedLocation;
-  fare: FormattedFare;
-  distance: {
-    estimated: number;
-    actual: number;
-  };
-  duration: {
-    estimated: number;
-    actual: number | null;
-  };
-  status: string;
-  paymentStatus: string;
-  driver: FormattedDriver | null;
-  [key: string]: unknown;
-}
+import { AuthenticatedRequest, AppError, RideDto, FormattedDriver, LocationPoint, IFareBreakdown } from '@urbanfleet/common';
+import type { EstimateFareDTO, RequestRideDTO } from '../validation/ride.validation.js';
 
 function extractRecord(val: unknown): Record<string, unknown> | undefined {
   return val && typeof val === 'object' ? (val as Record<string, unknown>) : undefined;
 }
 
-export function toRideResponse(
+export function toRideDto(
   ride: Ride | RideWithOtp | CancelledRideResult | Record<string, unknown> | null | undefined
-): FormattedRide | null {
+): RideDto | null {
   if (!ride) return null;
 
   const r = ride as Record<string, unknown>;
@@ -87,7 +30,7 @@ export function toRideResponse(
   const driverEarningPaise = Math.round(totalFarePaise * 0.8);
   const platformCommissionPaise = totalFarePaise - driverEarningPaise;
 
-  const fareBreakdown: IFareBreakdown = {
+  const breakdown: IFareBreakdown = {
     baseFarePaise,
     distanceFarePaise,
     timeFarePaise,
@@ -98,13 +41,14 @@ export function toRideResponse(
   };
 
   const id = String(r.id || '');
+  const riderId = String(r.riderId || '');
   const pickupAddress = String(r.pickupAddress || 'Pickup Location');
   const destinationAddress = String(r.destinationAddress || 'Destination Location');
 
   const driverObj = extractRecord(r.driver);
   const driverUser = extractRecord(driverObj?.user);
   const driverVehicle = extractRecord(driverObj?.vehicle);
-  const driverId = r.driverId ? String(r.driverId) : (driverObj?.id ? String(driverObj.id) : undefined);
+  const driverId = r.driverId ? String(r.driverId) : (driverObj?.id ? String(driverObj.id) : null);
 
   const formattedDriver: FormattedDriver | null = driverId
     ? {
@@ -127,8 +71,9 @@ export function toRideResponse(
     : null;
 
   return {
-    ...r,
     id,
+    riderId,
+    driverId,
     pickupAddress,
     pickupLat,
     pickupLng,
@@ -152,10 +97,8 @@ export function toRideResponse(
     fare: {
       estimated: totalFarePaise,
       final: r.status === 'COMPLETED' ? Number(r.finalFarePaise ?? totalFarePaise) : null,
-      breakdown: fareBreakdown,
-      fareBreakdown: fareBreakdown,
+      breakdown,
     },
-    fareBreakdown,
     distance: {
       estimated: distanceKm,
       actual: r.actualDistanceKm ? Number(r.actualDistanceKm) : distanceKm,
@@ -167,10 +110,10 @@ export function toRideResponse(
     status: String(r.status || 'SEARCHING'),
     paymentStatus: String(r.paymentStatus || 'PENDING'),
     driver: formattedDriver,
+    createdAt: typeof r.createdAt === 'string' ? r.createdAt : r.createdAt instanceof Date ? r.createdAt.toISOString() : undefined,
+    updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : r.updatedAt instanceof Date ? r.updatedAt.toISOString() : undefined,
   };
 }
-
-export const formatRideForFrontend = toRideResponse;
 
 function getUserId(req: AuthenticatedRequest): string {
   const userId = req.userId;
@@ -204,22 +147,23 @@ export class RideController {
   }
 
   estimateFare = asyncHandler(async (req: Request, res: Response) => {
-    const body = extractRecord(req.body) || {};
-    const pickup = body.pickup as CoordinatePoint;
-    const destination = body.destination as CoordinatePoint;
-    const vehicleCategory = String(body.vehicleCategory || 'CAR');
-    const estimate = this.fareService.calculateFareEstimate(pickup, destination, vehicleCategory);
-    res.status(200).json({ success: true, data: estimate, fare: estimate });
+    const body = req.body as EstimateFareDTO;
+    const estimate = this.fareService.calculateFareEstimate(
+      body.pickup,
+      body.destination,
+      body.vehicleCategory
+    );
+    res.status(200).json({ success: true, data: estimate });
   });
 
   requestRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
-    const body = extractRecord(req.body) || {};
+    const body = req.body as RequestRideDTO;
     const input: CreateRideInput = {
       riderId: userId,
-      pickup: body.pickup as CoordinatePoint,
-      destination: body.destination as CoordinatePoint,
-      vehicleCategory: typeof body.vehicleCategory === 'string' ? body.vehicleCategory : undefined,
+      pickup: body.pickup,
+      destination: body.destination,
+      vehicleCategory: body.vehicleCategory,
     };
     const ride = await this.rideService.createRide(input);
     if (!ride) {
@@ -234,12 +178,11 @@ export class RideController {
       }
     }
 
-    const formatted = toRideResponse(ride);
+    const formatted = toRideDto(ride);
     res.status(201).json({
       success: true,
       message: 'Ride requested successfully',
       data: formatted,
-      ride: formatted,
     });
   });
 
@@ -247,53 +190,54 @@ export class RideController {
     const userId = getUserId(req);
     const rideId = getRideId(req);
     const body = extractRecord(req.body);
-    const rawReason = body?.reason ?? body?.cancellationReason;
-    const reason = typeof rawReason === 'string' && rawReason.trim() ? rawReason : 'Ride cancelled by user';
+    const reason = typeof body?.cancellationReason === 'string' && body.cancellationReason.trim()
+      ? body.cancellationReason
+      : 'Ride cancelled by user';
 
     const ride = await this.rideService.cancelRide(rideId, userId, reason);
     if (!ride) {
       throw new AppError('Failed to cancel ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   cancelRideByDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const rideId = getRideId(req);
     const body = extractRecord(req.body);
-    const rawReason = body?.reason ?? body?.cancellationReason;
-    const reason = typeof rawReason === 'string' && rawReason.trim() ? rawReason : 'Ride cancelled by driver';
+    const reason = typeof body?.cancellationReason === 'string' && body.cancellationReason.trim()
+      ? body.cancellationReason
+      : 'Ride cancelled by driver';
 
     const ride = await this.rideService.cancelRideByDriver({ rideId, driverId: userId, reason });
     if (!ride) {
       throw new AppError('Failed to cancel ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   getRideById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const rideId = getRideId(req);
     const userId = getUserId(req);
-    const roles = req.role || [];
+    const roles = req.roles ?? req.role ?? [];
     const userRole = roles[0] || 'RIDER';
     const ride = await this.rideService.getRideById(rideId, userId, userRole);
     if (!ride) {
       throw new AppError('Ride not found', 404, 'NOT_FOUND');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   getRiderHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const history = await this.rideService.getRiderHistory(userId);
-    const formattedList = (history || []).map(toRideResponse);
+    const formattedList = (history || []).map(toRideDto);
     res.status(200).json({
       success: true,
       data: formattedList,
-      rides: formattedList,
       totalRides: formattedList.length,
     });
   });
@@ -301,29 +245,28 @@ export class RideController {
   getDriverHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const history = await this.rideService.getDriverHistory(userId);
-    const formattedList = (history || []).map(toRideResponse);
+    const formattedList = (history || []).map(toRideDto);
     res.status(200).json({
       success: true,
       data: formattedList,
-      rides: formattedList,
       totalRides: formattedList.length,
     });
   });
 
   getActiveRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
-    const roles = req.role || [];
+    const roles = req.roles ?? req.role ?? [];
     const isDriver = roles.includes('DRIVER');
     const activeRide = await this.rideService.getActiveRideForUser(userId, isDriver);
-    const formatted = activeRide ? toRideResponse(activeRide) : null;
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = activeRide ? toRideDto(activeRide) : null;
+    res.status(200).json({ success: true, data: formatted });
   });
 
   getCurrentRideOfDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const activeRide = await this.rideService.getActiveRideForUser(userId, true);
-    const formatted = activeRide ? toRideResponse(activeRide) : null;
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = activeRide ? toRideDto(activeRide) : null;
+    res.status(200).json({ success: true, data: formatted });
   });
 
   submitRating = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -331,7 +274,7 @@ export class RideController {
     const rideId = getRideId(req);
     const body = extractRecord(req.body) || {};
     const score = Number(body.score);
-    const feedback = typeof body.feedback === 'string' ? body.feedback : typeof body.review === 'string' ? body.review : undefined;
+    const feedback = typeof body.feedback === 'string' ? body.feedback : undefined;
     const rating = await this.rideService.submitRating(rideId, userId, score, feedback);
     if (!rating) {
       throw new AppError('Failed to submit rating', 500, 'INTERNAL_SERVER_ERROR');
@@ -346,8 +289,8 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to accept ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   driverArrived = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -357,8 +300,8 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to update driver arrival', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   driverArrivedAtDestination = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -368,8 +311,8 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to arrive at destination', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   startRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -381,8 +324,8 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to start ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   completeRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -392,14 +335,14 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to complete ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 
   updatePaymentStatus = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const internalKey = req.headers['x-internal-service-key'];
     const expectedKey = process.env.INTERNAL_SERVICE_KEY;
-    const roles = req.role || [];
+    const roles = req.roles ?? req.role ?? [];
     const isAdmin = roles.includes('ADMIN');
     const isInternalService = Boolean(expectedKey && internalKey === expectedKey);
 
@@ -414,7 +357,7 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to update payment status', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideResponse(ride);
-    res.status(200).json({ success: true, data: formatted, ride: formatted });
+    const formatted = toRideDto(ride);
+    res.status(200).json({ success: true, data: formatted });
   });
 }

@@ -7,11 +7,9 @@ import { prisma } from "../db/client.js";
 import { authClient } from "../clients/auth.client.js";
 
 export interface AuthenticatedUser {
-  userId?: string;
-  id?: string;
-  email?: string;
-  role?: string;
-  roles?: string[];
+  userId: string;
+  email: string;
+  roles: string[];
   firstName?: string;
   lastName?: string;
   driverId?: string;
@@ -20,6 +18,7 @@ export interface AuthenticatedUser {
 export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
   userId?: string;
+  roles?: string[];
   role?: string[];
   driverId?: string;
 }
@@ -136,25 +135,25 @@ export const authMiddleware = asyncHandler(
       } catch (err) {}
 
       if (!user) {
+        const tokenRoles = Array.isArray(decodedData.roles) ? decodedData.roles : ["RIDER"];
         user = {
           id: userId,
           email: decodedData.email || "",
-          role: typeof decodedData.role === "string" ? decodedData.role : "RIDER",
-          roles: decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [typeof decodedData.role === "string" ? decodedData.role : "RIDER"]),
+          roles: tokenRoles,
         };
       }
     }
 
     // 5. Attach payload to Request and proceed
-    request.userId = user.id;
-    request.role = Array.isArray(user.roles) ? user.roles : [user.role || "RIDER"];
+    const userRoles = Array.isArray(user.roles) ? user.roles : ["RIDER"];
+    request.userId = userId;
+    request.roles = userRoles;
+    request.role = userRoles;
     request.driverId = user.driver?.id || user.driverId;
     request.user = {
-      userId: request.userId,
-      id: request.userId,
-      email: user.email,
-      role: user.role,
-      roles: request.role,
+      userId,
+      email: typeof user.email === "string" ? user.email : (decodedData.email || ""),
+      roles: userRoles,
       firstName: user.firstName,
       lastName: user.lastName,
       driverId: request.driverId,
@@ -168,10 +167,10 @@ export const protect = authMiddleware;
 
 export const requireRole = (...allowedRoles: string[]) => {
   return ((req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (!req.user && !req.userId) {
+    if (!req.userId) {
       return next(new AppError("User unauthenticated", 401, "UNAUTHORIZED"));
     }
-    const roles: string[] = req.role || (req.user?.roles ? req.user.roles : []);
+    const roles: string[] = req.roles ?? req.role ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

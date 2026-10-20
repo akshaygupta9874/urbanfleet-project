@@ -1,5 +1,6 @@
 import { getAccessToken } from "../apiInterceptor";
 import type { PaymentStatus } from "./payment";
+import type { Coordinates } from "../types/location";
 
 const ServerEvents = {
   RIDE_ACCEPTED: "server:ride-accepted",
@@ -21,10 +22,8 @@ export type ServerMessage<T = unknown> = {
   data: T;
 };
 
-export interface DriverLocationPayload {
+export interface DriverLocationPayload extends Coordinates {
   rideId: string;
-  latitude: number;
-  longitude: number;
 }
 
 export interface RideCancelledPayload {
@@ -156,7 +155,7 @@ export function connectDriverSocket(options: DriverSocketOptions): WebSocket {
   return socket;
 }
 
-export function sendDriverLocation(socket: WebSocket | null, latitude: number, longitude: number) {
+export function sendDriverLocation(socket: WebSocket | null, coordinates: Coordinates) {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     return;
   }
@@ -164,10 +163,7 @@ export function sendDriverLocation(socket: WebSocket | null, latitude: number, l
   socket.send(
     JSON.stringify({
       event: DriverEvents.UPDATE_LOCATION,
-      data: {
-        latitude,
-        longitude,
-      },
+      data: coordinates,
     })
   );
 }

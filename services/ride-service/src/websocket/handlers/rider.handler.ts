@@ -4,6 +4,7 @@ import { sendSocketError } from '../utils/send-error.js';
 import { emitRideCancelled, emitToDriver } from '../emitters/driver.emitter.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
+import { coordinatesSchema, requestRideSchema } from '../../validation/ride.validation.js';
 
 export interface RiderHandlerDeps {
   rideService?: RideService;
@@ -27,8 +28,6 @@ const handlers: Record<string, RiderEventHandler> = {
   [RiderEvents.REQUEST_RIDE]: handleRequestRide,
   [RiderEvents.UPDATE_LOCATION]: handleRiderLocationUpdate,
 };
-
-import type { CoordinatePoint } from '../../services/fare.service.js';
 
 async function handleCancelRide(
   socket: AuthenticatedSocket,
@@ -74,12 +73,9 @@ async function handleRequestRide(
   deps = globalRiderDeps
 ): Promise<void> {
   const riderId = socket.user.userId;
-  const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-  const pickup = dataRecord.pickup as CoordinatePoint;
-  const destination = dataRecord.destination as CoordinatePoint;
-
-  if (!pickup || !destination) {
-    sendSocketError(socket, 'Pickup and destination are required.');
+  const request = requestRideSchema.safeParse(data);
+  if (!request.success) {
+    sendSocketError(socket, 'Pickup and destination must use canonical location objects.');
     return;
   }
 
@@ -87,9 +83,9 @@ async function handleRequestRide(
     try {
       const ride = await deps.rideService.createRide({
         riderId,
-        pickup,
-        destination,
-        vehicleCategory: typeof dataRecord.vehicleCategory === 'string' ? dataRecord.vehicleCategory : undefined,
+        pickup: request.data.pickup,
+        destination: request.data.destination,
+        vehicleCategory: request.data.vehicleCategory,
       });
 
       socket.send(JSON.stringify({ event: 'server:ride-created', data: { ride } }));
@@ -109,16 +105,21 @@ async function handleRiderLocationUpdate(
   const riderId = socket.user.userId;
   const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   const rideId = typeof dataRecord.rideId === 'string' ? dataRecord.rideId : undefined;
-  const location = dataRecord.location;
+  const location = coordinatesSchema.safeParse(dataRecord.location);
 
-  if (rideId && location && deps?.rideService) {
+  if (!location.success) {
+    sendSocketError(socket, 'Rider location must contain latitude and longitude.');
+    return;
+  }
+
+  if (rideId && deps?.rideService) {
     try {
       const ride = await deps.rideService.getRideById(rideId);
       if (ride && ride.driverId) {
         emitToDriver(ride.driverId, 'server:rider-location', {
           rideId,
           riderId,
-          location,
+          location: location.data,
           timestamp: Date.now()
         });
       }

@@ -1,9 +1,7 @@
 import { z } from 'zod';
+import { coordinatesSchema } from '../../validation/ride.validation.js';
 
-export const UpdateDriverLocationSchema = z.object({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-});
+export const UpdateDriverLocationSchema = coordinatesSchema;
 
 export type UpdateDriverLocationInput = z.infer<typeof UpdateDriverLocationSchema>;
 

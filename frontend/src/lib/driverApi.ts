@@ -2,9 +2,17 @@ import { appApi } from "./api";
 
 export type VehicleType = "CAR" | "BIKE" | "AUTO";
 
+export type DriverVerificationStatus =
+  | "PENDING"
+  | "UNDER_REVIEW"
+  | "VERIFIED"
+  | "APPROVED"
+  | "REJECTED"
+  | "SUSPENDED";
+
 export interface DriverRegistrationResponse {
   id: string;
-  verificationStatus: "PENDING" | "APPROVED" | "REJECTED";
+  verificationStatus: DriverVerificationStatus;
 }
 
 export interface DriverProfile {
@@ -58,7 +66,7 @@ export interface DriverProfile {
       image: string;
     };
   };
-  verificationStatus: "PENDING" | "APPROVED" | "REJECTED";
+  verificationStatus: DriverVerificationStatus;
   isVerified: boolean;
   rating: {
     average: number;

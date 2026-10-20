@@ -2,15 +2,16 @@ import { Ride, RideStatus, RidePaymentStatus, Rating } from '../db/client.js';
 import { RideRepository } from '../repositories/ride.repository.js';
 import { RatingRepository } from '../repositories/rating.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
-import { FareService, CoordinatePoint } from './fare.service.js';
+import { FareService } from './fare.service.js';
 import { OtpService } from './otp.service.js';
 import { NotFoundError, ConflictError, AppError } from '@urbanfleet/common';
+import type { LocationPoint } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 
 export interface CreateRideInput {
   riderId: string;
-  pickup: CoordinatePoint;
-  destination: CoordinatePoint;
+  pickup: LocationPoint;
+  destination: LocationPoint;
   vehicleCategory?: string;
 }
 
@@ -44,25 +45,18 @@ export class RideService {
   }
 
   async createRide(input: CreateRideInput): Promise<Ride & { otp: string }> {
-    const pickup = this.fareService.normalizeCoords(input.pickup);
-    const destination = this.fareService.normalizeCoords(input.destination);
-    const pickupRecord = (input.pickup && typeof input.pickup === 'object') ? (input.pickup as Record<string, unknown>) : {};
-    const destRecord = (input.destination && typeof input.destination === 'object') ? (input.destination as Record<string, unknown>) : {};
-    const pickupAddress = (typeof pickupRecord.address === 'string' && pickupRecord.address) || 'Pickup Location';
-    const destinationAddress = (typeof destRecord.address === 'string' && destRecord.address) || 'Destination Location';
-
-    const fare = this.fareService.calculateFareEstimate(pickup, destination, input.vehicleCategory);
+    const fare = this.fareService.calculateFareEstimate(input.pickup, input.destination, input.vehicleCategory);
     const otp = this.otpService.generateRideOtp();
 
     return this.rideRepo.executeTransaction(async (tx) => {
       const created = await this.rideRepo.create({
         riderId: input.riderId,
-        pickupLat: pickup.lat,
-        pickupLng: pickup.lng,
-        pickupAddress,
-        destinationLat: destination.lat,
-        destinationLng: destination.lng,
-        destinationAddress,
+        pickupLat: input.pickup.coordinates.latitude,
+        pickupLng: input.pickup.coordinates.longitude,
+        pickupAddress: input.pickup.address,
+        destinationLat: input.destination.coordinates.latitude,
+        destinationLng: input.destination.coordinates.longitude,
+        destinationAddress: input.destination.address,
         distanceKm: fare.distanceKm,
         durationMinutes: fare.durationMinutes,
         baseFarePaise: fare.baseFarePaise,

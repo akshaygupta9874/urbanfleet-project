@@ -7,6 +7,7 @@ import { rideRedisClient } from '../redis/client.js';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  roles?: string[];
   role?: string[];
   driverId?: string;
   user?: AuthUser;
@@ -40,8 +41,9 @@ export const authMiddleware: RequestHandler = asyncHandler(
       crypto.timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
     ) {
       req.userId = 'internal-service';
+      req.roles = ['ADMIN'];
       req.role = ['ADMIN'];
-      req.user = { id: 'internal-service', userId: 'internal-service', email: 'internal@urbanfleet.local', role: 'ADMIN', roles: ['ADMIN'] };
+      req.user = { userId: 'internal-service', email: 'internal@urbanfleet.local', roles: ['ADMIN'] };
       return next();
     }
 
@@ -132,17 +134,18 @@ export const authMiddleware: RequestHandler = asyncHandler(
     }
 
     if (!user) {
+      const tokenRoles = Array.isArray(decodedData.roles) ? decodedData.roles : ['RIDER'];
       user = {
         id: userId,
         email: decodedData.email || '',
-        role: decodedData.role || 'RIDER',
-        roles: decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [decodedData.role || 'RIDER']),
+        roles: tokenRoles,
       };
     }
 
     // 5. Attach payload to Request and proceed
     req.userId = userId;
-    const userRoles = Array.isArray(user.roles) ? (user.roles as string[]) : [String(user.role || 'RIDER')];
+    const userRoles = Array.isArray(user.roles) ? (user.roles as string[]) : ['RIDER'];
+    req.roles = userRoles;
     req.role = userRoles;
     const userDriver = user.driver as Record<string, unknown> | undefined;
     const driverId = (userDriver?.id as string | undefined) || (user.driverId as string | undefined);
@@ -152,10 +155,8 @@ export const authMiddleware: RequestHandler = asyncHandler(
 
     req.user = {
       userId,
-      id: userId,
-      email: typeof user.email === 'string' ? user.email : undefined,
-      role: typeof user.role === 'string' ? user.role : undefined,
-      roles: req.role,
+      email: typeof user.email === 'string' ? user.email : '',
+      roles: userRoles,
       firstName,
       lastName,
       driverId: req.driverId,
@@ -167,11 +168,11 @@ export const authMiddleware: RequestHandler = asyncHandler(
 
 export const requireRole = (...allowedRoles: string[]): RequestHandler => {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (!req.userId && !req.user) {
+    if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.role || (req.user?.role ? [req.user.role] : []);
-    const hasRole = roles.some((r) => allowedRoles.includes(r)) || (req.user?.role && allowedRoles.includes(req.user.role));
+    const roles: string[] = req.roles ?? req.role ?? [];
+    const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(
         new AppError(`Forbidden: Requires one of roles: ${allowedRoles.join(', ')}`, 403, 'FORBIDDEN')

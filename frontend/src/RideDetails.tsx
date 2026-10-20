@@ -25,6 +25,7 @@ import { createPaymentOrder, loadRazorpayCheckout, verifyPaymentSignature } from
 import { useAuthContext } from "./context/auth-context";
 import CityMapBackground from "./components/CityMapBackground";
 import { type PaymentStatus } from "./lib/payment";
+import type { Coordinates, LocationPoint } from "./types/location";
 
 /**
  * RideDetails — Luxury Transit Map Edition (Full Width / Zero Animations / Lag-Free)
@@ -45,10 +46,6 @@ const payableStatuses: PaymentStatus[] = [
   "AUTHORIZED",
 ];
 
-interface RidePoint {
-  address: string;
-  coordinates: { latitude: number; longitude: number };
-}
 interface FareBreakdown {
   baseFarePaise?: number;
   distanceFarePaise?: number;
@@ -69,8 +66,8 @@ interface DriverInfo {
 }
 interface Ride {
   id: string;
-  pickup: RidePoint;
-  destination: RidePoint;
+  pickup: LocationPoint;
+  destination: LocationPoint;
   fare: { estimated: number; final?: number | null; breakdown?: FareBreakdown | null };
   distance: { estimated: number | null; actual?: number | null };
   duration: { estimated: number | null; actual?: number | null };
@@ -303,7 +300,7 @@ export default function RideDetails() {
   const navigate = useNavigate();
 
   const [ride, setRide] = useState<Ride | null>(null);
-  const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [driverLocation, setDriverLocation] = useState<Coordinates | null>(null);
   const [routePolyline, setRoutePolyline] = useState<[number, number][]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -318,8 +315,8 @@ export default function RideDetails() {
   const fetchRideDetails = async (id?: string) => {
     try {
       const endpoint = id ? `/ride/${id}` : "/ride/current";
-      const response = await appApi.get<{ message: string; ride: Ride }>(endpoint);
-      const currentRide = response.data.ride;
+      const response = await appApi.get<{ success: boolean; data: Ride }>(endpoint);
+      const currentRide = response.data.data;
       if (currentRide) {
         setRide(currentRide);
         return currentRide;
@@ -455,10 +452,10 @@ export default function RideDetails() {
 
     let currentRide = ride;
     try {
-      const response = await appApi.get<{ message: string; ride: Ride }>(
+      const response = await appApi.get<{ success: boolean; data: Ride }>(
         `/ride/${currentRide.id}/fare-preview`
       );
-      currentRide = response.data.ride;
+      currentRide = response.data.data;
       setRide(currentRide);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
@@ -485,17 +482,6 @@ export default function RideDetails() {
     try {
       const paymentOrder = await createPaymentOrder({
         rideId: currentRide.id,
-        driverId,
-        fareBreakdown: {
-          baseFarePaise: currentRide.fare.breakdown?.baseFarePaise ?? 0,
-          distanceFarePaise: currentRide.fare.breakdown?.distanceFarePaise ?? 0,
-          timeFarePaise: currentRide.fare.breakdown?.timeFarePaise ?? 0,
-          surgePaise: currentRide.fare.breakdown?.surgePaise ?? 0,
-          platformCommissionPaise: currentRide.fare.breakdown?.platformCommissionPaise ?? 0,
-          driverEarningPaise: currentRide.fare.breakdown?.driverEarningPaise ?? 0,
-          totalPaise: currentRide.fare.breakdown?.totalPaise ?? 0,
-        },
-        idempotencyKey: `${currentRide.id}-${user.id}`,
       });
 
       const Razorpay = await loadRazorpayCheckout();

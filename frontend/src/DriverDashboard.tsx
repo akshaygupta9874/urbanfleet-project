@@ -39,6 +39,7 @@ import { useAuthContext } from "./context/auth-context";
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
 import { type PaymentStatus } from "./lib/payment";
+import type { Coordinates, LocationPoint } from "./types/location";
 
 // --- Types mirrored from backend models (Driver / Ride) ---
 type VehicleType = "CAR" | "BIKE" | "AUTO";
@@ -51,11 +52,6 @@ type RideStatus =
   | "ARRIVED_AT_DESTINATION"
   | "COMPLETED"
   | "CANCELLED";
-
-interface RidePoint {
-  address: string;
-  coordinates: { latitude: number; longitude: number };
-}
 
 interface FareBreakdown {
   baseFarePaise: number;
@@ -70,13 +66,12 @@ interface FareBreakdown {
 export interface Ride {
   id: string;
   driver: string;
-  pickup: RidePoint;
-  destination: RidePoint;
+  pickup: LocationPoint;
+  destination: LocationPoint;
   fare: {
     estimated: number;
     final: number | null;
     breakdown: FareBreakdown | null;
-    fareBreakdown?: FareBreakdown | null;
   };
   distance: { estimated: number; actual: number | null };
   duration: { estimated: number; actual: number | null };
@@ -107,7 +102,7 @@ interface DriverProfileData {
     insurance: { number: string; expiryDate: string; image: string; verified: boolean };
     pollutionCertificate: { expiryDate: string; image: string };
   };
-  verificationStatus: "PENDING" | "APPROVED" | "REJECTED";
+  verificationStatus: "PENDING" | "UNDER_REVIEW" | "VERIFIED" | "APPROVED" | "REJECTED" | "SUSPENDED";
   isVerified: boolean;
   rating: { average: number; totalRatings: number };
   statistics: {
@@ -159,7 +154,7 @@ type DriverStatus = "OFFLINE" | "ONLINE" | "AVAILABLE" | "BUSY";
 
 const BUSY_RIDE_STATUSES: RideStatus[] = ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"];
 const TERMINAL_RIDE_STATUSES: RideStatus[] = ["COMPLETED", "CANCELLED"];
-const HEARTBEAT_INTERVAL_MS = 10000;
+const HEARTBEAT_INTERVAL_MS = 5000;
 
 const VEHICLE_TYPE_LABEL: Record<VehicleType, string> = {
   CAR: "Car",
@@ -377,7 +372,7 @@ export default function DriverDashboard() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<DriverProfileData | null>(null);
   const [currentRide, setCurrentRide] = useState<Ride | null>(null);
-  const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [driverLocation, setDriverLocation] = useState<Coordinates | null>(null);
   const [driverStatus, setDriverStatus] = useState<DriverStatus>("ONLINE");
   const [routePolyline, setRoutePolyline] = useState<{
     rideId: string;
@@ -405,7 +400,6 @@ export default function DriverDashboard() {
 
     const earningPaise =
       ride.fare?.breakdown?.driverEarningPaise ??
-      ride.fare?.fareBreakdown?.driverEarningPaise ??
       0;
     const distanceMeters = ride.distance?.actual ?? ride.distance?.estimated ?? 0;
 
@@ -435,11 +429,11 @@ export default function DriverDashboard() {
       try {
         const [profileResponse, rideResponse] = await Promise.all([
           fetchDriverProfile(),
-          appApi.get<{ message: string; ride: Ride }>("/ride/driver/current").catch(() => null),
+          appApi.get<{ success: boolean; data: Ride }>("/ride/driver/current").catch(() => null),
         ]);
         setProfile(profileResponse);
-        if (rideResponse && rideResponse.data?.ride) {
-          const currentRideData = rideResponse.data.ride;
+        if (rideResponse && rideResponse.data?.data) {
+          const currentRideData = rideResponse.data.data;
           setCurrentRide(currentRideData);
           if (BUSY_RIDE_STATUSES.includes(currentRideData.status)) {
             setDriverStatus("BUSY");
@@ -599,7 +593,6 @@ export default function DriverDashboard() {
                 applyCompletedRideStats(updated);
                 const earnedPaise =
                   updated.fare?.breakdown?.driverEarningPaise ??
-                  updated.fare?.fareBreakdown?.driverEarningPaise ??
                   0;
                 if (earnedPaise > 0) {
                   setShowEarningsFlash(earnedPaise);
@@ -676,8 +669,9 @@ export default function DriverDashboard() {
     }
 
     const syncLocation = (latitude: number, longitude: number) => {
-      setDriverLocation({ latitude, longitude });
-      sendDriverLocation(socketRef.current, latitude, longitude);
+      const coordinates = { latitude, longitude };
+      setDriverLocation(coordinates);
+      sendDriverLocation(socketRef.current, coordinates);
     };
 
     navigator.geolocation.getCurrentPosition(
@@ -801,7 +795,12 @@ export default function DriverDashboard() {
     return <LoadingScreen label="Loading driver dashboard" />;
   }
 
-  if (!profile || profile.verificationStatus != "APPROVED") {
+  const isApprovedDriver =
+    Boolean(profile?.isVerified) ||
+    profile?.verificationStatus === "APPROVED" ||
+    profile?.verificationStatus === "VERIFIED";
+
+  if (!profile || !isApprovedDriver) {
     return (
       <div className="relative flex min-h-screen w-full items-center justify-center bg-[#f5e6c8] p-6 font-sans text-[#2e1808] overflow-hidden">
         <CityMapBackground />
@@ -877,7 +876,7 @@ export default function DriverDashboard() {
   const fare = currentRide
     ? currentRide.fare.breakdown?.driverEarningPaise ?? currentRide.fare.estimated
     : null;
-  const fareBreakdownData = currentRide?.fare?.breakdown ?? null;
+  const breakdownData = currentRide?.fare?.breakdown ?? null;
 
   const driverStatusCopy: Record<DriverStatus, string> = {
     OFFLINE: "You are offline. Riders cannot see your location.",
@@ -1261,18 +1260,18 @@ export default function DriverDashboard() {
               </div>
 
               {/* Detailed Fare Breakdown */}
-              {fareBreakdownData && (
+              {breakdownData && (
                 <div className="w-full rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0]/90 p-5 shadow-sm">
                   <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">Detailed fare breakdown</p>
                   <div className="w-full grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
                     {[
-                      ["Base", fareBreakdownData.baseFarePaise],
-                      ["Distance", fareBreakdownData.distanceFarePaise],
-                      ["Time", fareBreakdownData.timeFarePaise],
-                      ["Surge", fareBreakdownData.surgePaise],
-                      ["Commission", -fareBreakdownData.platformCommissionPaise],
-                      ["You Earn", fareBreakdownData.driverEarningPaise],
-                      ["Total", fareBreakdownData.totalPaise],
+                      ["Base", breakdownData.baseFarePaise],
+                      ["Distance", breakdownData.distanceFarePaise],
+                      ["Time", breakdownData.timeFarePaise],
+                      ["Surge", breakdownData.surgePaise],
+                      ["Commission", -breakdownData.platformCommissionPaise],
+                      ["You Earn", breakdownData.driverEarningPaise],
+                      ["Total", breakdownData.totalPaise],
                     ].map(([k, v]) => (
                       <div key={k as string} className="flex flex-col">
                         <span className="text-[10px] uppercase font-medium text-[#7a4416]/80">{k}</span>
@@ -1300,8 +1299,8 @@ export default function DriverDashboard() {
                 <div className="w-full rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-6 text-center">
                   <p className="text-xs font-bold uppercase tracking-widest text-emerald-900">Trip successfully completed</p>
                   <p className="mt-1 text-2xl font-black text-emerald-950 tabular-nums font-mono">
-                    {fareBreakdownData
-                      ? formatPaise(fareBreakdownData.driverEarningPaise)
+                    {breakdownData
+                      ? formatPaise(breakdownData.driverEarningPaise)
                       : fare != null
                         ? formatPaise(fare)
                         : "₹0.00"}

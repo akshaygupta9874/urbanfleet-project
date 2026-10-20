@@ -2,19 +2,17 @@ import { Request } from 'express';
 import { AppError } from '../errors/app-error.js';
 
 export interface AuthUser {
-  id: string;
   userId: string;
-  email?: string;
-  role?: string;
-  roles?: string[];
+  email: string;
+  roles: string[];
   driverId?: string;
   firstName?: string;
   lastName?: string;
-  [key: string]: unknown;
 }
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  roles?: string[];
   role?: string[];
   driverId?: string;
   user?: AuthUser;

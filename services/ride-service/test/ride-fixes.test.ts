@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { requestRideSchema, normalizeLocation, paymentStatusSchema } from '../src/validation/ride.validation.js';
+import { requestRideSchema, paymentStatusSchema } from '../src/validation/ride.validation.js';
 import { OtpService } from '../src/services/otp.service.js';
 import { FareService } from '../src/services/fare.service.js';
 import { RideService, canCompleteRide } from '../src/services/ride.service.js';
@@ -11,27 +11,23 @@ import { DriverEvents, RiderEvents } from '../src/websocket/event.constants.js';
 describe('Ride Service Comprehensive Fixes Test Suite', () => {
 
   // ==========================================
-  // 1. Coordinate Normalization
+  // 1. Canonical Location Validation
   // ==========================================
-  describe('Coordinate Normalization & Schemas', () => {
-    it('normalizes { lat, lng } correctly', () => {
-      const loc = normalizeLocation({ lat: 12.9716, lng: 77.5946, address: 'Bangalore' });
-      expect(loc).toEqual({ lat: 12.9716, lng: 77.5946, address: 'Bangalore' });
-    });
-
-    it('normalizes { latitude, longitude } to { lat, lng }', () => {
-      const loc = normalizeLocation({ latitude: 12.9716, longitude: 77.5946, address: 'Bangalore' });
-      expect(loc).toEqual({ lat: 12.9716, lng: 77.5946, address: 'Bangalore' });
-    });
-
-    it('validates requestRideSchema with either lat/lng or latitude/longitude and case-insensitive categories', () => {
+  describe('Canonical Location Validation & Schemas', () => {
+    it('accepts canonical locations and rejects legacy coordinate shapes', () => {
       const payload1 = {
-        pickup: { lat: 12.9716, lng: 77.5946 },
-        destination: { latitude: 13.0827, longitude: 80.2707 },
+        pickup: { address: 'Bangalore', coordinates: { latitude: 12.9716, longitude: 77.5946 } },
+        destination: { address: 'Chennai', coordinates: { latitude: 13.0827, longitude: 80.2707 } },
         vehicleCategory: 'sedan',
       };
       const result1 = requestRideSchema.safeParse(payload1);
       expect(result1.success).toBe(true);
+
+      const legacyPayload = {
+        pickup: { lat: 12.9716, lng: 77.5946 },
+        destination: { latitude: 13.0827, longitude: 80.2707 },
+      };
+      expect(requestRideSchema.safeParse(legacyPayload).success).toBe(false);
 
       const payloadInvalid = {
         pickup: { x: 1, y: 2 },
@@ -502,7 +498,10 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       // Driver attempting rider event
       socket.emit('message', JSON.stringify({
         event: RiderEvents.REQUEST_RIDE,
-        data: { pickup: { lat: 10, lng: 10 } }
+        data: {
+          pickup: { address: 'Pickup', coordinates: { latitude: 10, longitude: 10 } },
+          destination: { address: 'Destination', coordinates: { latitude: 11, longitude: 11 } },
+        }
       }));
 
       expect(socket.send).toHaveBeenCalled();
