@@ -9,7 +9,6 @@ export const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters long')
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number'),
-  role: z.enum(['RIDER', 'DRIVER', 'ADMIN']).optional(),
   roles: z.array(z.enum(['RIDER', 'DRIVER', 'ADMIN'])).optional().default(['RIDER']),
 });
 
@@ -18,38 +17,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-export const verifyOtpSchema = z.union([
-  z
-    .object({
-      challengeToken: z.string().min(1, 'Challenge token is required'),
-      code: z.string().min(4).max(8).optional(),
-      recoveryCode: z.string().min(6).optional(),
-    })
-    .refine((data) => Boolean(data.code || data.recoveryCode), {
-      message: 'Either a TOTP verification code or recovery code must be provided',
-      path: ['code'],
-    }),
-  z.object({
-    userId: z.string().min(1, 'User ID is required'),
-    code: z.string().min(4, 'Code must be at least 4 digits').max(8),
-  }),
-  z.object({
-    email: z.string().email('Invalid email address format'),
-    otp: z.string().min(4, 'OTP must be at least 4 digits').max(8),
-  }),
-]);
-
-export const verify2FASchema = z.object({
-  token: z.string().min(6, 'TOTP code must be 6 digits').max(8),
-});
-
-export const disable2FASchema = z.object({
-  password: z.string().min(1, 'Password is required to disable 2FA'),
-  code: z.string().optional(),
-});
-
-export const regenerateRecoveryCodesSchema = z.object({
-  password: z.string().min(1, 'Password is required to regenerate recovery codes'),
+export const verifyOtpSchema = z.object({
+  email: z.string().email('Invalid email address format'),
+  otp: z.string().min(4, 'OTP must be at least 4 digits').max(8, 'OTP must be at most 8 digits'),
+  userId: z.string().optional(),
 });
 
 export const refreshTokenSchema = z.object({
@@ -89,4 +60,3 @@ export const resendVerificationSchema = z.object({
 export const googleAuthSchema = z.object({
   credential: z.string().min(10, 'A valid Google credential token is required'),
 });
-

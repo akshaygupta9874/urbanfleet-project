@@ -1,4 +1,7 @@
 import { AuthenticatedSocket } from '../types.js';
+import { createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('rider-websocket-handler');
 import { RiderEvents, ServerEvents } from '../event.constants.js';
 import { sendSocketError } from '../utils/send-error.js';
 import { emitRideCancelled, emitToDriver } from '../emitters/driver.emitter.js';
@@ -63,6 +66,7 @@ async function handleCancelRide(
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to cancel ride.';
+      logger.error('Failed to cancel ride from rider socket', { riderId, rideId, error: message });
       sendSocketError(socket, message);
     }
   }
@@ -95,6 +99,7 @@ async function handleRequestRide(
       await deps.dispatchService.broadcastRideRequest(ride);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to request ride.';
+      logger.error('Failed to request ride from rider socket', { riderId, error: message });
       sendSocketError(socket, message);
     }
   }
@@ -126,7 +131,13 @@ async function handleRiderLocationUpdate(
           timestamp: Date.now()
         });
       }
-    } catch {}
+    } catch (err: unknown) {
+      logger.warn('Failed to relay rider location update to driver', {
+        rideId,
+        riderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   // Acknowledge telemetry

@@ -27,7 +27,12 @@ export class OtpService {
     if (!this.redis.isOpen) {
       throw new AppError('Ride verification is temporarily unavailable', 503, 'REDIS_UNAVAILABLE');
     }
-    await this.redis.set(this.getRedisKey(rideId), otp, { EX: RIDE_OTP_TTL_SECONDS });
+    try {
+      await this.redis.set(this.getRedisKey(rideId), otp, { EX: RIDE_OTP_TTL_SECONDS });
+    } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
+      throw new AppError('Ride verification is temporarily unavailable', 503, 'REDIS_UNAVAILABLE');
+    }
   }
 
   async getRideOtp(rideId: string): Promise<string | null> {
@@ -35,7 +40,12 @@ export class OtpService {
     if (!this.redis.isOpen) {
       throw new AppError('Ride verification is temporarily unavailable', 503, 'REDIS_UNAVAILABLE');
     }
-    return await this.redis.get(this.getRedisKey(rideId));
+    try {
+      return await this.redis.get(this.getRedisKey(rideId));
+    } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
+      throw new AppError('Ride verification is temporarily unavailable', 503, 'REDIS_UNAVAILABLE');
+    }
   }
 
   async verifyRideOtp(rideId: string, enteredOtp: string): Promise<boolean> {
@@ -59,6 +69,11 @@ export class OtpService {
     if (!this.redis.isOpen) {
       throw new AppError('Ride verification is temporarily unavailable', 503, 'REDIS_UNAVAILABLE');
     }
-    await this.redis.del(this.getRedisKey(rideId));
+    try {
+      await this.redis.del(this.getRedisKey(rideId));
+    } catch (err: unknown) {
+      if (err instanceof AppError) throw err;
+      throw new AppError('Ride verification is temporarily unavailable', 503, 'REDIS_UNAVAILABLE');
+    }
   }
 }

@@ -572,7 +572,9 @@ class PaymentRepository {
                         roles: u.roles || (u.role ? [u.role] : [UserRole.RIDER]),
                     };
                 }
-            } catch {}
+            } catch (err: unknown) {
+                console.warn('[payment.repository] Failed to fetch cached user from Redis', err instanceof Error ? err.message : String(err));
+            }
         }
 
         // Then query Auth Service

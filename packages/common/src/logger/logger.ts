@@ -44,7 +44,7 @@ export class StructuredLogger {
   }
 
   public debug(message: string, context?: LogContext): void {
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.LOG_LEVEL === 'debug') {
       console.debug(this.format('debug', message, context));
     }
   }

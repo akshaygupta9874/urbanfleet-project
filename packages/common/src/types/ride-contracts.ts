@@ -23,11 +23,11 @@ export interface FormattedDriver {
   firstName: string;
   lastName: string;
   vehicleNumber: string;
-  phone: string;
+  email: string;
   user: {
     firstName: string;
     lastName: string;
-    phone: string;
+    email: string;
   };
   vehicle: {
     registrationNumber: string;

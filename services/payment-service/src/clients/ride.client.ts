@@ -15,7 +15,6 @@ export class RideClient {
       timeout: 5000,
       headers: {
         Accept: 'application/json',
-        'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
       },
     });
   }

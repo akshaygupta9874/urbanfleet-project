@@ -65,7 +65,12 @@ export class OutboxWorker {
         if (typeof envelopePayload === 'string') {
           try {
             envelopePayload = JSON.parse(envelopePayload);
-          } catch (_) {}
+          } catch (parseErr: unknown) {
+            logger.debug('Outbox payload is not valid JSON string, keeping raw string', {
+              eventId: event.id,
+              error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+            });
+          }
         }
 
         const evObj = event as unknown as Record<string, unknown>;

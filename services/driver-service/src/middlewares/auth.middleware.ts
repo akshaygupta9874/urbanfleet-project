@@ -1,36 +1,34 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { AppError } from '@urbanfleet/common';
+import { AppError, ServiceUnavailableError, createLogger } from '@urbanfleet/common';
 import asyncHandler from './asyncHandler.js';
 import { driverRedisClient } from '../redis/client.js';
 import { authClient } from '../clients/auth.client.js';
 import { prisma } from '../db/client.js';
 
+const logger = createLogger('driver-auth-middleware');
+
 export interface DriverUserContext {
   userId: string;
   email: string;
   roles: string[];
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   driverId?: string;
 }
 
 export interface DriverUserRecord {
   id: string;
-  email?: string;
+  email: string;
   roles: string[];
-  role?: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   driverId?: string;
-  driver?: { id: string };
-  [key: string]: unknown;
 }
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
   roles?: string[];
-  role?: string[];
   driverId?: string;
   user?: DriverUserContext;
 }
@@ -40,7 +38,8 @@ export interface AuthPayload extends JwtPayload {
   userId?: string;
   sessionId?: string;
   email?: string;
-  role?: string | string[];
+  firstName?: string;
+  lastName?: string;
   roles?: string[];
 }
 
@@ -51,18 +50,15 @@ export const authMiddleware = asyncHandler(
       return next();
     }
 
-    // 1. Extract Token from Authorization header or cookie
-    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
+    // 1. Extract Token from Authorization header
     const token =
-      request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      cookies?.accessToken ||
-      cookies?.token;
+      request.headers.authorization?.replace(/^Bearer\s+/i, '');
 
     if (!token) {
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');
     }
 
-    // 2. Verify Token
+    // 2. Verify Token (strictly production RS256)
     let decodedData: AuthPayload;
     try {
       const pubEnv = process.env.JWT_PUBLIC_KEY_BASE64;
@@ -74,24 +70,11 @@ export const authMiddleware = asyncHandler(
           audience: 'urbanfleet-api',
         }) as AuthPayload;
       } else {
-        if (process.env.NODE_ENV === 'production') {
-          throw new AppError('CRITICAL: Missing JWT_PUBLIC_KEY_BASE64 in production!', 500, 'AUTH_CONFIG_ERROR');
-        }
-        const secret = process.env.JWT_ACCESS_SECRET || 'test-access-secret-only';
-        decodedData = jwt.verify(token, secret) as AuthPayload;
+        throw new AppError('CRITICAL: Missing JWT_PUBLIC_KEY_BASE64 in production!', 500, 'AUTH_CONFIG_ERROR');
       }
-    } catch (_error: unknown) {
-      // Secret fallback
-      const secret = process.env.JWT_ACCESS_SECRET;
-      if (secret) {
-        try {
-          decodedData = jwt.verify(token, secret) as AuthPayload;
-        } catch (_) {
-          throw new AppError('Your token is invalid or expired.', 401, 'TOKEN_EXPIRED');
-        }
-      } else {
-        throw new AppError('Your token is invalid or expired.', 401, 'TOKEN_EXPIRED');
-      }
+    } catch (error: unknown) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('Your token is invalid or expired.', 401, 'TOKEN_EXPIRED');
     }
 
     const userId = decodedData.userId;
@@ -105,18 +88,19 @@ export const authMiddleware = asyncHandler(
     if (sessionId && driverRedisClient.isOpen) {
       try {
         const [storedSession, activeSessionIds] = await Promise.all([
-          driverRedisClient.get(`auth:session:${sessionId}`) || driverRedisClient.get(`session:${sessionId}`),
-          driverRedisClient.sMembers(`auth:user-sessions:${userId}`) || driverRedisClient.sMembers(`user-sessions:${userId}`),
+          driverRedisClient.get(`auth:session:${sessionId}`),
+          driverRedisClient.sMembers(`auth:user-sessions:${userId}`),
         ]);
 
         if (storedSession) {
-          const parsed = JSON.parse(storedSession) as { userId?: string };
-          if (parsed.userId && parsed.userId !== userId) {
+          const parsed = JSON.parse(storedSession) as { userId : string };
+          if (parsed.userId && parsed.userId !== decodedData.userId) {
             throw new AppError('Session mismatch. Please sign in again.', 401, 'SESSION_MISMATCH');
           }
         }
       } catch (e: unknown) {
         if (e instanceof AppError) throw e;
+        logger.warn('Failed to validate session in Redis:', { error: e instanceof Error ? e.message : String(e), sessionId });
       }
     }
 
@@ -125,39 +109,45 @@ export const authMiddleware = asyncHandler(
     if (driverRedisClient.isOpen) {
       try {
         const userStr =
-          (await driverRedisClient.get(`auth:user:${userId}`)) ||
-          (await driverRedisClient.get(`user:${userId}`));
+          (await driverRedisClient.get(`auth:user:${userId}`));
         if (userStr) {
           user = JSON.parse(userStr) as DriverUserRecord;
         }
-      } catch (err) {}
+      } catch (err: unknown) {
+        logger.warn('Failed to read user from Redis:', { error: err instanceof Error ? err.message : String(err), userId });
+      }
     }
 
     if (!user) {
       try {
         user = (await authClient.getUserById(userId)) as DriverUserRecord | null;
-      } catch (err) {}
+      } catch (err: unknown) {
+        logger.error('Failed to query user from AuthClient:', { error: err instanceof Error ? err.message : String(err), userId });
+        throw new ServiceUnavailableError(
+          'Authentication service is temporarily unavailable',
+          'AUTH_SERVICE_UNAVAILABLE',
+          err instanceof Error ? err : undefined
+        );
+      }
     }
 
+    // If user is not found in the database, reject immediately
     if (!user) {
-      // Fallback to token payload
-      const roles = decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [typeof decodedData.role === 'string' ? decodedData.role : 'DRIVER']);
-      user = {
-        id: userId,
-        email: decodedData.email || '',
-        role: typeof decodedData.role === 'string' ? decodedData.role : 'DRIVER',
-        roles,
-      };
+      throw new AppError('User account not found or has been deactivated', 401, 'USER_NOT_FOUND');
     }
+
+    const activeUser = user;
 
     if (driverRedisClient.isOpen) {
       try {
-        await driverRedisClient.setEx(`auth:user:${userId}`, 15 * 60, JSON.stringify(user));
-      } catch (err) {}
+        await driverRedisClient.setEx(`auth:user:${userId}`, 15 * 60, JSON.stringify(activeUser));
+      } catch (err: unknown) {
+        logger.warn('Failed to cache user in Redis:', { error: err instanceof Error ? err.message : String(err), userId });
+      }
     }
 
     // 5. Look up driver profile ID if present
-    let driverId = user.driver?.id || user.driverId;
+    let driverId = activeUser.driverId;
     if (!driverId) {
       try {
         const profile = await prisma.driverProfile.findUnique({
@@ -167,21 +157,22 @@ export const authMiddleware = asyncHandler(
         if (profile) {
           driverId = profile.id;
         }
-      } catch (err) {}
+      } catch (err: unknown) {
+        logger.warn('Failed to find driver profile in database:', { error: err instanceof Error ? err.message : String(err), userId });
+      }
     }
 
     // Attach to Request
-    const userRoles = Array.isArray(user.roles) ? user.roles : ['DRIVER'];
+    const userRoles = activeUser.roles;
     request.userId = userId;
     request.roles = userRoles;
-    request.role = userRoles;
     request.driverId = driverId;
     request.user = {
       userId,
-      email: user.email || '',
+      email: activeUser.email || '',
       roles: userRoles,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: activeUser.firstName || 'Driver',
+      lastName: activeUser.lastName || '',
       driverId,
     };
 
@@ -194,7 +185,7 @@ export const requireRole = (...allowedRoles: string[]) => {
     if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles: string[] = req.roles ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

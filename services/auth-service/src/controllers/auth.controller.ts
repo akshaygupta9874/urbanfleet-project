@@ -1,25 +1,20 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service.js';
 import { UserService } from '../services/user.service.js';
-import { TwoFactorService } from '../services/two-factor.service.js';
 import { getCookieOptions, getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
 import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from '../middlewares/csrf.middleware.js';
 import { UnauthorizedError, BadRequestError, ForbiddenError, AuthenticatedRequest, asyncHandler } from '@urbanfleet/common';
-import { User, Role } from '../db/client.js';
 
 export class AuthController {
   private authService: AuthService;
   private userService: UserService;
-  private twoFactorService: TwoFactorService;
 
   constructor(
     authService: AuthService,
-    userService: UserService,
-    twoFactorService: TwoFactorService
+    userService: UserService
   ) {
     this.authService = authService;
     this.userService = userService;
-    this.twoFactorService = twoFactorService;
   }
 
   register = asyncHandler(async (req: Request, res: Response) => {
@@ -63,50 +58,36 @@ export class AuthController {
       userAgent: req.headers['user-agent']
     });
 
-    const loginResult = result as {
-      requires2FASetup?: boolean;
-      requires2FA?: boolean;
-      userId?: string;
-      refreshToken?: string;
-      accessToken?: string;
-      user?: { id: string; [key: string]: unknown };
-    };
+    res.status(200).json({
+      success: true,
+      message: 'Verification code sent to your email',
+      data: {
+        requiresOtp: true,
+        userId: result.userId,
+        email: result.email,
+      },
+    });
+  });
 
-    if (loginResult.requires2FASetup && loginResult.userId) {
-      const setup = await this.twoFactorService.initiateSetup(loginResult.userId);
-      return res.status(200).json({
-        success: true,
-        data: {
-          requiresTwoFactorSetup: true,
-          userId: loginResult.userId,
-          qrCodeUrl: setup.qrCodeUrl,
-          otpauthUri: setup.otpauthUri,
-          expiresInSeconds: setup.expiresInSeconds,
-          message: 'Admin policy requires Two-Factor Authentication. Please complete setup to activate your account.'
-        }
-      });
-    }
+  verifyOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { email, userId, otp } = req.body;
+    const submittedOtp = otp;
 
-    if (result.requires2FA && result.userId) {
-      const challenge = await this.twoFactorService.initiateLoginChallenge(result.userId, req.ip);
-      return res.status(200).json({
-        success: true,
-        data: {
-          requiresTwoFactor: true,
-          challengeToken: challenge.challengeToken,
-          expiresInSeconds: challenge.expiresInSeconds,
-          message: 'Two-Factor Authentication required. Please provide TOTP verification code or recovery code.'
-        }
-      });
-    }
+    const result = await this.authService.verifyLoginOtp({
+      email,
+      userId,
+      otp: submittedOtp,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
-    // 1. Set httpOnly refresh cookie
+    // Set httpOnly refresh cookie
     if (result.refreshToken) {
       res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
     }
 
-    // 2. Set CSRF cookie
-    const csrfToken = await generateCSRFToken(result.user!.id, res);
+    // Generate CSRF cookie
+    const csrfToken = await generateCSRFToken(result.user.id, res);
 
     res.status(200).json({
       success: true,
@@ -162,84 +143,7 @@ export class AuthController {
     });
   });
 
-  login2FA = asyncHandler(async (req: Request, res: Response) => {
-
-    let user: { id: string; email: string; roles: Role[]; firstName?: string; lastName?: string } | null = null;
-
-    if (req.body.challengeToken) {
-      if (req.body.recoveryCode) {
-        const result = await this.twoFactorService.verifyRecoveryCode(
-          req.body.challengeToken,
-          req.body.recoveryCode,
-          req.ip
-        );
-        user = result.user;
-      } else {
-        const code = req.body.code;
-        if (!code || typeof code !== 'string') {
-          throw new BadRequestError('Verification code or recovery code is required');
-        }
-        user = await this.twoFactorService.verifyLoginChallenge(
-          req.body.challengeToken,
-          code,
-          req.ip
-        );
-      }
-    } else if (req.body.userId) {
-      // 2FA setup verification
-      const code = req.body.code;
-      if (!code || typeof code !== 'string') {
-        throw new BadRequestError('Verification code is required');
-      }
-      const isValid = await this.twoFactorService.verifyToken(
-        req.body.userId,
-        code
-      );
-      if (!isValid) return res.status(401).json({ success: false, message: 'Invalid 2FA code' });
-      user = await this.userService.getUserById(req.body.userId);
-    } else {
-      throw new UnauthorizedError('2FA challenge token or credentials required');
-    }
-
-    if (!user) {
-      throw new UnauthorizedError('User not found');
-    }
-
-    const authResult = await this.authService.complete2FALogin(
-      user,
-      req.ip,
-      req.headers['user-agent']
-    );
-
-    // Set httpOnly refresh cookie
-    res.cookie('refreshToken', authResult.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
-
-    // Generate CSRF cookie
-    const csrfToken = await generateCSRFToken(user.id, res);
-
-    res.status(200).json({
-      success: true,
-      message: '2FA authentication successful',
-      data: {
-        user: authResult.user,
-        accessToken: authResult.accessToken,
-        csrfToken,
-        tokens: {
-          accessToken: authResult.accessToken,
-        }
-      },
-      tokens: {
-        accessToken: authResult.accessToken,
-      },
-      user: authResult.user,
-      accessToken: authResult.accessToken,
-    });
-  });
-
-  verifyOtp = asyncHandler(async (req: Request, res: Response, next: NextFunction) => this.login2FA(req, res, next));
-
   refreshToken = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    // Refresh token is strictly and only extracted from httpOnly cookies
     const token = req.cookies?.refreshToken;
     if (!token) {
       throw new UnauthorizedError('Please provide refresh token');
@@ -273,7 +177,6 @@ export class AuthController {
   });
 
   logout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    // Refresh token is strictly read from cookies
     const token = req.cookies?.refreshToken;
     if (token) {
       await this.authService.logout(token);
@@ -284,7 +187,6 @@ export class AuthController {
       await revokeCSRFToken(userId, res);
     }
 
-    // Clear cookies with matching path & domain
     res.clearCookie('refreshToken', clearCookieOptions());
     res.clearCookie('csrfToken', getCsrfCookieOptions());
 
@@ -345,8 +247,8 @@ export class AuthController {
       throw new UnauthorizedError('User unauthenticated');
     }
 
-    const roles: string[] = req.role || [];
-    const isPrivileged = roles.includes('ADMIN') || callerId === 'internal-service';
+    const roles: string[] = req.roles || [];
+    const isPrivileged = roles.includes('ADMIN');
     const isSelf = callerId === targetId;
 
     if (!isPrivileged && !isSelf) {
@@ -367,80 +269,12 @@ export class AuthController {
   });
 
   grantDriverRole = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    if (req.userId !== 'internal-service' || !(req.roles ?? []).includes('ADMIN')) {
-      throw new ForbiddenError('Only internal services can grant driver access');
+    if (!(req.roles ?? []).includes('ADMIN')) {
+      throw new ForbiddenError('Only administrators can grant driver access');
     }
     const userId = req.params.id;
     const user = await this.userService.addDriverRole(userId);
     res.status(200).json({ success: true, data: user });
-  });
-
-  enable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.userId;
-    if (!userId) {
-      throw new UnauthorizedError('User unauthenticated');
-    }
-    const result = await this.twoFactorService.initiateSetup(userId);
-    res.status(200).json({
-      success: true,
-      message: '2FA setup initiated successfully. Scan QR code with your authenticator app.',
-      data: {
-        qrCodeUrl: result.qrCodeUrl,
-        otpauthUri: result.otpauthUri,
-        expiresInSeconds: result.expiresInSeconds,
-      }
-    });
-  });
-
-  verify2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.userId;
-    if (!userId) {
-      throw new UnauthorizedError('User unauthenticated');
-    }
-    const { token } = req.body;
-    if (!token) {
-      throw new BadRequestError('Verification token is required');
-    }
-    const result = await this.twoFactorService.verifyAndEnable(userId, token);
-    res.status(200).json({
-      success: true,
-      message: '2FA enabled successfully',
-      data: {
-        recoveryCodes: result.recoveryCodes,
-      }
-    });
-  });
-
-  disable2FA = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.userId;
-    if (!userId) {
-      throw new UnauthorizedError('User unauthenticated');
-    }
-    const { password, code } = req.body;
-    if (!password) {
-      throw new BadRequestError('Password is required to disable 2FA');
-    }
-    await this.twoFactorService.disable2FA(userId, password, code);
-    res.status(200).json({ success: true, message: '2FA disabled successfully' });
-  });
-
-  regenerateRecoveryCodes = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = req.userId;
-    if (!userId) {
-      throw new UnauthorizedError('User unauthenticated');
-    }
-    const { password } = req.body;
-    if (!password) {
-      throw new BadRequestError('Password is required to regenerate recovery codes');
-    }
-    const result = await this.twoFactorService.regenerateRecoveryCodes(userId, password);
-    res.status(200).json({
-      success: true,
-      message: 'Recovery codes regenerated successfully',
-      data: {
-        recoveryCodes: result.recoveryCodes,
-      }
-    });
   });
 
   refreshCSRF = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

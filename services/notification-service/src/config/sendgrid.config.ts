@@ -15,15 +15,7 @@ export const sendSendGridEmail = async ({ to, subject, html }: SendEmailParams) 
   const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || "no-reply@urbanfleet.com";
 
   if (!SENDGRID_API_KEY) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("SENDGRID_API_KEY is not defined in environment variables");
-    }
-    console.warn(`[SendGrid] Notice: SENDGRID_API_KEY not configured. Email to ${to} (${subject}) recorded.`);
-    return {
-      status: 202,
-      data: 'Simulated',
-      headers: {},
-    };
+    throw new Error("SENDGRID_API_KEY is not defined in environment variables");
   }
 
   try {

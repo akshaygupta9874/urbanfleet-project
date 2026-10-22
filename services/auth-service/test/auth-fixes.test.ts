@@ -4,13 +4,11 @@ import http from 'node:http';
 import axios from 'axios';
 import { AuthService } from '../src/services/auth.service.js';
 import { UserService } from '../src/services/user.service.js';
-import { TwoFactorService } from '../src/services/two-factor.service.js';
 import { AuthController } from '../src/controllers/auth.controller.js';
 import { createAuthRouter } from '../src/routes/auth.routes.js';
 import { authRedisClient } from '../src/redis/client.js';
 import { signAccessToken, signRefreshToken, initAsymmetricKeys } from '../src/crypto/keys.js';
 import { authMiddleware } from '../src/middlewares/auth.middleware.js';
-import { authenticator } from 'otplib';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -21,7 +19,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
   let mockOutboxRepo: any;
   let authService: AuthService;
   let userService: UserService;
-  let twoFactorService: TwoFactorService;
   let authController: AuthController;
   let app: express.Express;
   let server: http.Server;
@@ -59,11 +56,9 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     mockUserRepo = {
       findById: vi.fn(),
       findByEmail: vi.fn(),
-      findByPhone: vi.fn(),
-      create: vi.fn().mockImplementation((d) => Promise.resolve({ id: 'usr-fix-1', ...d, isEmailVerified: false, twoFactorEnabled: false })),
+      create: vi.fn().mockImplementation((d) => Promise.resolve({ id: 'usr-fix-1', ...d, isEmailVerified: false })),
       update: vi.fn().mockImplementation((id, d) => Promise.resolve({ id, ...d })),
       delete: vi.fn().mockResolvedValue({ id: 'usr-fix-1' }),
-      consumeRecoveryCode: vi.fn(),
     };
 
     mockSessionRepo = {
@@ -86,8 +81,12 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
 
     authService = new AuthService(mockUserRepo, mockSessionRepo, mockAuditRepo, mockOutboxRepo);
     userService = new UserService(mockUserRepo);
-    twoFactorService = new TwoFactorService(mockUserRepo, mockAuditRepo);
-    authController = new AuthController(authService, userService, twoFactorService);
+    authController = new AuthController(authService, userService);
+
+    vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(authRedisClient, 'set').mockResolvedValue('OK' as any);
+    vi.spyOn(authRedisClient, 'get').mockResolvedValue(null as any);
+    vi.spyOn(authRedisClient, 'del').mockResolvedValue(1 as any);
   });
 
   // Issue 1: Registration parameter normalization
@@ -98,10 +97,10 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        firstName: 'Jane',
+        email: 'driver.fix@urbanfleet.com',
+        password: 'SecurePassword123!',
+        firstName: 'John',
         lastName: 'Doe',
-        email: 'jane.doe@urbanfleet.com',
-        password: 'Password123!',
         roles: ['RIDER'],
       }),
     });
@@ -110,70 +109,28 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     expect(res.status).toBe(201);
     expect(body.success).toBe(true);
     expect(mockUserRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      firstName: 'Jane',
+      email: 'driver.fix@urbanfleet.com',
+      firstName: 'John',
       lastName: 'Doe',
       roles: ['RIDER'],
     }));
   });
 
-  // Issue 3: UserService never leaks 2FA secrets or recovery codes
-  it('Issue 3: UserService.getUserById scrubs twoFactorPendingSecret, twoFactorRecoveryCodes, and passwordHash', async () => {
+  // Issue 3: UserService never leaks passwordHash
+  it('Issue 3: UserService.getUserById scrubs passwordHash', async () => {
     mockUserRepo.findById.mockResolvedValue({
       id: 'usr-sensitive',
       email: 'sensitive@urbanfleet.com',
       firstName: 'Sensitive',
       lastName: 'User',
       passwordHash: 'secret_hash',
-      twoFactorSecret: 'active_secret',
-      twoFactorPendingSecret: 'pending_secret',
-      twoFactorRecoveryCodes: JSON.stringify(['hash1', 'hash2']),
-      twoFactorSetupRequestedAt: new Date(),
+      isEmailVerified: true,
     });
 
     const user = await userService.getUserById('usr-sensitive');
     expect(user.passwordHash).toBeUndefined();
-    expect(user.twoFactorSecret).toBeUndefined();
-    expect(user.twoFactorPendingSecret).toBeUndefined();
-    expect(user.twoFactorRecoveryCodes).toBeUndefined();
-    expect(user.twoFactorSetupRequestedAt).toBeUndefined();
     expect(user.id).toBe('usr-sensitive');
     expect(user.email).toBe('sensitive@urbanfleet.com');
-  });
-
-  // Issue 5: Recovery code rate-limiting (lockout after 5 failed attempts)
-  it('Issue 5: Locks out recovery-code verification after 5 failed attempts', async () => {
-    vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
-    vi.spyOn(authRedisClient, 'get').mockResolvedValue(JSON.stringify({ userId: 'usr-fix-1', attempts: 5 }));
-    const delSpy = vi.spyOn(authRedisClient, 'del').mockResolvedValue(1 as any);
-
-    await expect(
-      twoFactorService.verifyRecoveryCode('chall-locked', 'wrong-code')
-    ).rejects.toThrow('Too many failed 2FA attempts');
-
-    expect(delSpy).toHaveBeenCalled();
-  });
-
-  // Issue 5 (atomic consumption): Uses atomic consumeRecoveryCode
-  it('Issue 5 (atomic): Consumes recovery code via atomic repository transaction', async () => {
-    vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
-    vi.spyOn(authRedisClient, 'get').mockResolvedValue(JSON.stringify({ userId: 'usr-fix-1', attempts: 0 }));
-    vi.spyOn(authRedisClient, 'del').mockResolvedValue(1 as any);
-
-    mockUserRepo.findById.mockResolvedValue({
-      id: 'usr-fix-1',
-      twoFactorRecoveryCodes: JSON.stringify(['dummy']),
-    });
-
-    mockUserRepo.consumeRecoveryCode.mockResolvedValue({
-      success: true,
-      user: { id: 'usr-fix-1', email: 'test@example.com' },
-      remainingCount: 7,
-    });
-
-    const res = await twoFactorService.verifyRecoveryCode('chall-valid', 'abcd-1234');
-    expect(res.user.id).toBe('usr-fix-1');
-    expect(res.remainingRecoveryCodes).toBe(7);
-    expect(mockUserRepo.consumeRecoveryCode).toHaveBeenCalled();
   });
 
   // Issue 6: Session rotation synchronization
@@ -205,23 +162,22 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
   });
 
   // Issue 7: Cookie-only refresh tokens (omitted from JSON response)
-  it('Issue 7: Login and register omit refreshToken from JSON response body', async () => {
-    mockUserRepo.findByEmail.mockResolvedValue({
-      id: 'usr-fix-1',
-      email: 'user@urbanfleet.com',
-      passwordHash: await authService.hashPassword('Password123!'),
-      twoFactorEnabled: false,
-      roles: ['RIDER'],
-    });
+  it('Issue 7: Registration and verify-otp set refreshToken cookie while omitting from JSON data', async () => {
+    mockUserRepo.findByEmail.mockResolvedValue(null);
 
-    const res = await fetch(`${baseUrl}/login`, {
+    const res = await fetch(`${baseUrl}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'user@urbanfleet.com', password: 'Password123!' }),
+      body: JSON.stringify({
+        email: 'cookie.test@urbanfleet.com',
+        password: 'Password123!',
+        firstName: 'Cookie',
+        lastName: 'Tester',
+      }),
     });
 
     const body = await res.json() as any;
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(body.data.accessToken).toBeDefined();
     // refreshToken must NOT be exposed in JSON response body
     expect(body.data.refreshToken).toBeUndefined();
@@ -263,40 +219,34 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     expect(body.data.message).toContain('Password reset instructions dispatched');
   });
 
-  // Issue 10: Enforce 2FA for ADMIN login
-  it('Issue 10: Enforces 2FA setup requirement when ADMIN logs in without 2FA', async () => {
+  // Issue 10: Login requires OTP verification
+  it('Issue 10: POST /login requires OTP verification and returns requiresOtp: true', async () => {
     mockUserRepo.findByEmail.mockResolvedValue({
-      id: 'admin-1',
-      email: 'admin@urbanfleet.com',
-      passwordHash: await authService.hashPassword('AdminPassword123!'),
-      roles: ['ADMIN'],
-      twoFactorEnabled: false,
-    });
-    mockUserRepo.findById.mockResolvedValue({
-      id: 'admin-1',
-      email: 'admin@urbanfleet.com',
-      twoFactorEnabled: false,
+      id: 'user-login-1',
+      email: 'rider@urbanfleet.com',
+      passwordHash: await authService.hashPassword('RiderPassword123!'),
+      roles: ['RIDER'],
     });
 
     const res = await fetch(`${baseUrl}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@urbanfleet.com', password: 'AdminPassword123!' }),
+      body: JSON.stringify({ email: 'rider@urbanfleet.com', password: 'RiderPassword123!' }),
     });
 
     const body = await res.json() as any;
     expect(res.status).toBe(200);
-    expect(body.data.requiresTwoFactorSetup).toBe(true);
-    expect(body.data.qrCodeUrl).toBeDefined();
-    expect(body.data.message).toContain('Admin policy requires Two-Factor Authentication');
+    expect(body.data.requiresOtp).toBe(true);
+    expect(body.data.userId).toBe('user-login-1');
+    expect(body.data.email).toBe('rider@urbanfleet.com');
   });
 
-  // Issue 11: Missing OTP validation refinement
-  it('Issue 11: verifyOtpSchema rejects empty verification code / recovery code', async () => {
+  // Issue 11: verifyOtpSchema rejects empty or malformed OTP
+  it('Issue 11: verifyOtpSchema rejects missing OTP', async () => {
     const res = await fetch(`${baseUrl}/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ challengeToken: 'valid-token' }),
+      body: JSON.stringify({ email: 'rider@urbanfleet.com' }),
     });
 
     expect(res.status).toBe(422);
@@ -515,7 +465,9 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const tokenA = signAccessToken({
         userId: userA.id,
         email: userA.email,
-        role: 'RIDER',
+        firstName: userA.firstName,
+        lastName: userA.lastName,
+        roles: ['RIDER'],
       });
 
       const res = await fetch(`${baseUrl}/users/${userB.id}`, {
@@ -534,7 +486,9 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const tokenA = signAccessToken({
         userId: userA.id,
         email: userA.email,
-        role: 'RIDER',
+        firstName: userA.firstName,
+        lastName: userA.lastName,
+        roles: ['RIDER'],
       });
 
       const res = await fetch(`${baseUrl}/users/${userA.id}`, {
@@ -554,7 +508,9 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const adminToken = signAccessToken({
         userId: 'admin-uuid-1',
         email: 'admin@urbanfleet.com',
-        role: 'ADMIN',
+        firstName: 'Admin',
+        lastName: 'Fleet',
+        roles: ['ADMIN'],
       });
 
       const res = await fetch(`${baseUrl}/users/${userB.id}`, {
@@ -568,49 +524,40 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(body.data.id).toBe(userB.id);
     });
 
-    it('allows internal services to query user profile with valid x-internal-service-key', async () => {
+    it('rejects unauthenticated requests even if x-internal-service-key header is supplied', async () => {
       mockUserRepo.findById.mockResolvedValue(userB);
 
       const res = await fetch(`${baseUrl}/users/${userB.id}`, {
         method: 'GET',
         headers: {
-          'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '9fef5ba5e9688b75efee1781b80dad81703c29df93181ab9c474532c3281dd99',
+          'x-internal-service-key': '9fef5ba5e9688b75efee1781b80dad81703c29df93181ab9c474532c3281dd99',
         },
       });
 
-      expect(res.status).toBe(200);
-      const body = await res.json() as any;
-      expect(body.success).toBe(true);
-      expect(body.data.id).toBe(userB.id);
+      expect(res.status).toBe(401);
     });
   });
 
-  describe('Issue 18: 2FA Login & Setup Flow (POST /verify-otp)', () => {
-    it('activates 2FA and completes login when userId is provided with pending 2FA setup', async () => {
-      const secret = authenticator.generateSecret();
-      const code = authenticator.generate(secret);
-
-      const pendingAdmin = {
-        id: 'admin-setup-1',
-        email: 'admin-setup@urbanfleet.com',
-        roles: ['ADMIN'],
-        twoFactorEnabled: false,
-        twoFactorPendingSecret: secret,
-        twoFactorSetupRequestedAt: new Date(),
+  describe('Issue 18: OTP Login Flow (POST /verify-otp)', () => {
+    it('completes login when valid OTP is provided to /verify-otp', async () => {
+      const activeUser = {
+        id: 'user-otp-1',
+        email: 'userotp@urbanfleet.com',
+        firstName: 'OTP',
+        lastName: 'User',
+        roles: ['RIDER'],
+        isEmailVerified: true,
       };
 
-      mockUserRepo.findById.mockResolvedValue(pendingAdmin);
-      mockUserRepo.update.mockImplementation(async (id: string, updates: any) => {
-        Object.assign(pendingAdmin, updates);
-        return pendingAdmin;
-      });
+      mockUserRepo.findByEmail.mockResolvedValue(activeUser);
+      vi.spyOn(authRedisClient, 'get').mockResolvedValue('123456');
 
       const res = await fetch(`${baseUrl}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: 'admin-setup-1',
-          code,
+          email: 'userotp@urbanfleet.com',
+          otp: '123456',
         }),
       });
 
@@ -618,75 +565,29 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const body = await res.json() as any;
       expect(body.success).toBe(true);
       expect(body.accessToken).toBeDefined();
-      expect(body.data.user.id).toBe('admin-setup-1');
-
-      // Verify that 2FA was enabled and pending secret promoted
-      expect(mockUserRepo.update).toHaveBeenCalledWith(
-        'admin-setup-1',
-        expect.objectContaining({
-          twoFactorEnabled: true,
-          twoFactorSecret: secret,
-          twoFactorPendingSecret: null,
-        })
-      );
+      expect(body.data.user.id).toBe('user-otp-1');
+      expect(res.headers.get('set-cookie')).toContain('refreshToken=');
     });
 
-    it('rejects invalid OTP when completing 2FA setup with 401', async () => {
-      const secret = authenticator.generateSecret();
-      const pendingAdmin = {
-        id: 'admin-setup-2',
-        email: 'admin-setup2@urbanfleet.com',
-        roles: ['ADMIN'],
-        twoFactorEnabled: false,
-        twoFactorPendingSecret: secret,
-        twoFactorSetupRequestedAt: new Date(),
-      };
-
-      mockUserRepo.findById.mockResolvedValue(pendingAdmin);
+    it('rejects invalid OTP with 401 Unauthorized', async () => {
+      mockUserRepo.findByEmail.mockResolvedValue({
+        id: 'user-otp-2',
+        email: 'userotp2@urbanfleet.com',
+        roles: ['RIDER'],
+      });
 
       const res = await fetch(`${baseUrl}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: 'admin-setup-2',
-          code: '000000',
+          email: 'userotp2@urbanfleet.com',
+          otp: '000000',
         }),
       });
 
       expect(res.status).toBe(401);
       const body = await res.json() as any;
-      expect(body.success).toBe(false);
-    });
-
-    it('completes login when valid challengeToken is provided to /verify-otp', async () => {
-      const activeUser = {
-        id: 'user-2fa-1',
-        email: 'user2fa@urbanfleet.com',
-        roles: ['RIDER'],
-        twoFactorEnabled: true,
-      };
-
-      vi.spyOn(twoFactorService, 'verifyLoginChallenge').mockResolvedValue(activeUser);
-
-      const res = await fetch(`${baseUrl}/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challengeToken: 'valid-challenge-token-123',
-          code: '123456',
-        }),
-      });
-
-      expect(res.status).toBe(200);
-      const body = await res.json() as any;
-      expect(body.success).toBe(true);
-      expect(body.accessToken).toBeDefined();
-      expect(body.data.user.id).toBe('user-2fa-1');
-      expect(twoFactorService.verifyLoginChallenge).toHaveBeenCalledWith(
-        'valid-challenge-token-123',
-        '123456',
-        expect.anything()
-      );
+      expect(body.error).toMatch(/Invalid or expired verification code/);
     });
   });
 
@@ -700,5 +601,3 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     });
   });
 });
-
-

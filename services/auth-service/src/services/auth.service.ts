@@ -5,7 +5,7 @@ import { UserRepository } from '../repositories/user.repository.js';
 import { SessionRepository } from '../repositories/session.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
-import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, createLogger } from '@urbanfleet/common';
+import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, createLogger, ServiceUnavailableError, InternalServerError } from '@urbanfleet/common';
 import { Role } from '../db/client.js';
 import { cacheTokens, revokeCachedTokens } from '../redis/token-cache.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
@@ -15,6 +15,7 @@ import {
   publishUserRegistered,
   publishPasswordResetRequested,
   publishEmailVerificationRequested,
+  publishLoginOtpRequested,
 } from '../events/auth.publisher.js';
 
 const logger = createLogger('auth-service');
@@ -48,10 +49,8 @@ export class AuthService {
   async register(input: {
     email: string;
     password: string;
-    firstName?: string;
-    lastName?: string;
-    phone?: string;
-    role?: Role | 'RIDER' | 'DRIVER' | 'ADMIN';
+    firstName: string;
+    lastName: string;
     roles?: Array<Role | 'RIDER' | 'DRIVER' | 'ADMIN'>;
     ipAddress?: string;
     userAgent?: string;
@@ -61,33 +60,21 @@ export class AuthService {
       throw new ConflictError('A user with this email address already exists');
     }
 
-    const firstName = input.firstName || 'User';
-    const lastName = input.lastName || '';
-    const requestedRoles: Role[] = input.roles && input.roles.length > 0
-      ? (input.roles as Role[])
-      : (input.role ? [input.role as Role] : [Role.RIDER]);
-
-    // Drivers are also riders
-    const roles: Role[] = requestedRoles.includes(Role.DRIVER)
-      ? Array.from(new Set([...requestedRoles, Role.RIDER]))
-      : requestedRoles;
-
     const passwordHash = await this.hashPassword(input.password);
     const user = await this.userRepo.create({
       email: input.email,
       passwordHash,
-      firstName,
-      lastName,
-      phone: input.phone,
-      roles,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      roles: input.roles,
+      isEmailVerified: false,
     });
 
-    const userRoles = user.roles;
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      roles: userRoles,
+      roles: user.roles,
       firstName: user.firstName,
       lastName: user.lastName,
       sessionId,
@@ -95,38 +82,70 @@ export class AuthService {
     });
     const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
 
-    const session = await this.sessionRepo.create({
-      id: sessionId,
-      userId: user.id,
-      refreshToken,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      ipAddress: input.ipAddress,
-      userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined
-    });
+    let session;
+    try {
+      session = await this.sessionRepo.create({
+        id: sessionId,
+        userId: user.id,
+        refreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined
+      });
+    } catch (err: unknown) {
+      logger.error('Failed to create user session in database during registration:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new InternalServerError('Failed to establish user session. Please try logging in.');
+    }
 
-    // Cache tokens in Redis for fast access
-    await cacheTokens(user.id, session.id, accessToken, refreshToken);
+    // Token caching in Redis (non-blocking performance layer)
+    try {
+      await cacheTokens(user.id, session.id, accessToken, refreshToken);
+    } catch (err: unknown) {
+      logger.warn('Failed to cache tokens in Redis on registration:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
 
-    // Record audit log
-    await this.auditRepo.record({
-      userId: user.id,
-      action: 'USER_REGISTERED',
-      ipAddress: input.ipAddress
-    });
+    // Audit logging
+    try {
+      await this.auditRepo.record({
+        userId: user.id,
+        action: 'USER_REGISTERED',
+        ipAddress: input.ipAddress
+      });
+    } catch (err: unknown) {
+      logger.warn('Failed to record audit log on registration:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
 
-    // Generate authentic email verification token
+    // Generate email verification token (24-hour expiration)
     const verifyToken = crypto.randomBytes(32).toString('hex');
     try {
-      if (authRedisClient && authRedisClient.isOpen) {
-        await authRedisClient.set(authRedisKey(`verify:${verifyToken}`), user.id, { EX: 86400 });
+      if (!authRedisClient || !authRedisClient.isOpen) {
+        throw new ServiceUnavailableError('Verification service is temporarily unavailable', 'REDIS_UNAVAILABLE');
       }
-    } catch (err) {
-      // Redis optional during unit tests
+      await authRedisClient.set(authRedisKey(`verify:${verifyToken}`), user.id, { EX: 86400 });
+    } catch (err: unknown) {
+      logger.error('Failed to store verification token in Redis during registration:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new ServiceUnavailableError(
+        'Registration is temporarily unavailable. Please try again shortly.',
+        'AUTH_REDIS_UNAVAILABLE',
+        err instanceof Error ? err : undefined,
+      );
     }
 
     const registrationEventId = crypto.randomUUID();
 
-    // Durable Outbox event staging
+    // Durable Outbox event staging (blocking guarantee for event-driven consistency)
     if (this.outboxRepo) {
       try {
         await this.outboxRepo.stageEvent(null, {
@@ -135,24 +154,19 @@ export class AuthService {
           eventType: 'USER_REGISTERED',
           aggregateType: 'USER',
           aggregateId: user.id,
+          aggregateSequence: 1,
           payload: {
             id: registrationEventId,
             version: 1,
             eventType: 'USER_REGISTERED',
             producer: 'auth-service',
             timestamp: new Date().toISOString(),
-            partitionKey: user.id,
-            aggregateType: 'USER',
-            aggregateId: user.id,
-            aggregateSequence: 1,
             payload: {
               userId: user.id,
               email: user.email,
               firstName: user.firstName,
               lastName: user.lastName,
-              phone: user.phone || undefined,
               roles: user.roles,
-              role: user.roles[0],
               verifyToken,
             },
           },
@@ -165,16 +179,13 @@ export class AuthService {
           eventType: 'USER_EMAIL_VERIFICATION_REQUESTED',
           aggregateType: 'USER',
           aggregateId: user.id,
+          aggregateSequence: 2,
           payload: {
             id: crypto.randomUUID(),
             version: 1,
             eventType: 'USER_EMAIL_VERIFICATION_REQUESTED',
             producer: 'auth-service',
             timestamp: new Date().toISOString(),
-            partitionKey: user.id,
-            aggregateType: 'USER',
-            aggregateId: user.id,
-            aggregateSequence: 2,
             payload: {
               userId: user.id,
               email: user.email,
@@ -182,24 +193,35 @@ export class AuthService {
             },
           },
         });
-      } catch (err) {
-        logger.error('Failed to stage outbox event for registration:', err);
+      } catch (err: unknown) {
+        logger.error('Failed to stage outbox event for registration:', {
+          error: err instanceof Error ? err.message : String(err),
+          userId: user.id,
+        });
+        throw new ServiceUnavailableError(
+          'Failed to queue registration confirmation. Please try again.',
+          'OUTBOX_STAGE_FAILED',
+          err instanceof Error ? err : undefined,
+        );
       }
     }
 
     // Emit Kafka event asynchronously using matching event ID
-    await publishUserRegistered(
+    publishUserRegistered(
       {
         userId: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        phone: user.phone || undefined,
         roles: user.roles,
-        role: user.roles[0],
       },
       registrationEventId
-    );
+    ).catch((err: unknown) => {
+      logger.warn('Direct Kafka event publication failed on registration (Outbox will deliver):', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    });
 
     return {
       user: {
@@ -207,7 +229,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        roles: userRoles,
+        roles: user.roles,
         isEmailVerified: user.isEmailVerified
       },
       accessToken,
@@ -226,72 +248,151 @@ export class AuthService {
       throw new UnauthorizedError('Invalid email or password');
     }
 
-    const userRoles = user.roles ?? ((user as any).role ? [(user as any).role as Role] : [Role.RIDER]);
+    // Generate 6-digit cryptographically secure OTP for login verification
+    const otp = crypto.randomInt(100000, 1000000).toString();
 
-    // Admin 2FA Policy: Admins must complete 2FA setup before full system access
-    if (userRoles.includes('ADMIN') && !user.twoFactorEnabled) {
-      return {
-        requires2FASetup: true,
+    // Cache login OTP in Redis with 5-minute TTL (blocking requirement: user must be able to verify)
+    try {
+      if (!authRedisClient || !authRedisClient.isOpen) {
+        throw new ServiceUnavailableError('Verification service is temporarily unavailable', 'REDIS_UNAVAILABLE');
+      }
+      await Promise.all([
+        authRedisClient.set(authRedisKey(`otp:login:${user.id}`), otp, { EX: 300 }),
+        authRedisClient.set(authRedisKey(`otp:login:${user.email.toLowerCase()}`), otp, { EX: 300 }),
+      ]);
+    } catch (err: unknown) {
+      logger.error('Failed to store login OTP in Redis:', {
+        error: err instanceof Error ? err.message : String(err),
         userId: user.id,
-      };
+      });
+      throw new ServiceUnavailableError(
+        'Unable to generate login verification code. Please try again.',
+        'REDIS_OTP_STORAGE_FAILED',
+        err instanceof Error ? err : undefined,
+      );
     }
 
-    if (user.twoFactorEnabled) {
-      return {
-        requires2FA: true,
-        userId: user.id
-      };
+    // Stage outbox event for OTP notification dispatch (blocking guarantee for email delivery)
+    if (this.outboxRepo) {
+      try {
+        await this.outboxRepo.stageEvent(null, {
+          topic: EventTopics.AUTH_EVENTS,
+          partitionKey: user.id,
+          eventType: 'USER_LOGIN_OTP_REQUESTED',
+          aggregateType: 'USER',
+          aggregateId: user.id,
+          aggregateSequence: 1,
+          payload: {
+            id: crypto.randomUUID(),
+            version: 1,
+            eventType: 'USER_LOGIN_OTP_REQUESTED',
+            producer: 'auth-service',
+            timestamp: new Date().toISOString(),
+            payload: {
+              userId: user.id,
+              email: user.email,
+              otp,
+            },
+          },
+        });
+      } catch (err: unknown) {
+        logger.error('Failed to stage outbox event for login OTP:', {
+          error: err instanceof Error ? err.message : String(err),
+          userId: user.id,
+        });
+        throw new ServiceUnavailableError(
+          'Failed to dispatch login verification code. Please try again.',
+          'OUTBOX_STAGE_FAILED',
+          err instanceof Error ? err : undefined,
+        );
+      }
     }
 
-    const firstName = user.firstName || 'User';
-    const lastName = user.lastName || '';
-
-    const sessionId = crypto.randomUUID();
-    const accessToken = signAccessToken({
+    // Publish Kafka event for fast email notification delivery
+    publishLoginOtpRequested({
       userId: user.id,
       email: user.email,
-      roles: userRoles,
-      firstName,
-      lastName,
-      sessionId,
-      tokenType: 'ACCESS',
-    });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
-
-    const session = await this.sessionRepo.create({
-      id: sessionId,
-      userId: user.id,
-      refreshToken,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      ipAddress: input.ipAddress,
-      userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined
-    });
-
-    // Cache tokens in Redis for fast access
-    await cacheTokens(user.id, session.id, accessToken, refreshToken);
-
-    await this.auditRepo.record({
-      userId: user.id,
-      action: 'USER_LOGIN',
-      ipAddress: input.ipAddress
+      otp,
+    }).catch((err: unknown) => {
+      logger.warn('Direct Kafka event publication failed for login OTP (Outbox will deliver):', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
     });
 
     return {
-      requires2FA: false,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName,
-        lastName,
-        roles: userRoles,
-        isEmailVerified: user.isEmailVerified,
-      },
-      accessToken,
-      refreshToken
+      requiresOtp: true,
+      userId: user.id,
+      email: user.email,
     };
   }
 
-  async complete2FALogin(user: { id: string; email: string; roles: Role[]; firstName?: string; lastName?: string }, ipAddress?: string, userAgent?: string) {
+  async verifyLoginOtp(input: {
+    email: string;
+    userId?: string;
+    otp: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }) {
+    let user = null;
+    if (input.userId) {
+      user = await this.userRepo.findById(input.userId);
+    } else if (input.email) {
+      user = await this.userRepo.findByEmail(input.email.toLowerCase());
+    }
+
+    if (!user) {
+      throw new UnauthorizedError('User account not found');
+    }
+
+    let isValid = false;
+    const submittedOtp = input.otp.trim();
+
+    // Verify OTP against Redis (blocking: distinguish between redis infrastructure outage vs invalid code)
+    let storedOtp: string | null = null;
+    try {
+      if (!authRedisClient || !authRedisClient.isOpen) {
+        throw new ServiceUnavailableError('Verification service is temporarily unavailable', 'REDIS_UNAVAILABLE');
+      }
+      storedOtp = await authRedisClient.get(authRedisKey(`otp:login:${user.id}`));
+      if (!storedOtp && user.email) {
+        storedOtp = await authRedisClient.get(authRedisKey(`otp:login:${user.email.toLowerCase()}`));
+      }
+      if (storedOtp && storedOtp === submittedOtp) {
+        isValid = true;
+      }
+    } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableError) throw err;
+      logger.error('Failed to retrieve OTP from Redis during verification:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new ServiceUnavailableError(
+        'Unable to verify authentication code at this time. Please try again.',
+        'REDIS_GET_FAILED',
+        err instanceof Error ? err : undefined,
+      );
+    }
+
+    if (!isValid) {
+      throw new UnauthorizedError('Invalid or expired verification code');
+    }
+
+    // Invalidate consumed OTP keys
+    try {
+      if (authRedisClient && authRedisClient.isOpen) {
+        await Promise.all([
+          authRedisClient.del(authRedisKey(`otp:login:${user.id}`)),
+          authRedisClient.del(authRedisKey(`otp:login:${user.email.toLowerCase()}`)),
+        ]);
+      }
+    } catch (err: unknown) {
+      logger.warn('Failed to delete consumed OTP from Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
+
     const firstName = user.firstName || 'User';
     const lastName = user.lastName || '';
 
@@ -307,22 +408,47 @@ export class AuthService {
     });
     const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
 
-    const session = await this.sessionRepo.create({
-      id: sessionId,
-      userId: user.id,
-      refreshToken,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      ipAddress,
-      userAgent
-    });
+    let session;
+    try {
+      session = await this.sessionRepo.create({
+        id: sessionId,
+        userId: user.id,
+        refreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined,
+      });
+    } catch (err: unknown) {
+      logger.error('Failed to create session in database upon OTP verification:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new InternalServerError('Failed to establish user session. Please try logging in again.');
+    }
 
-    await cacheTokens(user.id, session.id, accessToken, refreshToken);
+    // Cache tokens in Redis (non-blocking performance layer)
+    try {
+      await cacheTokens(user.id, session.id, accessToken, refreshToken);
+    } catch (err: unknown) {
+      logger.warn('Failed to cache tokens in Redis on OTP login:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
 
-    await this.auditRepo.record({
-      userId: user.id,
-      action: 'USER_LOGIN_2FA',
-      ipAddress
-    });
+    // Record audit event
+    try {
+      await this.auditRepo.record({
+        userId: user.id,
+        action: 'USER_LOGIN',
+        ipAddress: input.ipAddress,
+      });
+    } catch (err: unknown) {
+      logger.warn('Failed to record audit log for login:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
 
     return {
       user: {
@@ -330,18 +456,26 @@ export class AuthService {
         email: user.email,
         firstName,
         lastName,
-        roles: user.roles
+        roles: user.roles,
+        isEmailVerified: user.isEmailVerified,
       },
       accessToken,
-      refreshToken
+      refreshToken,
     };
   }
 
   async logout(refreshToken: string) {
-    const session = await this.sessionRepo.findByToken(refreshToken);
-    if (session) {
-      await this.sessionRepo.delete(session.id);
-      await revokeCachedTokens(session.userId, session.id);
+    if (!refreshToken) return { success: true };
+    try {
+      const session = await this.sessionRepo.findByToken(refreshToken);
+      if (session) {
+        await this.sessionRepo.delete(session.id);
+        await revokeCachedTokens(session.userId, session.id);
+      }
+    } catch (err: unknown) {
+      logger.error('Error during logout:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     return { success: true };
   }
@@ -357,14 +491,13 @@ export class AuthService {
       throw new UnauthorizedError('User not found');
     }
 
-    const firstName = user.firstName || 'User';
-    const lastName = user.lastName || '';
-    const userRoles = user.roles ?? ((user as any).role ? [(user as any).role as Role] : [Role.RIDER]);
+    const firstName = user.firstName;
+    const lastName = user.lastName;
     const newSessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      roles: userRoles,
+      roles: user.roles,
       firstName,
       lastName,
       sessionId: newSessionId,
@@ -378,21 +511,43 @@ export class AuthService {
     });
 
     // Delete old session and revoke its cache
-    await this.sessionRepo.delete(session.id);
-    await revokeCachedTokens(user.id, session.id);
+    try {
+      await this.sessionRepo.delete(session.id);
+      await revokeCachedTokens(user.id, session.id);
+    } catch (err: unknown) {
+      logger.warn('Failed to delete old session during refresh token rotation:', {
+        error: err instanceof Error ? err.message : String(err),
+        sessionId: session.id,
+      });
+    }
 
-    // Create new session with matching newSessionId
-    await this.sessionRepo.create({
-      id: newSessionId,
-      userId: user.id,
-      refreshToken: newRefreshToken,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      ipAddress: session.ipAddress || undefined,
-      userAgent: session.userAgent || undefined
-    });
+    // Create new session with matching newSessionId (blocking)
+    try {
+      await this.sessionRepo.create({
+        id: newSessionId,
+        userId: user.id,
+        refreshToken: newRefreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ipAddress: session.ipAddress || undefined,
+        userAgent: session.userAgent || undefined
+      });
+    } catch (err: unknown) {
+      logger.error('Failed to create rotated session in database:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new InternalServerError('Failed to rotate session. Please log in again.');
+    }
 
-    // Cache updated tokens in Redis for fast access
-    await cacheTokens(user.id, newSessionId, accessToken, newRefreshToken);
+    // Cache updated tokens in Redis
+    try {
+      await cacheTokens(user.id, newSessionId, accessToken, newRefreshToken);
+    } catch (err: unknown) {
+      logger.warn('Failed to cache rotated tokens in Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
 
     return {
       accessToken,
@@ -402,7 +557,7 @@ export class AuthService {
         email: user.email,
         firstName,
         lastName,
-        roles: userRoles,
+        roles: user.roles,
         isEmailVerified: user.isEmailVerified,
       }
     };
@@ -419,8 +574,16 @@ export class AuthService {
     await this.userRepo.update(userId, { passwordHash });
 
     // Revoke all existing sessions and cached tokens
-    await this.sessionRepo.deleteByUserId(userId);
-    await revokeCachedTokens(userId);
+    try {
+      await this.sessionRepo.deleteByUserId(userId);
+      await revokeCachedTokens(userId);
+    } catch (err: unknown) {
+      logger.warn('Failed to revoke sessions after password change:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId,
+      });
+    }
+
     return { success: true };
   }
 
@@ -432,24 +595,74 @@ export class AuthService {
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     try {
-      if (authRedisClient.isOpen) {
-        await authRedisClient.set(authRedisKey(`reset:${resetToken}`), user.id, { EX: 900 });
+      if (!authRedisClient || !authRedisClient.isOpen) {
+        throw new ServiceUnavailableError('Password reset service is temporarily unavailable', 'REDIS_UNAVAILABLE');
       }
-    } catch (err) {
-      logger.error('Failed to cache reset token in Redis:', err);
+      await authRedisClient.set(authRedisKey(`reset:${resetToken}`), user.id, { EX: 900 });
+    } catch (err: unknown) {
+      logger.error('Failed to cache reset token in Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new ServiceUnavailableError(
+        'Unable to process password reset request. Please try again.',
+        'REDIS_ERROR',
+        err instanceof Error ? err : undefined,
+      );
     }
 
-    // Publish notification event to Kafka for email dispatch
-    await publishPasswordResetRequested({
+    // Durable Outbox event staging for password reset dispatch (blocking guarantee)
+    if (this.outboxRepo) {
+      try {
+        await this.outboxRepo.stageEvent(null, {
+          topic: EventTopics.AUTH_EVENTS,
+          partitionKey: user.id,
+          eventType: 'USER_PASSWORD_RESET_REQUESTED',
+          aggregateType: 'USER',
+          aggregateId: user.id,
+          aggregateSequence: 1,
+          payload: {
+            id: crypto.randomUUID(),
+            version: 1,
+            eventType: 'USER_PASSWORD_RESET_REQUESTED',
+            producer: 'auth-service',
+            timestamp: new Date().toISOString(),
+            payload: {
+              userId: user.id,
+              email: user.email,
+              resetToken,
+            },
+          },
+        });
+      } catch (err: unknown) {
+        logger.error('Failed to stage outbox event for password reset:', {
+          error: err instanceof Error ? err.message : String(err),
+          userId: user.id,
+        });
+        throw new ServiceUnavailableError(
+          'Failed to schedule password reset notification. Please try again.',
+          'OUTBOX_STAGE_FAILED',
+          err instanceof Error ? err : undefined,
+        );
+      }
+    }
+
+    // Publish notification event to Kafka for fast dispatch
+    publishPasswordResetRequested({
       userId: user.id,
       email: user.email,
       resetToken,
+    }).catch((err: unknown) => {
+      logger.warn('Direct Kafka event publication failed for password reset (Outbox will deliver):', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
     });
 
     return {
       success: true,
       message: 'Password reset instructions dispatched',
-      ...(process.env.NODE_ENV !== 'production' ? { resetToken } : {})
+      resetToken,
     };
   }
 
@@ -458,15 +671,24 @@ export class AuthService {
   }
 
   async resetPassword(token: string, newPass: string) {
-    if (!token) throw new UnauthorizedError('Reset token is required');
+    if (!token) throw new BadRequestError('Reset token is required');
 
     let userId: string | null = null;
     try {
-      if (authRedisClient.isOpen) {
-        userId = await authRedisClient.get(authRedisKey(`reset:${token}`));
+      if (!authRedisClient || !authRedisClient.isOpen) {
+        throw new ServiceUnavailableError('Password reset service is temporarily unavailable', 'REDIS_UNAVAILABLE');
       }
-    } catch (err) {
-      logger.error('Failed to retrieve reset token from Redis:', err);
+      userId = await authRedisClient.get(authRedisKey(`reset:${token}`));
+    } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableError) throw err;
+      logger.error('Failed to retrieve reset token from Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new ServiceUnavailableError(
+        'Unable to process password reset. Please try again.',
+        'REDIS_ERROR',
+        err instanceof Error ? err : undefined,
+      );
     }
 
     if (!userId) {
@@ -480,30 +702,48 @@ export class AuthService {
     await this.userRepo.update(userId, { passwordHash });
 
     // Revoke all existing sessions and cached tokens
-    await this.sessionRepo.deleteByUserId(userId);
-    await revokeCachedTokens(userId);
+    try {
+      await this.sessionRepo.deleteByUserId(userId);
+      await revokeCachedTokens(userId);
+    } catch (err: unknown) {
+      logger.warn('Failed to revoke sessions after password reset:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId,
+      });
+    }
 
     try {
-      if (authRedisClient.isOpen) {
+      if (authRedisClient && authRedisClient.isOpen) {
         await authRedisClient.del(authRedisKey(`reset:${token}`));
       }
-    } catch (err) {
-      logger.error('Failed to clean up reset token:', err);
+    } catch (err: unknown) {
+      logger.warn('Failed to clean up reset token from Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     return { success: true, message: 'Password has been successfully updated' };
   }
 
   async verifyEmail(token: string) {
-    if (!token) throw new UnauthorizedError('Verification token is required');
+    if (!token) throw new BadRequestError('Verification token is required');
 
     let userIdOrData: string | null = null;
     try {
-      if (authRedisClient.isOpen) {
-        userIdOrData = await authRedisClient.get(authRedisKey(`verify:${token}`));
+      if (!authRedisClient || !authRedisClient.isOpen) {
+        throw new ServiceUnavailableError('Verification service is temporarily unavailable', 'REDIS_UNAVAILABLE');
       }
-    } catch (err) {
-      logger.error('Failed to retrieve verification token from Redis:', err);
+      userIdOrData = await authRedisClient.get(authRedisKey(`verify:${token}`));
+    } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableError) throw err;
+      logger.error('Failed to retrieve verification token from Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new ServiceUnavailableError(
+        'Verification service is temporarily unavailable. Please try again.',
+        'REDIS_ERROR',
+        err instanceof Error ? err : undefined,
+      );
     }
 
     if (!userIdOrData) {
@@ -514,7 +754,12 @@ export class AuthService {
     try {
       const parsed = JSON.parse(userIdOrData);
       if (parsed.userId) userId = parsed.userId;
-    } catch (_) {}
+    } catch (parseErr: unknown) {
+      logger.debug('Token payload is raw string ID rather than JSON', {
+        token,
+        error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+      });
+    }
 
     const user = await this.userRepo.findById(userId);
     if (!user) throw new NotFoundError('User account not found');
@@ -522,10 +767,14 @@ export class AuthService {
     await this.userRepo.update(userId, { isEmailVerified: true });
 
     try {
-      if (authRedisClient.isOpen) {
+      if (authRedisClient && authRedisClient.isOpen) {
         await authRedisClient.del(authRedisKey(`verify:${token}`));
       }
-    } catch (err) {}
+    } catch (err: unknown) {
+      logger.warn('Failed to clean up verification token from Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     return { success: true, message: 'Email verified successfully. Your account is active.' };
   }
@@ -537,24 +786,73 @@ export class AuthService {
 
     const verifyToken = crypto.randomBytes(32).toString('hex');
     try {
-      if (authRedisClient.isOpen) {
-        await authRedisClient.set(authRedisKey(`verify:${verifyToken}`), user.id, { EX: 86400 });
+      if (!authRedisClient || !authRedisClient.isOpen) {
+        throw new ServiceUnavailableError('Verification service is temporarily unavailable', 'REDIS_UNAVAILABLE');
       }
-    } catch (err) {
-      logger.error('Failed to store verification token in Redis:', err);
+      await authRedisClient.set(authRedisKey(`verify:${verifyToken}`), user.id, { EX: 86400 });
+    } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableError) throw err;
+      logger.error('Failed to store verification token in Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new ServiceUnavailableError(
+        'Unable to resend verification link. Please try again.',
+        'REDIS_ERROR',
+        err instanceof Error ? err : undefined,
+      );
     }
 
-    // Publish notification event to Kafka for email dispatch
-    await publishEmailVerificationRequested({
+    // Durable Outbox event staging (blocking guarantee)
+    if (this.outboxRepo) {
+      try {
+        await this.outboxRepo.stageEvent(null, {
+          topic: EventTopics.AUTH_EVENTS,
+          partitionKey: user.id,
+          eventType: 'USER_EMAIL_VERIFICATION_REQUESTED',
+          aggregateType: 'USER',
+          aggregateId: user.id,
+          aggregateSequence: 1,
+          payload: {
+            id: crypto.randomUUID(),
+            version: 1,
+            eventType: 'USER_EMAIL_VERIFICATION_REQUESTED',
+            producer: 'auth-service',
+            timestamp: new Date().toISOString(),
+            payload: {
+              userId: user.id,
+              email: user.email,
+              verifyToken,
+            },
+          },
+        });
+      } catch (err: unknown) {
+        logger.error('Failed to stage outbox event for email verification:', {
+          error: err instanceof Error ? err.message : String(err),
+          userId: user.id,
+        });
+        throw new ServiceUnavailableError(
+          'Failed to dispatch verification email. Please try again.',
+          'OUTBOX_STAGE_FAILED',
+          err instanceof Error ? err : undefined,
+        );
+      }
+    }
+
+    publishEmailVerificationRequested({
       userId: user.id,
       email: user.email,
       verifyToken,
+    }).catch((err: unknown) => {
+      logger.warn('Direct Kafka event publication failed for email verification (Outbox will deliver):', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
     });
 
     return {
       success: true,
       message: 'Verification link resent successfully',
-      ...(process.env.NODE_ENV !== 'production' ? { verifyToken } : {})
     };
   }
 
@@ -618,17 +916,22 @@ export class AuthService {
         throw err;
       }
       if (isAxiosError(err)) {
-        logger.warn(`Google token verification failed with status ${err.response?.status}: ${JSON.stringify(err.response?.data || err.message)}`);
+        logger.warn('Google token verification failed with response status:', {
+          status: err.response?.status,
+          data: err.response?.data,
+        });
         throw new UnauthorizedError('Google could not verify this account');
       }
-      logger.error('Error contacting Google OAuth service:', err);
+      logger.error('Error contacting Google OAuth service:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       throw new UnauthorizedError('Google authentication failed');
     }
 
     // 2. Validate token claims
     const googleClientId = process.env.GOOGLE_CLIENT_ID;
     if (googleClientId && payload.aud && payload.aud !== googleClientId) {
-      logger.warn(`Google token audience mismatch: expected ${googleClientId}, got ${payload.aud}`);
+      logger.warn('Google token audience mismatch:', { expected: googleClientId, got: payload.aud });
       throw new UnauthorizedError('Google credential audience mismatch');
     }
 
@@ -663,7 +966,7 @@ export class AuthService {
         isEmailVerified: true,
       });
 
-      // Stage durable outbox event for user registration
+      // Stage durable outbox event for user registration (blocking for dual-write consistency)
       if (this.outboxRepo) {
         try {
           await this.outboxRepo.stageEvent(null, {
@@ -672,45 +975,51 @@ export class AuthService {
             eventType: 'USER_REGISTERED',
             aggregateType: 'USER',
             aggregateId: user.id,
+            aggregateSequence: 1,
             payload: {
               id: registrationEventId,
               version: 1,
               eventType: 'USER_REGISTERED',
               producer: 'auth-service',
               timestamp: new Date().toISOString(),
-              partitionKey: user.id,
-              aggregateType: 'USER',
-              aggregateId: user.id,
-              aggregateSequence: 1,
               payload: {
                 userId: user.id,
                 email: user.email,
                 firstName: user.firstName,
                 lastName: user.lastName,
-                phone: user.phone || undefined,
                 roles: user.roles,
-                role: user.roles[0],
               },
             },
           });
-        } catch (err) {
-          logger.error('Failed to stage outbox event for Google registration:', err);
+        } catch (err: unknown) {
+          logger.error('Failed to stage outbox event for Google registration:', {
+            error: err instanceof Error ? err.message : String(err),
+            userId: user.id,
+          });
+          throw new ServiceUnavailableError(
+            'Failed to complete account registration. Please try again.',
+            'OUTBOX_STAGE_FAILED',
+            err instanceof Error ? err : undefined,
+          );
         }
       }
 
-      // Publish Kafka user registered event
-      await publishUserRegistered(
+      const registeredUser = user;
+      publishUserRegistered(
         {
-          userId: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          phone: user.phone || undefined,
-          roles: user.roles,
-          role: user.roles[0],
+          userId: registeredUser.id,
+          email: registeredUser.email,
+          firstName: registeredUser.firstName,
+          lastName: registeredUser.lastName,
+          roles: registeredUser.roles,
         },
         registrationEventId
-      );
+      ).catch((err: unknown) => {
+        logger.warn('Direct Kafka event publication failed for Google registration (Outbox will deliver):', {
+          error: err instanceof Error ? err.message : String(err),
+          userId: registeredUser.id,
+        });
+      });
     } else {
       // If user exists and email was not marked verified, verify it now
       if (!user.isEmailVerified) {
@@ -718,16 +1027,19 @@ export class AuthService {
       }
     }
 
-    const firstName = user.firstName || 'User';
-    const lastName = user.lastName || '';
+    if (!user) {
+      throw new InternalServerError('Failed to resolve authenticated Google user');
+    }
+
+    const firstName = user.firstName;
+    const lastName = user.lastName;
 
     // 4. Session & Token generation
-    const userRoles = user.roles ?? ((user as any).role ? [(user as any).role as Role] : [Role.RIDER]);
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
-      roles: userRoles,
+      roles: user.roles,
       firstName,
       lastName,
       sessionId,
@@ -735,31 +1047,54 @@ export class AuthService {
     });
     const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
 
-    const session = await this.sessionRepo.create({
-      id: sessionId,
-      userId: user.id,
-      refreshToken,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      ipAddress,
-      userAgent: userAgent ? userAgent.slice(0, 1000) : undefined,
-    });
+    let session;
+    try {
+      session = await this.sessionRepo.create({
+        id: sessionId,
+        userId: user.id,
+        refreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ipAddress,
+        userAgent: userAgent ? userAgent.slice(0, 1000) : undefined,
+      });
+    } catch (err: unknown) {
+      logger.error('Failed to create session for Google login:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+      throw new InternalServerError('Failed to create session for Google authentication');
+    }
 
     // Cache tokens in Redis
-    await cacheTokens(user.id, session.id, accessToken, refreshToken);
+    try {
+      await cacheTokens(user.id, session.id, accessToken, refreshToken);
+    } catch (err: unknown) {
+      logger.warn('Failed to cache Google user tokens in Redis:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
 
     // Audit log
-    await this.auditRepo.record({
-      userId: user.id,
-      action: isNewUser ? 'USER_REGISTERED_GOOGLE' : 'USER_LOGIN_GOOGLE',
-      ipAddress,
-    });
+    try {
+      await this.auditRepo.record({
+        userId: user.id,
+        action: isNewUser ? 'USER_REGISTERED_GOOGLE' : 'USER_LOGIN_GOOGLE',
+        ipAddress,
+      });
+    } catch (err: unknown) {
+      logger.warn('Failed to record audit log for Google auth:', {
+        error: err instanceof Error ? err.message : String(err),
+        userId: user.id,
+      });
+    }
 
     const userPayload = {
       id: user.id,
       email: user.email,
       firstName,
       lastName,
-      roles: userRoles,
+      roles: user.roles,
       isEmailVerified: user.isEmailVerified,
       avatarUrl: user.avatarUrl,
     };
@@ -772,4 +1107,3 @@ export class AuthService {
     };
   }
 }
-

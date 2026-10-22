@@ -12,7 +12,7 @@ const connectionString =
   'postgresql://auth_user:auth_secure_pass@localhost:5432/urbanfleet_auth?schema=public';
 
 /**
- * Production-grade PostgreSQL connection pooling:
+ * PostgreSQL connection pooling:
  * - max: 20 concurrent connections in pool
  * - min: 2 warm idle connections
  * - idleTimeoutMillis: 30000 (close idle connections after 30s)
@@ -38,5 +38,5 @@ const adapter = new PrismaPg(pool);
 
 export const prisma = new PrismaClient({
   adapter,
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  log: ['error'],
 });

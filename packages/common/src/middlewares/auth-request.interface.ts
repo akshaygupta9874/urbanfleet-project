@@ -6,8 +6,8 @@ export interface AuthUser {
   email: string;
   roles: string[];
   driverId?: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
 }
 
 export interface AuthenticatedRequest extends Request {

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
-  Phone,
+  Mail,
   Shield,
   Star,
   Car,
@@ -196,12 +196,12 @@ function DriverCard({
   firstName,
   lastName,
   vehicleNo,
-  phone,
+  email,
 }: {
   firstName: string;
   lastName: string;
   vehicleNo: string;
-  phone?: string;
+  email: string;
 }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[#c58a3a]/40 bg-gradient-to-br from-[#fffaf0] via-[#fff4dc] to-[#f7e2b8] p-4 shadow-md w-full">
@@ -233,13 +233,13 @@ function DriverCard({
             </div>
           </div>
         </div>
-        {phone && (
+        {email && (
           <a
-            href={`tel:${phone}`}
+            href={`mailto:${email}`}
             className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8722c]"
-            aria-label="Call driver"
+            aria-label="Email driver"
           >
-            <Phone className="h-4 w-4" />
+            <Mail className="h-4 w-4" />
           </a>
         )}
       </div>
@@ -572,7 +572,7 @@ export default function RideDetails() {
     ride.driver?.vehicleNumber ||
     ride.driver?.vehicle?.registrationNumber ||
     "Vehicle Details Pending";
-  const driverPhone = ride.driver?.phone ;
+  const driverEmail = ride.driver?.user?.email || ride.driver?.email || "";
 
   const activeFareValue = ride.fare.final ?? ride.fare.estimated ?? 0;
   const activeDistance = ride.distance.actual ?? ride.distance.estimated ?? 0;
@@ -729,7 +729,7 @@ export default function RideDetails() {
 
             {/* Driver Card */}
             {ride.driver && (
-              <DriverCard firstName={driverFirstName} lastName={driverLastName} vehicleNo={vehicleNo} phone={driverPhone} />
+              <DriverCard firstName={driverFirstName} lastName={driverLastName} vehicleNo={vehicleNo} email={driverEmail} />
             )}
 
             {ride.otp && ["SEARCHING", "DRIVER_ASSIGNED", "DRIVER_ARRIVING"].includes(ride.status) && (

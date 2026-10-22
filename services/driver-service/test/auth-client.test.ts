@@ -20,7 +20,6 @@ describe('AuthClient Inter-Service HTTP Communication in driver-service', () => 
       email: 'driver@urbanfleet.com',
       firstName: 'John',
       lastName: 'Driver',
-      phone: '+919876543210',
       role: 'DRIVER',
       isEmailVerified: true,
     };

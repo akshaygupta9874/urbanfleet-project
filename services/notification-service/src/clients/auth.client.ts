@@ -5,7 +5,6 @@ export interface AuthUser {
   email: string;
   firstName: string;
   lastName: string;
-  phone?: string | null;
   role: string;
   isEmailVerified: boolean;
 }
@@ -21,7 +20,6 @@ export class AuthClient {
       timeout: 5000,
       headers: {
         Accept: 'application/json',
-        'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '',
       },
     });
   }

@@ -1,16 +1,14 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller.js';
-import { validateRequest } from '@urbanfleet/common';
+import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 import { verifyCsrfToken } from '../middlewares/csrf.middleware.js';
+import { authRedisClient } from '../redis/client.js';
 import {
   registerSchema,
   loginSchema,
   verifyOtpSchema,
   verifyTokenParamSchema,
-  verify2FASchema,
-  disable2FASchema,
-  regenerateRecoveryCodesSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   changePasswordSchema,
@@ -21,16 +19,61 @@ import {
 export function createAuthRouter(controller: AuthController): Router {
   const router = Router();
 
+  // Sliding Window Rate Limiters
+  const loginLimiter = slidingWindowRateLimit({
+    redis: authRedisClient,
+    limit: 10,
+    windowSeconds: 60,
+    keyPrefix: 'rl:auth:login',
+    keyGenerator: (req) => `${req.ip}:${req.body?.email || 'anon'}`,
+    failOpen: true,
+  });
+
+  const otpLimiter = slidingWindowRateLimit({
+    redis: authRedisClient,
+    limit: 5,
+    windowSeconds: 300,
+    keyPrefix: 'rl:auth:otp',
+    keyGenerator: (req) => `${req.body?.email || req.body?.userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
+  const registerLimiter = slidingWindowRateLimit({
+    redis: authRedisClient,
+    limit: 10,
+    windowSeconds: 60,
+    keyPrefix: 'rl:auth:register',
+    failOpen: true,
+  });
+
+  const recoveryLimiter = slidingWindowRateLimit({
+    redis: authRedisClient,
+    limit: 5,
+    windowSeconds: 300,
+    keyPrefix: 'rl:auth:recovery',
+    keyGenerator: (req) => `${req.body?.email || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
+  const passwordChangeLimiter = slidingWindowRateLimit({
+    redis: authRedisClient,
+    limit: 5,
+    windowSeconds: 300,
+    keyPrefix: 'rl:auth:pwd-change',
+    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
   // Public Health Endpoint
   router.get('/health', (_req, res) => res.status(200).json({ status: 'UP', service: 'auth-service' }));
 
   // Public Identity Endpoints
-  router.post('/register', validateRequest({ body: registerSchema }), controller.register);
-  router.post('/login', validateRequest({ body: loginSchema }), controller.login);
+  router.post('/register', registerLimiter, validateRequest({ body: registerSchema }), controller.register);
+  router.post('/login', loginLimiter, validateRequest({ body: loginSchema }), controller.login);
   if (controller.googleAuth) {
-    router.post('/google', validateRequest({ body: googleAuthSchema }), controller.googleAuth);
+    router.post('/google', loginLimiter, validateRequest({ body: googleAuthSchema }), controller.googleAuth);
   }
-  router.post('/verify-otp', validateRequest({ body: verifyOtpSchema }), controller.verifyOtp);
+  router.post('/verify-otp', otpLimiter, validateRequest({ body: verifyOtpSchema }), controller.verifyOtp);
   router.post('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
   router.get('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
   router.post('/refresh-token', controller.refreshToken);
@@ -39,40 +82,28 @@ export function createAuthRouter(controller: AuthController): Router {
 
   // Password & Email Recovery Endpoints
   if (controller.forgotPassword) {
-    router.post('/forgot-password', validateRequest({ body: forgotPasswordSchema }), controller.forgotPassword);
+    router.post('/forgot-password', recoveryLimiter, validateRequest({ body: forgotPasswordSchema }), controller.forgotPassword);
   }
   if (controller.resetPassword) {
-    router.post('/reset-password', validateRequest({ body: resetPasswordSchema }), controller.resetPassword);
+    router.post('/reset-password', recoveryLimiter, validateRequest({ body: resetPasswordSchema }), controller.resetPassword);
   }
   if (controller.resendVerificationEmail) {
-    router.post('/resend-verification', validateRequest({ body: resendVerificationSchema }), controller.resendVerificationEmail);
+    router.post('/resend-verification', recoveryLimiter, validateRequest({ body: resendVerificationSchema }), controller.resendVerificationEmail);
   }
 
   // Authenticated Profile & User Endpoints
-  router.post('/internal/users/:id/driver-role', authMiddleware, controller.grantDriverRole);
+  if (controller.grantDriverRole) {
+    router.post('/internal/users/:id/driver-role', authMiddleware, controller.grantDriverRole);
+  }
   router.get('/me', authMiddleware, controller.getProfile);
   if (controller.getUserById) {
     router.get('/users/:id', authMiddleware, controller.getUserById);
   }
   if (controller.changePassword) {
-    router.post('/change-password', authMiddleware, verifyCsrfToken, validateRequest({ body: changePasswordSchema }), controller.changePassword);
+    router.post('/change-password', authMiddleware, passwordChangeLimiter, verifyCsrfToken, validateRequest({ body: changePasswordSchema }), controller.changePassword);
   }
   if (controller.refreshCSRF) {
     router.post('/refresh-csrf', authMiddleware, controller.refreshCSRF);
-  }
-
-  // 2FA Management Endpoints (Requires Authentication & Anti-CSRF)
-  if (controller.enable2FA) {
-    router.post('/2fa/initiate', authMiddleware, verifyCsrfToken, controller.enable2FA);
-  }
-  if (controller.verify2FA) {
-    router.post('/2fa/verify', authMiddleware, verifyCsrfToken, validateRequest({ body: verify2FASchema }), controller.verify2FA);
-  }
-  if (controller.disable2FA) {
-    router.post('/2fa/disable', authMiddleware, verifyCsrfToken, validateRequest({ body: disable2FASchema }), controller.disable2FA);
-  }
-  if (controller.regenerateRecoveryCodes) {
-    router.post('/2fa/recovery-codes', authMiddleware, verifyCsrfToken, validateRequest({ body: regenerateRecoveryCodesSchema }), controller.regenerateRecoveryCodes);
   }
 
   return router;

@@ -197,7 +197,7 @@ export const sendResetPasswordEmail = async (params: ResetPasswordEmailParams) =
 };
 
 export interface RideReceiptEmailParams {
-  email?: string;
+  email: string;
   rideId: string;
   paymentId?: string;
   totalFarePaise?: number;

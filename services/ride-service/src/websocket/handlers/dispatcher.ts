@@ -1,6 +1,9 @@
 import { AuthenticatedSocket } from '../types.js';
 import { SocketMessageSchema } from '../validators/socket.validator.js';
 import { sendSocketError } from '../utils/send-error.js';
+import { createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('ride-websocket-dispatcher');
 import {
   DriverEvents,
   RiderEvents,
@@ -71,7 +74,10 @@ export function registerDispatcher(socket: AuthenticatedSocket): void {
       }
 
       sendSocketError(socket, 'Unknown event.');
-    } catch (error) {
+    } catch (error: unknown) {
+      logger.warn('Error handling WebSocket message', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       sendSocketError(socket, 'Invalid WebSocket message.');
     }
   });

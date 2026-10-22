@@ -127,11 +127,11 @@ services:
     expose:
       - "4001"
     environment:
+      NODE_ENV: production
       PORT: 4001
       DATABASE_URL: "postgresql://auth_user:${AUTH_DB_PASSWORD:-auth_pass_local}@postgres:5432/urbanfleet_auth?schema=public"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_pass_local}@redis:6379"
       KAFKA_BROKERS: "kafka:29092"
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       JWT_PRIVATE_KEY_BASE64: ${JWT_PRIVATE_KEY_BASE64:-}
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
@@ -158,11 +158,11 @@ services:
     expose:
       - "4002"
     environment:
+      NODE_ENV: production
       PORT: 4002
       DATABASE_URL: "postgresql://driver_user:${DRIVER_DB_PASSWORD:-driver_pass_local}@postgres:5432/urbanfleet_driver?schema=public"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_pass_local}@redis:6379"
       KAFKA_BROKERS: "kafka:29092"
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
@@ -191,11 +191,11 @@ services:
     expose:
       - "4004"
     environment:
+      NODE_ENV: production
       PORT: 4004
       DATABASE_URL: "postgresql://ride_user:${RIDE_DB_PASSWORD:-ride_pass_local}@postgres:5432/urbanfleet_ride?schema=public"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_pass_local}@redis:6379"
       KAFKA_BROKERS: "kafka:29092"
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       DRIVER_SERVICE_URL: "http://driver-service:4002"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
@@ -220,11 +220,11 @@ services:
     expose:
       - "4005"
     environment:
+      NODE_ENV: production
       PORT: 4005
       DATABASE_URL: "postgresql://payment_user:${PAYMENT_DB_PASSWORD:-payment_pass_local}@postgres:5432/urbanfleet_payment?schema=public"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_pass_local}@redis:6379"
       KAFKA_BROKERS: "kafka:29092"
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       RIDE_SERVICE_URL: "http://ride-service:4004"
       AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
@@ -254,11 +254,11 @@ services:
     expose:
       - "4003"
     environment:
+      NODE_ENV: production
       PORT: 4003
       DATABASE_URL: "postgresql://notification_user:${NOTIFICATION_DB_PASSWORD:-notif_pass_local}@postgres:5432/urbanfleet_notification?schema=public"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-redis_pass_local}@redis:6379"
       KAFKA_BROKERS: "kafka:29092"
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}

@@ -6,9 +6,7 @@ export const UserRegisteredPayloadSchema = z.object({
   email: z.string().email(),
   firstName: z.string(),
   lastName: z.string(),
-  phone: z.string().optional(),
   roles: z.array(z.enum(['RIDER', 'DRIVER', 'ADMIN'])).optional(),
-  role: z.enum(['RIDER', 'DRIVER', 'ADMIN']).optional()
 });
 export type UserRegisteredPayload = z.infer<typeof UserRegisteredPayloadSchema>;
 
@@ -31,8 +29,8 @@ export const RideCompletedPayloadSchema = z.object({
   surgeMultiplier: z.number().positive(),
   distanceKm: z.number().positive(),
   durationMinutes: z.number().int().positive(),
-  driverEarningPaise: z.number().int().nonnegative().optional(),
-  platformCommissionPaise: z.number().int().nonnegative().optional(),
+  driverEarningPaise: z.number().int().nonnegative(),
+  platformCommissionPaise: z.number().int().nonnegative(),
   completedAt: z.string().datetime()
 });
 export type RideCompletedPayload = z.infer<typeof RideCompletedPayloadSchema>;

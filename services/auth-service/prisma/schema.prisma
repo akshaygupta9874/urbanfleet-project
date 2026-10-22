@@ -26,14 +26,8 @@ model User {
   passwordHash               String        @map("password_hash") @db.VarChar(255)
   firstName                  String        @map("first_name") @db.VarChar(50)
   lastName                   String        @map("last_name") @db.VarChar(50)
-  phone                      String?       @unique @db.VarChar(20)
   roles                      Role[]        @default([RIDER])
   isEmailVerified            Boolean       @default(false) @map("is_email_verified")
-  twoFactorEnabled           Boolean       @default(false) @map("two_factor_enabled")
-  twoFactorSecret            String?       @map("two_factor_secret") @db.VarChar(255)
-  twoFactorPendingSecret     String?       @map("two_factor_pending_secret") @db.VarChar(255)
-  twoFactorSetupRequestedAt  DateTime?     @map("two_factor_setup_requested_at")
-  twoFactorRecoveryCodes     String?       @map("two_factor_recovery_codes") @db.Text
   avatarUrl                  String?       @map("avatar_url") @db.VarChar(500)
   status                     String        @default("ACTIVE") @db.VarChar(20)
 

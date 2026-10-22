@@ -1,4 +1,7 @@
 import { AuthenticatedSocket } from '../types.js';
+import { createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('driver-websocket-handler');
 import { DriverEvents, ServerEvents } from '../event.constants.js';
 import {
   UpdateDriverLocationSchema,
@@ -240,8 +243,11 @@ async function handleUpdateLocation(
           longitude: result.data.longitude,
         });
       }
-    } catch {
-      // Ignored for non-active ride location telemetry
+    } catch (err: unknown) {
+      logger.debug('Error checking active ride on location update', {
+        driverId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }
@@ -274,6 +280,7 @@ async function handleAcceptRide(
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to accept ride.';
+      logger.error('Failed to accept ride', { rideId: result.data.rideId, driverId, error: message });
       sendSocketError(socket, message);
     }
   }
@@ -296,7 +303,12 @@ async function handleRejectRide(
     if (deps.rideService) {
       try {
         ride = await deps.rideService.getRideById(result.data.rideId);
-      } catch {}
+      } catch (err: unknown) {
+        logger.warn('Failed to retrieve ride in handleRejectRide', {
+          rideId: result.data.rideId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
     await deps.dispatchService.handleDriverResponse(result.data.rideId, driverId, false, ride);
   }
@@ -336,6 +348,7 @@ async function handleArrived(
       socket.send(JSON.stringify({ event: ServerEvents.DRIVER_ARRIVED, data: { ride: rideDto } }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to record arrival.';
+      logger.error('Failed to record arrival', { rideId: result.data.rideId, driverId, error: message });
       sendSocketError(socket, message);
     }
   }
@@ -369,6 +382,7 @@ async function handleArrivedAtDestination(
       socket.send(JSON.stringify({ event: ServerEvents.ARRIVED_AT_DESTINATION, data: { ride: rideDto } }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to record destination arrival.';
+      logger.error('Failed to record destination arrival', { rideId: result.data.rideId, driverId, error: message });
       sendSocketError(socket, message);
     }
   }
@@ -399,6 +413,7 @@ async function handleStartRide(
       socket.send(JSON.stringify({ event: ServerEvents.RIDE_STARTED, data: { ride: rideDto } }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to start ride.';
+      logger.error('Failed to start ride', { rideId: result.data.rideId, driverId, error: message });
       sendSocketError(socket, message);
     }
   }
@@ -432,6 +447,7 @@ async function handleCompleteRide(
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to complete ride.';
+      logger.error('Failed to complete ride', { rideId: result.data.rideId, driverId, error: message });
       sendSocketError(socket, message);
     }
   }
@@ -477,6 +493,7 @@ async function handleCancelRideByDriver(
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to cancel ride.';
+      logger.error('Failed to cancel ride by driver', { rideId: result.data.rideId, driverId, error: message });
       sendSocketError(socket, message);
     }
   }

@@ -82,24 +82,19 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
   // 2. Inter-Service Communication & Headers
   // ==========================================
   describe('RideClient Inter-Service Communication', () => {
-    it('transmits x-internal-service-key when INTERNAL_SERVICE_KEY is configured', async () => {
-      process.env.INTERNAL_SERVICE_KEY = 'test-internal-key-999';
+    it('updates payment status without internal service key headers', async () => {
       const client = new RideClient('http://test-ride-service:4003');
 
-      try {
-        const patchSpy = vi.spyOn((client as unknown as { client: { patch: Function } }).client, 'patch').mockResolvedValue({
-          status: 200,
-          data: { success: true, data: { ...makeRideDto('ride-1'), paymentStatus: 'CAPTURED' } },
-        });
+      const patchSpy = vi.spyOn((client as unknown as { client: { patch: Function } }).client, 'patch').mockResolvedValue({
+        status: 200,
+        data: { success: true, data: { ...makeRideDto('ride-1'), paymentStatus: 'CAPTURED' } },
+      });
 
-        await client.updatePaymentStatus('ride-1', 'CAPTURED');
+      await client.updatePaymentStatus('ride-1', 'CAPTURED');
 
-        expect(patchSpy).toHaveBeenCalled();
-        const headers = (client as unknown as { client: { defaults: { headers: Record<string, string> } } }).client.defaults.headers;
-        expect(headers['x-internal-service-key']).toBe('test-internal-key-999');
-      } finally {
-        delete process.env.INTERNAL_SERVICE_KEY;
-      }
+      expect(patchSpy).toHaveBeenCalled();
+      const headers = (client as unknown as { client: { defaults: { headers: Record<string, string> } } }).client.defaults.headers;
+      expect(headers['x-internal-service-key']).toBeUndefined();
     });
   });
 
@@ -162,6 +157,8 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
           riderId: 'rider-456',
           totalFarePaise: 50000,
           driverId: 'driver-789',
+          driverEarningPaise: 45000,
+          platformCommissionPaise: 5000,
         },
       };
 
@@ -287,6 +284,8 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
           riderId: 'rider-comp-fallback-1',
           totalFarePaise: 65000,
           driverId: 'driver-comp-fallback-1',
+          driverEarningPaise: 58500,
+          platformCommissionPaise: 6500,
         },
       };
 

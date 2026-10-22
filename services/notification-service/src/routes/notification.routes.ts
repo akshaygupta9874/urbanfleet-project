@@ -40,7 +40,7 @@ export function createNotificationRouter(notifRepo: NotificationRepository): Rou
     const userEmail = req.user?.email;
     const userId = req.userId;
     const roles: string[] = req.role || [];
-    const isPrivileged = roles.includes('ADMIN') || req.userId === 'internal-service';
+    const isPrivileged = roles.includes('ADMIN');
 
     const payload = typeof record.payload === 'object' && record.payload !== null
       ? (record.payload as Record<string, unknown>)

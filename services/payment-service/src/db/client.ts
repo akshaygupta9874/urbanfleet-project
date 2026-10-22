@@ -53,7 +53,7 @@ export type PaymentPrismaClient = PrismaClient & {
 
 const defaultPrisma = new PrismaClient({
   adapter,
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  log: ['error'],
 });
 
 const defaultRideExtension: RidePrismaExtension = {
@@ -95,7 +95,9 @@ const defaultUserExtension: UserPrismaExtension = {
           return { id: u.id || id, roles: u.roles || ['RIDER'] };
         }
       }
-    } catch {}
+    } catch (err: unknown) {
+      // Fallback to authClient if Redis lookup fails
+    }
     const { authClient } = await import('../clients/auth.client.js');
     const u = await authClient.getUserById(id);
     return u ? { id: u.id, roles: u.roles || ['RIDER'] } : null;

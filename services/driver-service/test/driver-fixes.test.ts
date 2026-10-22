@@ -271,68 +271,31 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
     });
   });
 
-  describe('Placeholder Driver Profile Completion & Registration Conflict', () => {
-    const placeholderProfile = {
-      id: 'drv-placeholder-1',
-      userId: 'usr-new-driver',
-      licenseNumber: 'PENDING_usr-new-',
-      verificationStatus: 'PENDING',
-      isVerified: false,
-      vehicles: [],
-      documents: [],
-    };
-
-    it('createDriverProfile updates existing placeholder profile instead of throwing ConflictError', async () => {
-      mockDriverRepo.findByUserId.mockResolvedValueOnce(placeholderProfile);
+  describe('Driver Registration & Conflict Handling', () => {
+    it('createDriverProfile creates a new profile when no profile exists', async () => {
+      mockDriverRepo.findByUserId.mockResolvedValueOnce(null);
+      mockDriverRepo.create.mockResolvedValueOnce({
+        id: 'drv-new-1',
+        userId: 'usr-new-driver',
+        licenseNumber: 'DL-NEW-556677',
+        verificationStatus: 'PENDING',
+      });
 
       const result = await driverService.createDriverProfile('usr-new-driver', 'DL-NEW-556677');
 
-      expect(mockDriverRepo.update).toHaveBeenCalledWith('drv-placeholder-1', {
+      expect(mockDriverRepo.create).toHaveBeenCalledWith({
+        userId: 'usr-new-driver',
         licenseNumber: 'DL-NEW-556677',
-        verificationStatus: 'PENDING',
       });
       expect(result).toBeDefined();
     });
 
-    it('createDriverProfile throws ConflictError if driver profile is already completed/approved', async () => {
+    it('createDriverProfile throws ConflictError if driver profile already exists', async () => {
       mockDriverRepo.findByUserId.mockResolvedValueOnce(mockFullProfile);
 
       await expect(
         driverService.createDriverProfile('usr-uuid-1', 'DL-NEW-999999')
       ).rejects.toThrow('Driver profile already exists for this account');
-    });
-
-    it('registerFullDriver updates existing placeholder profile via updateFullProfile', async () => {
-      mockDriverRepo.findByUserId.mockResolvedValueOnce(placeholderProfile);
-
-      const registrationData = {
-        userId: 'usr-new-driver',
-        licenseNumber: 'DL-REAL-123456',
-        vehicle: {
-          type: 'CAR',
-          brand: 'Hyundai',
-          model: 'i20',
-          color: 'Blue',
-          registrationNumber: 'DL-02-CD-5678',
-          registrationYear: 2023,
-        },
-        documents: [
-          {
-            type: 'DRIVING_LICENSE',
-            number: 'DL-REAL-123456',
-            frontImage: 'https://cloudinary.com/dl.jpg',
-          },
-        ],
-      };
-
-      const result = await driverService.registerFullDriver(registrationData);
-
-      expect(mockDriverRepo.updateFullProfile).toHaveBeenCalledWith(
-        'drv-placeholder-1',
-        registrationData
-      );
-      expect(result.id).toBe('drv-placeholder-1');
-      expect(result.verificationStatus).toBe('PENDING');
     });
 
     it('registerFullDriver creates new full profile if no existing record exists', async () => {
@@ -358,7 +321,7 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       expect(result.id).toBe('new-full-id');
     });
 
-    it('registerFullDriver throws ConflictError if existing profile is already completed/approved', async () => {
+    it('registerFullDriver throws ConflictError if driver application already exists for this account', async () => {
       mockDriverRepo.findByUserId.mockResolvedValueOnce(mockFullProfile);
 
       const registrationData = {

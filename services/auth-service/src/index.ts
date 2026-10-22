@@ -10,7 +10,6 @@ import { SessionRepository } from './repositories/session.repository.js';
 import { AuditRepository } from './repositories/audit.repository.js';
 import { AuthService } from './services/auth.service.js';
 import { UserService } from './services/user.service.js';
-import { TwoFactorService } from './services/two-factor.service.js';
 import { AdminService } from './services/admin.service.js';
 import { AuthController } from './controllers/auth.controller.js';
 import { AdminController } from './controllers/admin.controller.js';
@@ -49,10 +48,9 @@ outboxWorker.start();
 
 const authService = new AuthService(userRepo, sessionRepo, auditRepo, outboxRepo);
 const userService = new UserService(userRepo);
-const twoFactorService = new TwoFactorService(userRepo, auditRepo);
 const adminService = new AdminService(userRepo);
 
-const authController = new AuthController(authService, userService, twoFactorService);
+const authController = new AuthController(authService, userService);
 const adminController = new AdminController(adminService);
 
 // Health check endpoint (mounted before router)
@@ -71,13 +69,13 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
       await authRedisClient.ping();
       redisStatus = 'UP';
     } else {
-      redisStatus = process.env.NODE_ENV !== 'production' ? 'SKIPPED' : 'DOWN';
+      redisStatus = 'DOWN';
     }
   } catch {
     redisStatus = 'DOWN';
   }
 
-  const isHealthy = dbStatus === 'UP' && (redisStatus === 'UP' || redisStatus === 'SKIPPED');
+  const isHealthy = dbStatus === 'UP' && redisStatus === 'UP';
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'UP' : 'DOWN',
     service: 'auth-service',

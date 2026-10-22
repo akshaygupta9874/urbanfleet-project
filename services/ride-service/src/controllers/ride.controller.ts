@@ -4,7 +4,9 @@ import { RideService, CreateRideInput } from '../services/ride.service.js';
 import { FareService } from '../services/fare.service.js';
 import type { DispatchService } from '../services/dispatch.service.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
-import { AuthenticatedRequest, AppError } from '@urbanfleet/common';
+import { AuthenticatedRequest, AppError, createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('ride-controller');
 import type { EstimateFareDTO, RequestRideDTO } from '../validation/ride.validation.js';
 import { toRideDto } from '../utils/ride-dto.js';
 import { emitPaymentCaptured as emitPaymentCapturedToDriver } from '../websocket/emitters/driver.emitter.js';
@@ -72,8 +74,11 @@ export class RideController {
     if (this.dispatchService) {
       try {
         await this.dispatchService.broadcastRideRequest(ride);
-      } catch (err) {
-        // Non-blocking dispatch attempt log
+      } catch (err: unknown) {
+        logger.warn('Failed to broadcast ride request to nearby drivers', {
+          rideId: ride.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
@@ -246,14 +251,11 @@ export class RideController {
   });
 
   updatePaymentStatus = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const internalKey = req.headers['x-internal-service-key'];
-    const expectedKey = process.env.INTERNAL_SERVICE_KEY;
     const roles = req.roles ?? req.role ?? [];
     const isAdmin = roles.includes('ADMIN');
-    const isInternalService = Boolean(expectedKey && internalKey === expectedKey);
 
-    if (!isAdmin && !isInternalService) {
-      throw new AppError('Unauthorized: Only payment service or admin can update payment status', 403, 'FORBIDDEN');
+    if (!isAdmin) {
+      throw new AppError('Unauthorized: Only administrators can update payment status', 403, 'FORBIDDEN');
     }
 
     const rideId = getRideId(req);

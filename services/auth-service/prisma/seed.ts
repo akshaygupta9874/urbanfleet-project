@@ -35,7 +35,6 @@ async function main() {
       passwordHash,
       firstName: 'John',
       lastName: 'Rider',
-      phone: '+919876543210',
       roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -46,7 +45,6 @@ async function main() {
       passwordHash,
       firstName: 'John',
       lastName: 'Rider',
-      phone: '+919876543210',
       roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -61,7 +59,6 @@ async function main() {
       passwordHash,
       firstName: 'Sarah',
       lastName: 'Rider',
-      phone: '+919876543211',
       roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -72,7 +69,6 @@ async function main() {
       passwordHash,
       firstName: 'Sarah',
       lastName: 'Rider',
-      phone: '+919876543211',
       roles: [Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -87,7 +83,6 @@ async function main() {
       passwordHash,
       firstName: 'Alex',
       lastName: 'Driver',
-      phone: '+919876543220',
       roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -98,7 +93,6 @@ async function main() {
       passwordHash,
       firstName: 'Alex',
       lastName: 'Driver',
-      phone: '+919876543220',
       roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -113,7 +107,6 @@ async function main() {
       passwordHash,
       firstName: 'Rajesh',
       lastName: 'Kumar',
-      phone: '+919876543221',
       roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -124,7 +117,6 @@ async function main() {
       passwordHash,
       firstName: 'Rajesh',
       lastName: 'Kumar',
-      phone: '+919876543221',
       roles: [Role.DRIVER, Role.RIDER],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -139,7 +131,6 @@ async function main() {
       passwordHash,
       firstName: 'Fleet',
       lastName: 'Administrator',
-      phone: '+919876543230',
       roles: [Role.ADMIN],
       isEmailVerified: true,
       status: 'ACTIVE'
@@ -150,7 +141,6 @@ async function main() {
       passwordHash,
       firstName: 'Fleet',
       lastName: 'Administrator',
-      phone: '+919876543230',
       roles: [Role.ADMIN],
       isEmailVerified: true,
       status: 'ACTIVE'

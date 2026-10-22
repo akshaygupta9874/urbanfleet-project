@@ -5,13 +5,16 @@ import asyncHandler from "./asyncHandler.js";
 import { redisClient } from "../redis/client.js";
 import { prisma } from "../db/client.js";
 import { authClient } from "../clients/auth.client.js";
+import { createLogger, ServiceUnavailableError } from "@urbanfleet/common";
+
+const logger = createLogger("payment-auth-middleware");
 
 export interface AuthenticatedUser {
   userId: string;
   email: string;
   roles: string[];
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   driverId?: string;
 }
 
@@ -28,19 +31,23 @@ export interface AuthPayload extends JwtPayload {
   userId?: string;
   sessionId?: string;
   email?: string;
-  role?: string | string[];
+  role?: string;
   roles?: string[];
 }
 
-export const authMiddleware = asyncHandler(
+export const authMiddleware: RequestHandler = asyncHandler(
   async (request: AuthenticatedRequest, response: Response, next: NextFunction) => {
-    // If request already has authenticated user (test harness bypass), proceed
-    if (request.userId) {
+    // If request already has authenticated user (test bypass / mock), proceed
+    if (request.userId && request.user) {
       return next();
     }
 
     // 1. Extract Token
-    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
+    const token =
+      request.headers.authorization?.replace(/^Bearer\s+/i, "") ||
+      cookies?.accessToken ||
+      cookies?.token;
 
     if (!token) {
       throw new AppError("You are not authorized to access this resource.", 401, "UNAUTHORIZED");
@@ -58,20 +65,11 @@ export const authMiddleware = asyncHandler(
           audience: "urbanfleet-api",
         }) as AuthPayload;
       } else {
-        const secret = process.env.JWT_ACCESS_SECRET || "test-access-secret-only";
-        decodedData = jwt.verify(token, secret) as AuthPayload;
+        throw new AppError("CRITICAL: Missing JWT_PUBLIC_KEY_BASE64 in production!", 500, "AUTH_CONFIG_ERROR");
       }
     } catch (error: unknown) {
-      const secret = process.env.JWT_ACCESS_SECRET;
-      if (secret) {
-        try {
-          decodedData = jwt.verify(token, secret) as AuthPayload;
-        } catch (_) {
-          throw new AppError("Your token is invalid or expired.", 401, "TOKEN_EXPIRED");
-        }
-      } else {
-        throw new AppError("Your token is invalid or expired.", 401, "TOKEN_EXPIRED");
-      }
+      if (error instanceof AppError) throw error;
+      throw new AppError("Your token is invalid or expired.", 401, "TOKEN_EXPIRED");
     }
 
     const userId = decodedData.userId;
@@ -81,7 +79,7 @@ export const authMiddleware = asyncHandler(
       throw new AppError("Your session is invalid. Please sign in again.", 401, "INVALID_SESSION");
     }
 
-    // 3. Validate Session (Concurrent Redis checks)
+    // 3. Validate Session
     if (sessionId && redisClient.isOpen) {
       try {
         const [storedSession] = await Promise.all([
@@ -96,6 +94,10 @@ export const authMiddleware = asyncHandler(
         }
       } catch (e: unknown) {
         if (e instanceof AppError) throw e;
+        logger.warn("Redis session validation warning", {
+          error: e instanceof Error ? e.message : String(e),
+          sessionId,
+        });
       }
     }
 
@@ -119,7 +121,12 @@ export const authMiddleware = asyncHandler(
         if (userStr) {
           user = JSON.parse(userStr) as CachedUserRecord;
         }
-      } catch (err) {}
+      } catch (err: unknown) {
+        logger.warn("Failed to fetch user from Redis cache", {
+          error: err instanceof Error ? err.message : String(err),
+          userId,
+        });
+      }
     }
 
     if (!user) {
@@ -132,15 +139,20 @@ export const authMiddleware = asyncHandler(
         } else {
           user = (await authClient.getUserById(userId)) as CachedUserRecord | null;
         }
-      } catch (err) {}
+      } catch (err: unknown) {
+        logger.error("Failed to fetch user from authClient/prisma", {
+          error: err instanceof Error ? err.message : String(err),
+          userId,
+        });
+        throw new ServiceUnavailableError(
+          "Authentication service is temporarily unavailable",
+          "AUTH_SERVICE_UNAVAILABLE",
+          err instanceof Error ? err : undefined
+        );
+      }
 
       if (!user) {
-        const tokenRoles = Array.isArray(decodedData.roles) ? decodedData.roles : ["RIDER"];
-        user = {
-          id: userId,
-          email: decodedData.email || "",
-          roles: tokenRoles,
-        };
+        throw new AppError("User account not found or has been deactivated", 401, "USER_NOT_FOUND");
       }
     }
 
@@ -154,8 +166,8 @@ export const authMiddleware = asyncHandler(
       userId,
       email: typeof user.email === "string" ? user.email : (decodedData.email || ""),
       roles: userRoles,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: user.firstName || 'User',
+      lastName: user.lastName || '',
       driverId: request.driverId,
     };
 
@@ -178,8 +190,9 @@ export const requireRole = (...allowedRoles: string[]) => {
       );
     }
     next();
-  }) as unknown as RequestHandler;
+  }) as RequestHandler;
 };
 
 export const requireAdmin = requireRole("ADMIN");
+export const requireDriver = requireRole("DRIVER");
 export default authMiddleware;

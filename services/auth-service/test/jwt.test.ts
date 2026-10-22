@@ -1,73 +1,95 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { createAuthMiddleware } from '../src/middlewares/jwt-auth.middleware.js';
+import { authMiddleware } from '../src/middlewares/auth.middleware.js';
+import { signAccessToken } from '../src/crypto/keys.js';
 
-describe('RS256 Asymmetric JWT Verification Middleware in Auth Service', () => {
-  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-  });
-
-  const publicKeyBase64 = Buffer.from(publicKey).toString('base64');
-  const authMiddleware = createAuthMiddleware(publicKeyBase64);
-
-  it('should authenticate a valid RS256 token with pinned issuer and audience', () => {
-    const token = jwt.sign(
-      { userId: 'u-1', email: 'test@example.com', role: 'RIDER' },
-      privateKey,
-      { algorithm: 'RS256', expiresIn: '15m', issuer: 'urbanfleet-auth', audience: 'urbanfleet-api' }
-    );
+describe('RS256 Asymmetric JWT Verification in authMiddleware', () => {
+  it('should authenticate a valid RS256 token with pinned issuer and audience', async () => {
+    const token = signAccessToken({
+      userId: 'u-1',
+      email: 'test@example.com',
+      firstName: 'Test',
+      lastName: 'User',
+      roles: ['RIDER'],
+    });
 
     const req: any = { headers: { authorization: `Bearer ${token}` } };
+    const res: any = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    };
     let nextCalled = false;
-    let nextError: any = null;
 
-    authMiddleware(req, {}, (err) => {
+    await authMiddleware(req, res, () => {
       nextCalled = true;
-      nextError = err;
     });
 
     expect(nextCalled).toBe(true);
-    expect(nextError).toBeUndefined();
     expect(req.user.userId).toBe('u-1');
-    expect(req.user.role).toBe('RIDER');
+    expect(req.user.roles).toContain('RIDER');
   });
 
-  it('should reject a token with incorrect issuer or audience', () => {
-    const token = jwt.sign(
+  it('should reject a token with incorrect issuer or audience', async () => {
+    const { privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+
+    const rogueToken = jwt.sign(
       { userId: 'u-1', role: 'RIDER' },
       privateKey,
       { algorithm: 'RS256', expiresIn: '15m', issuer: 'rogue-issuer', audience: 'urbanfleet-api' }
     );
 
-    const req: any = { headers: { authorization: `Bearer ${token}` } };
-    let capturedErr: any = null;
+    const req: any = { headers: { authorization: `Bearer ${rogueToken}` } };
+    const res: any = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    };
+    let nextCalled = false;
 
-    authMiddleware(req, {}, (err) => {
-      capturedErr = err;
+    await authMiddleware(req, res, () => {
+      nextCalled = true;
     });
 
-    expect(capturedErr).toBeDefined();
-    expect(capturedErr.statusCode).toBe(401);
+    expect(nextCalled).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: 'INVALID_TOKEN',
+      })
+    );
   });
 
-  it('should reject an expired token', () => {
-    const token = jwt.sign(
-      { userId: 'u-1', role: 'RIDER' },
+  it('should reject an expired RS256 token with TOKEN_EXPIRED code', async () => {
+    const privateKey = Buffer.from(process.env.JWT_PRIVATE_KEY_BASE64!, 'base64').toString('utf-8');
+    const expiredToken = jwt.sign(
+      { userId: 'u-1', role: 'RIDER', tokenType: 'ACCESS' },
       privateKey,
       { algorithm: 'RS256', expiresIn: '-1s', issuer: 'urbanfleet-auth', audience: 'urbanfleet-api' }
     );
 
-    const req: any = { headers: { authorization: `Bearer ${token}` } };
-    let capturedErr: any = null;
+    const req: any = { headers: { authorization: `Bearer ${expiredToken}` } };
+    const res: any = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    };
+    let nextCalled = false;
 
-    authMiddleware(req, {}, (err) => {
-      capturedErr = err;
+    await authMiddleware(req, res, () => {
+      nextCalled = true;
     });
 
-    expect(capturedErr).toBeDefined();
-    expect(capturedErr.code).toBe('TOKEN_EXPIRED');
+    expect(nextCalled).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: 'TOKEN_EXPIRED',
+      })
+    );
   });
 });

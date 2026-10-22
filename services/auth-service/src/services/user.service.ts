@@ -6,16 +6,12 @@ import { cacheUser } from '../redis/token-cache.js';
 function sanitizeUser(user: User) {
   const {
     passwordHash,
-    twoFactorSecret,
-    twoFactorPendingSecret,
-    twoFactorRecoveryCodes,
-    twoFactorSetupRequestedAt,
     ...safeUser
   } = user;
   return {
     ...safeUser,
-    firstName: user.firstName || 'User',
-    lastName: user.lastName || '',
+    firstName: user.firstName,
+    lastName: user.lastName,
   };
 }
 
@@ -38,14 +34,20 @@ export class UserService {
     return sanitizeUser(user);
   }
 
-  async updateUser(id: string, data: { firstName?: string; lastName?: string; phone?: string; avatarUrl?: string }) {
+  async updateUser(id: string, data: { firstName?: string; lastName?: string; avatarUrl?: string }) {
     const updated = await this.userRepo.update(id, data);
     return sanitizeUser(updated);
   }
 
   async addDriverRole(id: string) {
     const user = await this.userRepo.addDriverRole(id);
-    await cacheUser(user);
+    await cacheUser({
+      id: user.id,
+      email: user.email,
+      roles: user.roles,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    });
     return sanitizeUser(user);
   }
 

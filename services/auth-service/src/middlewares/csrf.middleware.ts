@@ -2,7 +2,9 @@ import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
 import { getCsrfCookieOptions } from '../utils/cookie.js';
-import { ForbiddenError, UnauthorizedError, AuthenticatedRequest } from '@urbanfleet/common';
+import { ForbiddenError, UnauthorizedError, AuthenticatedRequest, createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('csrf-middleware');
 
 // Default to 24 hours (86400 seconds) if missing
 const CSRF_EXPIRE_SECONDS = process.env.CSRF_TOKEN_EXPIRE_SECONDS
@@ -21,8 +23,11 @@ export const generateCSRFToken = async (userId: string, response: Response): Pro
     if (authRedisClient.isOpen) {
       await authRedisClient.setEx(redisKey, CSRF_EXPIRE_SECONDS, csrfToken);
     }
-  } catch (err) {
-    // If Redis is temporarily unreachable, cookie still provides Double-Submit protection
+  } catch (err: unknown) {
+    logger.warn('Failed to cache CSRF token in Redis; falling back to double-submit cookie', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   response.cookie('csrfToken', csrfToken, getCsrfCookieOptions({
@@ -98,7 +103,12 @@ export const revokeCSRFToken = async (userId: string, response?: Response): Prom
     if (authRedisClient.isOpen) {
       await authRedisClient.del(redisKey);
     }
-  } catch (err) {}
+  } catch (err: unknown) {
+    logger.warn('Failed to delete CSRF token from Redis', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   if (response) {
     response.clearCookie('csrfToken', getCsrfCookieOptions());

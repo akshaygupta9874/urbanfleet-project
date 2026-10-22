@@ -1,7 +1,8 @@
 import { NextFunction, Request, Response, RequestHandler } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import crypto from 'crypto';
-import { AppError, AuthUser } from '@urbanfleet/common';
+import { AppError, AuthUser, createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('ride-auth-middleware');
 import asyncHandler from './asyncHandler.js';
 import { rideRedisClient } from '../redis/client.js';
 
@@ -30,23 +31,6 @@ export const authMiddleware: RequestHandler = asyncHandler(
       return next();
     }
 
-    // Allow internal service communication (strictly requiring configured non-fallback key)
-    const internalKey = req.headers['x-internal-service-key'];
-    const expectedKey = process.env.INTERNAL_SERVICE_KEY;
-    if (
-      expectedKey &&
-      internalKey &&
-      typeof internalKey === 'string' &&
-      internalKey.length === expectedKey.length &&
-      crypto.timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
-    ) {
-      req.userId = 'internal-service';
-      req.roles = ['ADMIN'];
-      req.role = ['ADMIN'];
-      req.user = { userId: 'internal-service', email: 'internal@urbanfleet.local', roles: ['ADMIN'] };
-      return next();
-    }
-
     // 1. Extract Token from Authorization header or cookie
     const cookies = (req.cookies || {}) as Record<string, string | undefined>;
     const token =
@@ -58,7 +42,7 @@ export const authMiddleware: RequestHandler = asyncHandler(
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');
     }
 
-    // 2. Verify Token
+    // 2. Verify Token (strictly production RS256)
     let decodedData: AuthPayload;
     try {
       const pubEnv = process.env.JWT_PUBLIC_KEY_BASE64;
@@ -69,24 +53,12 @@ export const authMiddleware: RequestHandler = asyncHandler(
           issuer: 'urbanfleet-auth',
           audience: 'urbanfleet-api',
         }) as AuthPayload;
-      } else if (process.env.NODE_ENV === 'production') {
-        throw new AppError('Server misconfiguration: Missing JWT public key in production', 500, 'INTERNAL_ERROR');
       } else {
-        const secret = process.env.JWT_ACCESS_SECRET || 'test-access-secret-only';
-        decodedData = jwt.verify(token, secret) as AuthPayload;
+        throw new AppError('Server misconfiguration: Missing JWT public key in production', 500, 'INTERNAL_ERROR');
       }
     } catch (error: unknown) {
       if (error instanceof AppError) throw error;
-      const secret = process.env.JWT_ACCESS_SECRET;
-      if (secret && process.env.NODE_ENV !== 'production') {
-        try {
-          decodedData = jwt.verify(token, secret) as AuthPayload;
-        } catch (_) {
-          throw new AppError('Your token is invalid or expired.', 401, 'TOKEN_EXPIRED');
-        }
-      } else {
-        throw new AppError('Your token is invalid or expired.', 401, 'TOKEN_EXPIRED');
-      }
+      throw new AppError('Your token is invalid or expired.', 401, 'TOKEN_EXPIRED');
     }
 
     // Token Type Defense (reject refresh tokens used as bearer)
@@ -117,6 +89,10 @@ export const authMiddleware: RequestHandler = asyncHandler(
         }
       } catch (e: unknown) {
         if (e instanceof AppError) throw e;
+        logger.warn('Failed to validate session in Redis', {
+          error: e instanceof Error ? e.message : String(e),
+          sessionId,
+        });
       }
     }
 
@@ -130,7 +106,12 @@ export const authMiddleware: RequestHandler = asyncHandler(
         if (userStr) {
           user = JSON.parse(userStr) as Record<string, unknown>;
         }
-      } catch (err) {}
+      } catch (err: unknown) {
+        logger.warn('Failed to fetch user from Redis cache', {
+          error: err instanceof Error ? err.message : String(err),
+          userId,
+        });
+      }
     }
 
     if (!user) {

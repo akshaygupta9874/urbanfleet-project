@@ -4,12 +4,12 @@ export interface CreateDocumentInput {
   driverProfileId: string;
   type: string;
   documentUrl: string;
-  number?: string;
-  frontImage?: string;
-  backImage?: string;
-  expiresAt?: Date;
-  status?: VerificationStatus;
-  isVerified?: boolean;
+  number: string | null | undefined;
+  frontImage: string | null | undefined;
+  backImage: string | null | undefined;
+  expiresAt: Date | null | undefined;
+  status: VerificationStatus;
+  isVerified: boolean;
 }
 
 export class DocumentRepository {
@@ -93,4 +93,3 @@ export class DocumentRepository {
     return this.prisma.document.delete({ where: { id } });
   }
 }
-

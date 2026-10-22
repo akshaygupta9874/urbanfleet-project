@@ -36,6 +36,8 @@ describe('Event Contracts & Zod Schema Validation', () => {
       surgeMultiplier: 1.2,
       distanceKm: 5.5,
       durationMinutes: 15,
+      driverEarningPaise: 13500,
+      platformCommissionPaise: 1500,
       completedAt: new Date().toISOString()
     };
 

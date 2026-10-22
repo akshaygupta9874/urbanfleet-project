@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
-import { AuthenticatedRequest, AppError } from '@urbanfleet/common';
+import { AuthenticatedRequest, AppError, createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('driver-controller');
 import { DriverService } from '../services/driver.service.js';
 import { DocumentService } from '../services/document.service.js';
 import {
@@ -63,10 +65,10 @@ export interface RawDriverProfile {
     registrationYear?: number;
   };
   user?: {
-    id?: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
   };
   firstName?: string;
   lastName?: string;
@@ -285,8 +287,11 @@ export class DriverController {
       if (uploadedPublicIds.length === 0) return;
       try {
         await this.cloudinaryService.deleteImages(uploadedPublicIds);
-      } catch (error) {
-        console.error('Failed to rollback uploaded images', error);
+      } catch (error: unknown) {
+        logger.error('Failed to rollback uploaded images on failure', {
+          error: error instanceof Error ? error.message : String(error),
+          uploadedPublicIds,
+        });
       }
     };
 

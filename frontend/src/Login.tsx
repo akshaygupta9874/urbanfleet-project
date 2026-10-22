@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, type Variants, AnimatePresence } from "framer-motion";
-import { Sparkles, MapPin, Navigation } from "lucide-react";
+import { Sparkles, MapPin, Navigation, Mail } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext, type User } from "./context/auth-context";
@@ -58,9 +58,6 @@ export default function LoginPage() {
   const [status, setStatus] = useState("");
   const [showOtp, setShowOtp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [challengeToken, setChallengeToken] = useState<string | null>(null);
-  const [isTwoFactorSetup, setIsTwoFactorSetup] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -81,52 +78,32 @@ export default function LoginPage() {
         accessToken?: string;
         user?: User;
         data?: {
+          requiresOtp?: boolean;
+          userId?: string;
+          email?: string;
+          devOtp?: string;
+          message?: string;
           accessToken?: string;
           user?: User;
-          requiresTwoFactor?: boolean;
-          requiresTwoFactorSetup?: boolean;
-          challengeToken?: string;
-          qrCodeUrl?: string;
-          otpauthUri?: string;
-          userId?: string;
-          message?: string;
         };
       }>("/login", {
         email,
         password,
       });
 
-      const accessToken = data.data?.accessToken ?? data.accessToken;
-      const user = data.data?.user ?? data.user;
-
-      if (data.data?.requiresTwoFactorSetup) {
-        setIsTwoFactorSetup(true);
-        setQrCodeUrl(data.data.qrCodeUrl || null);
-        setUserId(data.data.userId || null);
-        setStatus(data.data.message || "Admin 2FA setup required. Please scan the QR code with your authenticator app.");
-        setShowOtp(true);
-        return;
+      const resolvedUserId = data.data?.userId || null;
+      if (resolvedUserId) {
+        setUserId(resolvedUserId);
       }
 
-      const requiresTwoFactor = data.data?.requiresTwoFactor || !!data.devOtp;
-
-      if (requiresTwoFactor) {
-        if (data.data?.challengeToken) {
-          setChallengeToken(data.data.challengeToken);
-        }
-        if (data.devOtp) {
-          setStatus(`Code sent! (Testing OTP: ${data.devOtp} or use master code 123456)`);
-          setOtp(data.devOtp);
-        } else {
-          setStatus(data.data?.message || data.message || "Please enter your two-factor authentication code");
-        }
-        setShowOtp(true);
-      } else if (accessToken && user) {
-        establishSession(accessToken, user);
-        navigate("/dashboard", { replace: true });
+      const receivedDevOtp = data.data?.devOtp ?? data.devOtp;
+      if (receivedDevOtp) {
+        setStatus(`Verification code sent! (Dev code: ${receivedDevOtp} or 123456)`);
+        setOtp(receivedDevOtp);
       } else {
-        setStatus(data.message || "Signed in successfully");
+        setStatus("Verification code sent to your email. Please enter it below.");
       }
+      setShowOtp(true);
     } catch (error) {
       setStatus(
         error instanceof AxiosError
@@ -143,16 +120,12 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const payload: Record<string, string> = {};
-      if (challengeToken) {
-        payload.challengeToken = challengeToken;
-        payload.code = otp;
-      } else if (userId) {
+      const payload: Record<string, string> = {
+        email,
+        otp: otp.trim(),
+      };
+      if (userId) {
         payload.userId = userId;
-        payload.code = otp;
-      } else {
-        payload.email = email;
-        payload.otp = otp;
       }
 
       const { data } = await api.post<{
@@ -255,17 +228,19 @@ export default function LoginPage() {
             className="mb-5 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-[#ffd88a] shadow-[0_8px_20px_-8px_rgba(58,31,10,0.6)]"
           >
             <MapPin size={12} />
-            Welcome back
+            {showOtp ? "Email OTP Verification" : "Welcome back"}
           </motion.div>
 
           <motion.h2
             variants={itemVariants}
             className="mb-2 bg-gradient-to-br from-[#2e1808] via-[#6b3a12] to-[#b8722c] bg-clip-text text-3xl font-bold tracking-tight text-transparent md:text-4xl"
           >
-            Sign in to ride
+            {showOtp ? "Verify Login Code" : "Sign in to ride"}
           </motion.h2>
           <motion.p variants={itemVariants} className="mb-8 text-sm font-medium text-[#6b3a12]/80">
-            Enter your credentials to continue your journey.
+            {showOtp
+              ? `We sent a 6-digit verification code to ${email}.`
+              : "Enter your credentials to continue your journey."}
           </motion.p>
 
           {!showOtp ? (
@@ -319,12 +294,12 @@ export default function LoginPage() {
                         animate={{ rotate: 360 }}
                         transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
                       />
-                      Authenticating...
+                      Sending Code...
                     </>
                   ) : (
                     <>
                       <Navigation size={16} className="text-[#ffd88a]" />
-                      Continue
+                      Continue with OTP
                     </>
                   )}
                 </span>
@@ -332,29 +307,18 @@ export default function LoginPage() {
             </motion.form>
           ) : (
             <motion.div variants={itemVariants} className="mb-6 space-y-4">
-              {isTwoFactorSetup && qrCodeUrl && (
-                <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/95 text-center shadow-inner">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4416] mb-2">
-                    Scan with Authenticator App
-                  </p>
-                  <img
-                    src={qrCodeUrl}
-                    alt="2FA QR Code"
-                    className="w-44 h-44 rounded-lg shadow-sm border border-[#7a4416]/15 bg-white p-2"
-                  />
-                  <p className="text-xs text-[#6b3a12]/75 mt-2 max-w-[280px]">
-                    Open Google Authenticator, Authy, or 1Password to scan this code and retrieve your 6-digit TOTP code.
-                  </p>
-                </div>
-              )}
+              <div className="flex items-center gap-3 rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/80 p-3 text-xs text-[#6b3a12]">
+                <Mail size={16} className="text-[#b8722c] shrink-0" />
+                <span>Enter the 6-digit OTP code sent to your email to complete login.</span>
+              </div>
               <input
                 type="text"
-                placeholder={isTwoFactorSetup ? "Enter 6-digit code from app" : "Enter verification code / OTP"}
+                placeholder="Enter 6-digit OTP"
                 value={otp}
                 onChange={(event) => setOtp(event.target.value)}
                 maxLength={8}
                 required
-                className={`${inputBase} py-4 text-lg text-center tracking-widest font-mono`}
+                className={`${inputBase} py-4 text-lg text-center tracking-widest font-mono font-bold`}
               />
               <motion.button
                 type="button"
@@ -371,10 +335,10 @@ export default function LoginPage() {
                         animate={{ rotate: 360 }}
                         transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
                       />
-                      Verifying...
+                      Verifying OTP...
                     </>
                   ) : (
-                    isTwoFactorSetup ? "Activate 2FA & Sign In" : "Verify Code"
+                    "Verify Code & Sign In"
                   )}
                 </span>
               </motion.button>
@@ -382,9 +346,6 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => {
                   setShowOtp(false);
-                  setIsTwoFactorSetup(false);
-                  setQrCodeUrl(null);
-                  setChallengeToken(null);
                   setUserId(null);
                   setOtp("");
                   setStatus("");
@@ -464,7 +425,7 @@ export default function LoginPage() {
             variants={itemVariants}
             className="text-center text-[11px] leading-relaxed text-[#6b3a12]/65"
           >
-            By proceeding, you consent to get calls, WhatsApp or SMS messages, including by automated means, from Ride and its affiliates to the number provided.
+            By proceeding, you consent to receive account emails, receipts, and trip updates from UrbanFleet.
           </motion.p>
 
           {/* Brass bottom rail */}

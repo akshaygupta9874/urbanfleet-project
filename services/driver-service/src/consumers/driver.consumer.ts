@@ -50,32 +50,16 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
           // 3. Handle Business Mutations
           if (envelope.eventType === 'USER_REGISTERED') {
             const payload = envelope.payload as UserRegisteredPayload;
-            if (payload.roles?.includes('DRIVER') || payload.role === 'DRIVER') {
-              await tx.driverProfile.upsert({
-                where: { userId: payload.userId },
-                create: {
-                  userId: payload.userId,
-                  licenseNumber: `PENDING_${payload.userId.substring(0, 8)}`,
-                  verificationStatus: 'PENDING'
-                },
-                update: {}
-              });
-              logger.info(`Created driver profile shell for registered user ${payload.userId}`);
-            }
+            logger.info(`Acknowledged USER_REGISTERED event for user ${payload.userId}. Driver profile will only be created upon explicit driver registration.`);
           } else if (envelope.eventType === 'RIDE_COMPLETED') {
             const payload = envelope.payload as RideCompletedPayload;
             const profile = await tx.driverProfile.findFirst({
               where: {
-                OR: [
-                  { id: payload.driverId },
-                  { userId: payload.driverId }
-                ]
+                id: payload.driverId
               }
             });
             if (profile) {
-              const driverEarningPaise = payload.driverEarningPaise !== undefined
-                ? BigInt(payload.driverEarningPaise)
-                : (BigInt(payload.totalFarePaise) - BigInt(Math.round(payload.totalFarePaise * 0.10)));
+              const driverEarningPaise = BigInt(payload.driverEarningPaise);
 
               await tx.driverProfile.update({
                 where: { id: profile.id },

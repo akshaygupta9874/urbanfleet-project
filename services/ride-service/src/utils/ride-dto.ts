@@ -37,8 +37,8 @@ export function toRideDto(ride: Ride | null): RideDto | null {
         firstName: '',
         lastName: '',
         vehicleNumber: '',
-        phone: '',
-        user: { firstName: '', lastName: '', phone: '' },
+        email: '',
+        user: { firstName: '', lastName: '', email: '' },
         vehicle: { registrationNumber: '', model: '', color: '' },
       }
     : null;

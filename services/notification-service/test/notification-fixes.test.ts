@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import http from 'node:http';
@@ -276,9 +277,34 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
     let app: express.Express;
     let server: http.Server;
     let baseUrl: string;
-    const secret = 'test-access-secret-only';
+    const privKey = Buffer.from(process.env.JWT_PRIVATE_KEY_BASE64 || '', 'base64').toString('utf-8');
+    const signTestToken = (payload: object) =>
+      jwt.sign({ tokenType: 'ACCESS', ...payload }, privKey, {
+        algorithm: 'RS256',
+        issuer: 'urbanfleet-auth',
+        audience: 'urbanfleet-api',
+      });
 
     beforeEach(async () => {
+      vi.spyOn(authClient, 'getUserById').mockImplementation(async (userId: string) => {
+        let email = '';
+        let role = 'RIDER';
+        if (userId === 'usr-attacker') email = 'attacker@example.com';
+        if (userId === 'usr-owner') email = 'rider@example.com';
+        if (userId === 'admin-id') {
+          email = 'admin@urbanfleet.com';
+          role = 'ADMIN';
+        }
+        return {
+          id: userId,
+          email,
+          firstName: 'Test',
+          lastName: 'User',
+          role,
+          isEmailVerified: true,
+        };
+      });
+
       const repo = new NotificationRepository(mockPrisma);
       (repo as any).prisma = mockPrisma;
       app = express();
@@ -308,7 +334,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         { id: 'notif-other', recipient: 'usr-other', status: 'SENT', createdAt: new Date() }
       );
 
-      const tokenNoEmail = jwt.sign({ userId: 'usr-bounded-1', role: 'RIDER' }, secret);
+      const tokenNoEmail = signTestToken({ userId: 'usr-bounded-1', role: 'RIDER' });
 
       const res = await fetch(`${baseUrl}/my`, {
         method: 'GET',
@@ -327,7 +353,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
       stagedNotifications.push({ id: 'notif-1', recipient: 'someone@example.com', status: 'SENT' });
 
       // Token for user with no matching notifications
-      const tokenEmpty = jwt.sign({ userId: 'usr-no-notifications', role: 'RIDER' }, secret);
+      const tokenEmpty = signTestToken({ userId: 'usr-no-notifications', role: 'RIDER' });
 
       const res = await fetch(`${baseUrl}/my`, {
         method: 'GET',
@@ -348,7 +374,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         payload: { token: 'reset-token-123' },
       });
 
-      const attackerToken = jwt.sign({ userId: 'usr-attacker', email: 'attacker@example.com', role: 'RIDER' }, secret);
+      const attackerToken = signTestToken({ userId: 'usr-attacker', email: 'attacker@example.com', role: 'RIDER' });
 
       const res = await fetch(`${baseUrl}/notif-confidential-99`, {
         method: 'GET',
@@ -367,7 +393,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         status: 'SENT',
       });
 
-      const ownerToken = jwt.sign({ userId: 'usr-owner', email: 'rider@example.com', role: 'RIDER' }, secret);
+      const ownerToken = signTestToken({ userId: 'usr-owner', email: 'rider@example.com', role: 'RIDER' });
 
       const res = await fetch(`${baseUrl}/notif-user-doc`, {
         method: 'GET',
@@ -387,7 +413,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         status: 'SENT',
       });
 
-      const ownerToken = jwt.sign({ userId: 'usr-direct-id', role: 'RIDER' }, secret);
+      const ownerToken = signTestToken({ userId: 'usr-direct-id', role: 'RIDER' });
 
       const res = await fetch(`${baseUrl}/notif-user-by-id`, {
         method: 'GET',
@@ -407,7 +433,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         status: 'SENT',
       });
 
-      const adminToken = jwt.sign({ userId: 'admin-id', role: 'ADMIN' }, secret);
+      const adminToken = signTestToken({ userId: 'admin-id', role: 'ADMIN' });
 
       const res = await fetch(`${baseUrl}/notif-admin-inspect`, {
         method: 'GET',
@@ -420,7 +446,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
       expect(body.data.id).toBe('notif-admin-inspect');
     });
 
-    it('GET /:id: permits internal service to query notification via x-internal-service-key', async () => {
+    it('GET /:id: rejects unauthenticated requests even if x-internal-service-key is passed', async () => {
       stagedNotifications.push({
         id: 'notif-internal-inspect',
         recipient: 'anyone@example.com',
@@ -430,14 +456,11 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
       const res = await fetch(`${baseUrl}/notif-internal-inspect`, {
         method: 'GET',
         headers: {
-          'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || '9fef5ba5e9688b75efee1781b80dad81703c29df93181ab9c474532c3281dd99',
+          'x-internal-service-key': '9fef5ba5e9688b75efee1781b80dad81703c29df93181ab9c474532c3281dd99',
         },
       });
 
-      expect(res.status).toBe(200);
-      const body = await res.json() as any;
-      expect(body.success).toBe(true);
-      expect(body.data.id).toBe('notif-internal-inspect');
+      expect(res.status).toBe(401);
     });
   });
 });

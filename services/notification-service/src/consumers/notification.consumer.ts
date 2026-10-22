@@ -24,7 +24,15 @@ export async function initNotificationConsumer(
     await consumer.run({
       eachMessage: async ({ message }) => {
         if (!message.value) return;
-        const envelope: KafkaEnvelope<unknown> = JSON.parse(message.value.toString());
+        let envelope: KafkaEnvelope<unknown>;
+        try {
+          envelope = JSON.parse(message.value.toString()) as KafkaEnvelope<unknown>;
+        } catch (parseErr: unknown) {
+          logger.warn('Failed to parse Kafka message JSON in notification consumer', {
+            error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+          });
+          return;
+        }
 
         await prisma.$transaction(async (tx) => {
           // Idempotency check
@@ -37,7 +45,22 @@ export async function initNotificationConsumer(
             data: { eventId: envelope.id, consumerGroup }
           });
 
-          if (envelope.eventType === 'USER_EMAIL_VERIFICATION_REQUESTED') {
+          if (envelope.eventType === 'USER_LOGIN_OTP_REQUESTED') {
+            const payload = envelope.payload as { email: string; otp: string; userId?: string };
+            if (payload.email && payload.otp) {
+              await prisma.notificationRecord.create({
+                data: {
+                  recipient: payload.email,
+                  channel: 'EMAIL',
+                  template: 'OTP',
+                  idempotencyKey: `login_otp_${payload.email}_${payload.otp}_${Date.now()}`,
+                  payload: { otp: payload.otp },
+                  status: 'PENDING',
+                },
+              });
+              logger.info(`Staged login OTP email notification for ${payload.email}`);
+            }
+          } else if (envelope.eventType === 'USER_EMAIL_VERIFICATION_REQUESTED') {
             const payload = envelope.payload as { email: string; verifyToken: string; userId?: string };
             if (payload.email && payload.verifyToken) {
               await notifService.sendVerificationEmail(payload.email, payload.verifyToken);
@@ -74,8 +97,10 @@ export async function initNotificationConsumer(
               try {
                 const user = await authClient.getUserById(payload.riderId);
                 if (user?.email) recipientEmail = user.email;
-              } catch (fetchErr) {
-                logger.warn(`Could not query auth-service API for user ${payload.riderId}`);
+              } catch (fetchErr: unknown) {
+                logger.warn(`Could not query auth-service API for user ${payload.riderId}`, {
+                  error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+                });
               }
             }
 

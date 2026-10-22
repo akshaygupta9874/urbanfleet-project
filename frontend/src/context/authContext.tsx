@@ -10,11 +10,11 @@ import { AuthContext } from "./auth-context";
 type UserRole = "RIDER" | "DRIVER" | "ADMIN";
 
 export interface User {
-  id?: string;
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  roles?: UserRole[];
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  roles: UserRole[];
 }
 
 export interface AuthContextType {
@@ -40,9 +40,10 @@ async function requestAuthentication(): Promise<{ accessToken: string; user: Use
     const firstName = (rawUser.firstName as string) || "";
     const lastName = (rawUser.lastName as string) || "";
     const id = (rawUser.id as string) || "";
+    const email = (rawUser.email as string) || "";
     const normalizedUser: User = {
       id,
-      email: typeof rawUser.email === "string" ? rawUser.email : undefined,
+      email,
       firstName,
       lastName,
       roles,
@@ -105,9 +106,10 @@ export const AuthContextProvider = ({
     const firstName = authenticatedUser.firstName || "";
     const lastName = authenticatedUser.lastName || "";
     const id = authenticatedUser.id || "";
+    const email = authenticatedUser.email || "";
     const normalizedUser: User = {
-      ...authenticatedUser,
       id,
+      email,
       firstName,
       lastName,
       roles,
@@ -156,4 +158,3 @@ export const AuthContextProvider = ({
     </AuthContext.Provider>
   );
 };
-

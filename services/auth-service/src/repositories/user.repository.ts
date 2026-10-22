@@ -1,6 +1,16 @@
 import { PrismaClient, User, Role } from '../db/client.js';
 import { NotFoundError } from '@urbanfleet/common';
 
+export interface CreateUserData {
+  email: string;
+  passwordHash: string;
+  firstName: string;
+  lastName: string;
+  roles?: Role[];
+  avatarUrl?: string;
+  isEmailVerified?: boolean;
+}
+
 export class UserRepository {
   private prisma: PrismaClient;
 
@@ -16,20 +26,7 @@ export class UserRepository {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  async findByPhone(phone: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { phone } });
-  }
-
-  async create(data: {
-    email: string;
-    passwordHash: string;
-    firstName: string;
-    lastName: string;
-    phone?: string;
-    roles?: Role[];
-    avatarUrl?: string;
-    isEmailVerified?: boolean;
-  }): Promise<User> {
+  async create(data: CreateUserData): Promise<User> {
     return this.prisma.user.create({ data });
   }
 
@@ -59,43 +56,5 @@ export class UserRepository {
 
   async count(): Promise<number> {
     return this.prisma.user.count();
-  }
-
-  async consumeRecoveryCode(
-    userId: string,
-    codeHash: string
-  ): Promise<{ success: boolean; user: User; remainingCount: number } | null> {
-    return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { id: userId } });
-      if (!user || !user.twoFactorRecoveryCodes) {
-        return null;
-      }
-
-      let hashedCodes: string[] = [];
-      try {
-        hashedCodes = JSON.parse(user.twoFactorRecoveryCodes);
-      } catch {
-        return null;
-      }
-
-      const matchedIndex = hashedCodes.indexOf(codeHash);
-      if (matchedIndex === -1) {
-        return null;
-      }
-
-      hashedCodes.splice(matchedIndex, 1);
-      const updatedUser = await tx.user.update({
-        where: { id: userId },
-        data: {
-          twoFactorRecoveryCodes: JSON.stringify(hashedCodes),
-        },
-      });
-
-      return {
-        success: true,
-        user: updatedUser,
-        remainingCount: hashedCodes.length,
-      };
-    });
   }
 }

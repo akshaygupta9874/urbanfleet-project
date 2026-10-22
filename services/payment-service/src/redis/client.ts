@@ -27,10 +27,8 @@ export async function connectRedis(): Promise<void> {
       logger.info("Connected to Redis for payment locks & caching.");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      logger.warn("Redis connection failed. Distributed locks will fail open or retry.", { error: message });
-      if (process.env.NODE_ENV === "production") {
-        throw e;
-      }
+      logger.error("Redis connection failed. Distributed locks require active Redis.", { error: message });
+      throw e;
     }
   }
 }

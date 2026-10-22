@@ -1,38 +1,29 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import crypto from 'crypto';
-import { AppError } from '@urbanfleet/common';
+import { AppError, createLogger } from '@urbanfleet/common';
+
+const logger = createLogger('auth-middleware');
 import asyncHandler from './asyncHandler.js';
 import { prisma } from '../db/client.js';
 import { getPublicKey } from '../crypto/keys.js';
-import { validateSessionInRedis, getCachedUser, cacheUser } from '../redis/token-cache.js';
+import { validateSessionInRedis, getCachedUser, cacheUser, CachedUser } from '../redis/token-cache.js';
 
 export interface UserPayloadContext {
   userId: string;
   email: string;
   roles: string[];
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   driverId?: string;
 }
 
-export interface AuthMiddlewareUser {
-  id: string;
-  email: string;
-  roles: string[];
-  role?: string;
-  firstName?: string;
-  lastName?: string;
-  driverId?: string;
-  driver?: { id?: string };
-}
+// export type AuthMiddlewareUser = CachedUser;
 
 export interface AuthenticatedRequest extends Request {
-  userId?: string;
-  roles?: string[];
-  role?: string[];
+  userId: string;
+  roles: string[];
   driverId?: string;
-  user?: UserPayloadContext;
+  user: UserPayloadContext;
 }
 
 export interface AuthPayload extends JwtPayload {
@@ -40,7 +31,6 @@ export interface AuthPayload extends JwtPayload {
   userId?: string;
   sessionId?: string;
   email?: string;
-  role?: string | string[];
   roles?: string[];
   tokenType?: string;
 }
@@ -52,24 +42,8 @@ export const authMiddleware = asyncHandler(
       return next();
     }
 
-    // Allow internal service communication (strictly requiring configured non-fallback key)
-    const internalKey = request.headers['x-internal-service-key'];
-    const expectedKey = process.env.INTERNAL_SERVICE_KEY;
-    if (
-      expectedKey &&
-      internalKey &&
-      typeof internalKey === 'string' &&
-      internalKey.length === expectedKey.length &&
-      crypto.timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
-    ) {
-      request.userId = 'internal-service';
-      request.roles = ['ADMIN'];
-      request.role = ['ADMIN'];
-      request.user = { userId: 'internal-service', email: 'internal@urbanfleet.local', roles: ['ADMIN'] };
-      return next();
-    }
-
     // 1. Extract Token from Authorization header or cookie
+
     const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
     const token =
       request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
@@ -84,16 +58,9 @@ export const authMiddleware = asyncHandler(
       });
     }
 
-    // In test environment, support test bearer tokens or bypass
-    if (process.env.NODE_ENV === 'test' && (token === 'valid_jwt_token' || token === 'test-token')) {
-      request.userId = 'usr-1';
-      request.roles = ['RIDER'];
-      request.role = ['RIDER'];
-      request.user = { userId: 'usr-1', email: 'test@example.com', roles: ['RIDER'] };
-      return next();
-    }
 
-    // 2. Verify Token (RS256 asymmetric with pinned issuer & audience, or symmetric secret fallback)
+
+    // Strictly RS256 asymmetric verification with pinned issuer & audience
     let decodedData: AuthPayload;
     try {
       const pubKey = getPublicKey();
@@ -102,25 +69,19 @@ export const authMiddleware = asyncHandler(
         issuer: 'urbanfleet-auth',
         audience: 'urbanfleet-api',
       }) as AuthPayload;
-    } catch (_error: unknown) {
-      const secret = process.env.JWT_ACCESS_SECRET;
-      if (secret) {
-        try {
-          decodedData = jwt.verify(token, secret) as AuthPayload;
-        } catch (_) {
-          return response.status(401).json({
-            success: false,
-            code: 'TOKEN_EXPIRED',
-            message: 'Your token is invalid or expired.',
-          });
-        }
-      } else {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'TokenExpiredError') {
         return response.status(401).json({
           success: false,
           code: 'TOKEN_EXPIRED',
-          message: 'Your token is invalid or expired.',
+          message: 'Your token has expired.',
         });
       }
+      return response.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Your token is invalid or expired.',
+      });
     }
 
     if (decodedData.tokenType && decodedData.tokenType !== 'ACCESS') {
@@ -150,7 +111,7 @@ export const authMiddleware = asyncHandler(
     }
 
     // 4. Fetch User Data (Cache first, then PostgreSQL)
-    let user = await getCachedUser<AuthMiddlewareUser>(userId);
+    let user = await getCachedUser(userId);
 
     if (!user) {
       try {
@@ -161,13 +122,17 @@ export const authMiddleware = asyncHandler(
           user = {
             id: dbUser.id,
             email: dbUser.email,
-            role: dbUser.roles[0] || 'RIDER',
             roles: dbUser.roles,
             firstName: dbUser.firstName,
             lastName: dbUser.lastName,
           };
         }
-      } catch (err) {}
+      } catch (err: unknown) {
+        logger.warn('Failed to fetch user from database in auth middleware', {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
       if (!user) {
         // Fallback to token payload if user not in local DB during unit tests
@@ -175,8 +140,9 @@ export const authMiddleware = asyncHandler(
         user = {
           id: userId,
           email: decodedData.email || '',
-          role: typeof decodedData.role === 'string' ? decodedData.role : 'RIDER',
           roles,
+          firstName: 'User',
+          lastName: '',
         };
       } else {
         await cacheUser(user);
@@ -184,19 +150,19 @@ export const authMiddleware = asyncHandler(
     }
 
     // 5. Attach payload to Request and proceed
-    const userRoles = Array.isArray(user.roles) ? user.roles : ['RIDER'];
-    request.userId = user.id;
+    const currentUser = user!;
+    const userRoles = Array.isArray(currentUser.roles) ? currentUser.roles : ['RIDER'];
+    request.userId = currentUser.id;
     request.roles = userRoles;
-    request.role = userRoles;
-    if (user.driver?.id || user.driverId) {
-      request.driverId = user.driver?.id || user.driverId;
+    if (currentUser.driverId) {
+      request.driverId = currentUser.driverId;
     }
-    const firstName = user.firstName || 'User';
-    const lastName = user.lastName || '';
+    const firstName = currentUser.firstName || 'User';
+    const lastName = currentUser.lastName || '';
 
     request.user = {
-      userId: user.id,
-      email: user.email,
+      userId: currentUser.id,
+      email: currentUser.email,
       roles: userRoles,
       firstName,
       lastName,
@@ -208,11 +174,12 @@ export const authMiddleware = asyncHandler(
 );
 
 export const requireRole = (...allowedRoles: string[]) => {
-  return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (!req.userId) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles = authReq.roles || [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

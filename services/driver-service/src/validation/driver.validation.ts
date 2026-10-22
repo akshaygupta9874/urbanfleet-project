@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const createProfileSchema = z.object({
   userId: z.string().uuid('Invalid user UUID').optional(),
-  licenseNumber: z.string().min(4).max(50).optional(),
+  licenseNumber: z.string().min(4).max(50),
   vehicle: z
     .object({
       type: z.enum(['CAR', 'BIKE', 'AUTO']),
@@ -88,4 +88,3 @@ export const driverRegistrationSchema = z.object({
 });
 
 export type DriverRegistrationInput = z.infer<typeof driverRegistrationSchema>;
-

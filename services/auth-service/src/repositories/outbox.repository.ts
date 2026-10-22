@@ -15,7 +15,7 @@ export class OutboxRepository {
       eventType: string;
       aggregateType: string;
       aggregateId: string;
-      aggregateSequence?: number;
+      aggregateSequence: number;
       payload: Prisma.InputJsonValue;
     }
   ): Promise<OutboxEvent> {
@@ -27,7 +27,7 @@ export class OutboxRepository {
         eventType: data.eventType,
         aggregateType: data.aggregateType,
         aggregateId: data.aggregateId,
-        aggregateSequence: data.aggregateSequence || 1,
+        aggregateSequence: data.aggregateSequence,
         payload: data.payload,
         status: 'PENDING',
       },

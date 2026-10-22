@@ -12,13 +12,6 @@ export class DriverService {
   async createDriverProfile(userId: string, licenseNumber: string) {
     const existing = await this.driverRepo.findByUserId(userId);
     if (existing) {
-      const isPlaceholder = existing.licenseNumber.startsWith('PENDING_');
-      if (isPlaceholder) {
-        return this.driverRepo.update(existing.id, {
-          licenseNumber,
-          verificationStatus: 'PENDING',
-        });
-      }
       throw new ConflictError('Driver profile already exists for this account');
     }
     try {
@@ -30,13 +23,7 @@ export class DriverService {
         'code' in err &&
         (err as { code: unknown }).code === 'P2002';
       if (isPrismaP2002) {
-        const raceExisting = await this.driverRepo.findByUserId(userId);
-        if (raceExisting) {
-          return this.driverRepo.update(raceExisting.id, {
-            licenseNumber,
-            verificationStatus: 'PENDING',
-          });
-        }
+        throw new ConflictError('Driver profile already exists for this account');
       }
       throw err;
     }
@@ -143,13 +130,6 @@ export class DriverService {
   }) {
     const existing = await this.driverRepo.findByUserId(data.userId);
     if (existing) {
-      const isPlaceholder =
-        existing.licenseNumber.startsWith('PENDING_') ||
-        !existing.vehicles ||
-        existing.vehicles.length === 0;
-      if (isPlaceholder) {
-        return this.driverRepo.updateFullProfile(existing.id, data);
-      }
       throw new ConflictError('Driver application already exists for this account');
     }
     try {
@@ -161,13 +141,9 @@ export class DriverService {
         'code' in err &&
         (err as { code: unknown }).code === 'P2002';
       if (isPrismaP2002) {
-        const raceExisting = await this.driverRepo.findByUserId(data.userId);
-        if (raceExisting) {
-          return this.driverRepo.updateFullProfile(raceExisting.id, data);
-        }
+        throw new ConflictError('Driver application already exists for this account');
       }
       throw err;
     }
   }
 }
-

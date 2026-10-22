@@ -27,14 +27,14 @@ export function getAuthProducer(): Producer | null {
   return producer;
 }
 
-export async function publishUserRegistered(payload: UserRegisteredPayload, eventId?: string): Promise<void> {
+export async function publishUserRegistered(payload: UserRegisteredPayload, eventId: string): Promise<void> {
   if (!producer) {
     logger.warn('Kafka producer not connected. Event publication skipped.');
     return;
   }
 
   const envelope: KafkaEnvelope<UserRegisteredPayload> = {
-    id: eventId || crypto.randomUUID(),
+    id: eventId,
     version: 1,
     eventType: 'USER_REGISTERED',
     producer: 'auth-service',
@@ -119,5 +119,35 @@ export async function publishEmailVerificationRequested(payload: { userId: strin
     logger.info(`Published USER_EMAIL_VERIFICATION_REQUESTED for user ${payload.userId}`);
   } catch (err) {
     logger.error('Error publishing USER_EMAIL_VERIFICATION_REQUESTED event:', err);
+  }
+}
+
+export async function publishLoginOtpRequested(payload: { userId: string; email: string; otp: string }): Promise<void> {
+  if (!producer) {
+    logger.warn('Kafka producer not connected. Login OTP event publication skipped.');
+    return;
+  }
+
+  const envelope: KafkaEnvelope<{ userId: string; email: string; otp: string }> = {
+    id: crypto.randomUUID(),
+    version: 1,
+    eventType: 'USER_LOGIN_OTP_REQUESTED',
+    producer: 'auth-service',
+    timestamp: new Date().toISOString(),
+    partitionKey: payload.userId,
+    aggregateType: 'USER',
+    aggregateId: payload.userId,
+    aggregateSequence: 1,
+    payload
+  };
+
+  try {
+    await producer.send({
+      topic: EventTopics.AUTH_EVENTS,
+      messages: [{ key: envelope.partitionKey, value: JSON.stringify(envelope) }]
+    });
+    logger.info(`Published USER_LOGIN_OTP_REQUESTED for user ${payload.userId}`);
+  } catch (err) {
+    logger.error('Error publishing USER_LOGIN_OTP_REQUESTED event:', err);
   }
 }

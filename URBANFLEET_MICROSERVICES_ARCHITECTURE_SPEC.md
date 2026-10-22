@@ -874,7 +874,6 @@ model User {
   passwordHash        String        @map("password_hash") @db.VarChar(255)
   firstName           String        @map("first_name") @db.VarChar(50)
   lastName            String        @map("last_name") @db.VarChar(50)
-  phone               String?       @unique @db.VarChar(20)
   role                Role          @default(RIDER)
   isEmailVerified     Boolean       @default(false) @map("is_email_verified")
   twoFactorEnabled    Boolean       @default(false) @map("two_factor_enabled")

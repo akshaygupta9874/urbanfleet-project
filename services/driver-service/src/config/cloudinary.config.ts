@@ -1,25 +1,25 @@
 import { v2 as cloudinary } from 'cloudinary';
 import 'dotenv/config';
 
-import dns from 'node:dns';
-import http from 'node:http';
-import https from 'node:https';
+// import dns from 'node:dns';
+// import http from 'node:http';
+// import https from 'node:https';
 
-try {
-  if (typeof dns.setDefaultResultOrder === 'function') {
-    dns.setDefaultResultOrder('ipv4first');
-  }
-  const httpAgent = http.globalAgent as any;
-  if (httpAgent && httpAgent.options) {
-    httpAgent.options.autoSelectFamily = false;
-  }
-  const httpsAgent = https.globalAgent as any;
-  if (httpsAgent && httpsAgent.options) {
-    httpsAgent.options.autoSelectFamily = false;
-  }
-} catch {
-  // Ignore in environments where network options cannot be configured
-}
+// try {
+//   if (typeof dns.setDefaultResultOrder === 'function') {
+//     dns.setDefaultResultOrder('ipv4first');
+//   }
+//   const httpAgent = http.globalAgent as any;
+//   if (httpAgent && httpAgent.options) {
+//     httpAgent.options.autoSelectFamily = false;
+//   }
+//   const httpsAgent = https.globalAgent as any;
+//   if (httpsAgent && httpsAgent.options) {
+//     httpsAgent.options.autoSelectFamily = false;
+//   }
+// } catch {
+//   // Ignore in environments where network options cannot be configured
+// }
 
 const {
   CLOUDINARY_CLOUD_NAME,

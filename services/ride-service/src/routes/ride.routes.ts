@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { RideController } from '../controllers/ride.controller.js';
-import { validateRequest } from '@urbanfleet/common';
+import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
+import { rideRedisClient } from '../redis/client.js';
 import {
   estimateFareSchema,
   requestRideSchema,
@@ -16,16 +17,52 @@ import { authMiddleware, requireRole } from '../middlewares/auth.middleware.js';
 export function createRideRouter(controller: RideController): Router {
   const router = Router();
 
+  // Sliding Window Rate Limiters
+  const estimateLimiter = slidingWindowRateLimit({
+    redis: rideRedisClient,
+    limit: 30,
+    windowSeconds: 60,
+    keyPrefix: 'rl:ride:estimate',
+    failOpen: true,
+  });
+
+  const requestRideLimiter = slidingWindowRateLimit({
+    redis: rideRedisClient,
+    limit: 10,
+    windowSeconds: 60,
+    keyPrefix: 'rl:ride:request',
+    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
+  const startRideLimiter = slidingWindowRateLimit({
+    redis: rideRedisClient,
+    limit: 10,
+    windowSeconds: 60,
+    keyPrefix: 'rl:ride:start',
+    keyGenerator: (req) => `${req.params?.id}:${(req as any).userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
+  const rateRideLimiter = slidingWindowRateLimit({
+    redis: rideRedisClient,
+    limit: 10,
+    windowSeconds: 60,
+    keyPrefix: 'rl:ride:rate',
+    keyGenerator: (req) => `${req.params?.id}:${(req as any).userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
   // Public / unauthenticated estimate calculation
-  router.post('/estimate', validateRequest({ body: estimateFareSchema }), controller.estimateFare);
-  router.post('/fare', validateRequest({ body: estimateFareSchema }), controller.estimateFare);
+  router.post('/estimate', estimateLimiter, validateRequest({ body: estimateFareSchema }), controller.estimateFare);
+  router.post('/fare', estimateLimiter, validateRequest({ body: estimateFareSchema }), controller.estimateFare);
 
   // Authenticated Ride Endpoints
   router.use(authMiddleware);
 
   // Ride Request
-  router.post('/', validateRequest({ body: requestRideSchema }), controller.requestRide);
-  router.post('/request', validateRequest({ body: requestRideSchema }), controller.requestRide);
+  router.post('/', requestRideLimiter, validateRequest({ body: requestRideSchema }), controller.requestRide);
+  router.post('/request', requestRideLimiter, validateRequest({ body: requestRideSchema }), controller.requestRide);
 
   // Active / Current Ride
   router.get('/current', controller.getActiveRide);
@@ -52,8 +89,8 @@ export function createRideRouter(controller: RideController): Router {
   router.patch('/:id/destination-arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
   router.post('/:id/destination-arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
 
-  router.patch('/:id/start', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
-  router.post('/:id/start', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
+  router.patch('/:id/start', requireRole('DRIVER'), startRideLimiter, validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
+  router.post('/:id/start', requireRole('DRIVER'), startRideLimiter, validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
 
   router.patch('/:id/complete', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
   router.post('/:id/complete', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
@@ -66,11 +103,10 @@ export function createRideRouter(controller: RideController): Router {
   router.post('/:id/driver/cancel', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRideByDriver);
 
   // Ratings & Payment status
-  router.post('/:id/rate', validateRequest({ params: rideIdParamSchema, body: rateRideSchema }), controller.submitRating);
+  router.post('/:id/rate', rateRideLimiter, validateRequest({ params: rideIdParamSchema, body: rateRideSchema }), controller.submitRating);
   router.patch('/:id/payment-status', validateRequest({ params: rideIdParamSchema, body: paymentStatusSchema }), controller.updatePaymentStatus);
 
   return router;
 }
 
 export default createRideRouter;
-

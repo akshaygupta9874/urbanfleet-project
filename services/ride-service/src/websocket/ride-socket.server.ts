@@ -89,7 +89,10 @@ export function initRideWebSocketServer(
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request, decoded);
       });
-    } catch (err) {
+    } catch (err: unknown) {
+      logger.warn('WebSocket upgrade authentication rejected', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
     }

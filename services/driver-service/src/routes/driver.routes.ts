@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { DriverController } from '../controllers/driver.controller.js';
-import { validateRequest } from '@urbanfleet/common';
+import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
+import { driverRedisClient } from '../redis/client.js';
 import {
   updateProfileSchema,
   updateStatusSchema,
@@ -13,22 +14,50 @@ import { authMiddleware } from '../middlewares/auth.middleware.js';
 export function createDriverRouter(controller: DriverController): Router {
   const router = Router();
 
+  // Sliding Window Rate Limiters
+  const registerLimiter = slidingWindowRateLimit({
+    redis: driverRedisClient,
+    limit: 10,
+    windowSeconds: 60,
+    keyPrefix: 'rl:driver:register',
+    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
+  const uploadLimiter = slidingWindowRateLimit({
+    redis: driverRedisClient,
+    limit: 15,
+    windowSeconds: 60,
+    keyPrefix: 'rl:driver:upload',
+    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
+  const documentLimiter = slidingWindowRateLimit({
+    redis: driverRedisClient,
+    limit: 20,
+    windowSeconds: 60,
+    keyPrefix: 'rl:driver:doc',
+    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    failOpen: true,
+  });
+
   // Public Health Check Endpoint
   router.get('/health', (_req, res) => res.status(200).json({ status: 'UP', service: 'driver-service' }));
 
   // Driver Registration (supports both multipart form with Cloudinary image uploads and direct JSON)
-  router.post('/register', uploadDriverDocuments, authMiddleware, controller.registerDriver);
+  router.post('/register', registerLimiter, uploadDriverDocuments, authMiddleware, controller.registerDriver);
 
   // Standalone Cloudinary Media Upload & Management
-  router.post('/upload', authMiddleware, uploadSingleImage('image'), controller.uploadImage);
-  router.post('/documents/upload', authMiddleware, uploadSingleImage('document'), controller.uploadImage);
+  router.post('/upload', authMiddleware, uploadLimiter, uploadSingleImage('image'), controller.uploadImage);
+  router.post('/documents/upload', authMiddleware, uploadLimiter, uploadSingleImage('document'), controller.uploadImage);
   router.delete('/images', authMiddleware, controller.deleteImage);
 
   // Profile & Vehicle Management
   router.get('/profile', authMiddleware, controller.getDriverProfile);
   router.put('/profile', authMiddleware, validateRequest({ body: updateProfileSchema }), controller.updateDriverProfile);
   router.put('/vehicle', authMiddleware, controller.updateVehicle);
-  router.post('/documents', authMiddleware, validateRequest({ body: uploadDocumentSchema }), controller.uploadDocument);
+  router.post('/documents', authMiddleware, documentLimiter, validateRequest({ body: uploadDocumentSchema }), controller.uploadDocument);
   router.get('/documents', authMiddleware, controller.getDriverDocuments);
   router.get('/documents/summary', authMiddleware, controller.getDocumentSummary);
   router.patch('/documents/:id/verify', authMiddleware, controller.verifyDocument);
@@ -43,4 +72,3 @@ export function createDriverRouter(controller: DriverController): Router {
 }
 
 export default createDriverRouter;
-

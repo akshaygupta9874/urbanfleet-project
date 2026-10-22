@@ -81,7 +81,7 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
     redisStatus = 'DOWN';
   }
 
-  const isHealthy = dbStatus === 'UP' && (redisStatus === 'UP' || process.env.NODE_ENV !== 'production');
+  const isHealthy = dbStatus === 'UP' && redisStatus === 'UP';
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'UP' : 'DOWN',
     service: 'payment-service',

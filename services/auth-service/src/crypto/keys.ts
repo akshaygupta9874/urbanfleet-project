@@ -16,36 +16,29 @@ export function initAsymmetricKeys(): { privateKey: string; publicKey: string } 
     publicKey = Buffer.from(pubEnv, 'base64').toString('utf-8');
     logger.info('Loaded RS256 keypair from runtime environment secrets.');
   } else {
-    if (process.env.NODE_ENV === 'production') {
-      logger.error('CRITICAL: Missing JWT_PRIVATE_KEY_BASE64 or JWT_PUBLIC_KEY_BASE64 in production! Failing fast.');
-      throw new Error('Production deployment requires JWT_PRIVATE_KEY_BASE64 and JWT_PUBLIC_KEY_BASE64 environment variables.');
-    }
-    logger.warn('No base64 RS256 keys found in environment. Generating ephemeral 2048-bit RS256 keypair for local dev...');
-    const pair = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-    });
-    privateKey = pair.privateKey;
-    publicKey = pair.publicKey;
+    logger.error('CRITICAL: Missing JWT_PRIVATE_KEY_BASE64 or JWT_PUBLIC_KEY_BASE64! Failing fast.');
+    throw new Error('Production deployment requires JWT_PRIVATE_KEY_BASE64 and JWT_PUBLIC_KEY_BASE64 environment variables.');
   }
 
   return { privateKey, publicKey };
 }
 
-export function signAccessToken(payload: {
+export interface AccessTokenPayloadInput {
   userId: string;
   email: string;
-  roles?: string[];
-  role?: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
+  roles: string[];
+  driverId?: string;
   sessionId?: string;
   tokenType?: string;
-}): string {
+  role?: string;
+}
+
+export function signAccessToken(payload: AccessTokenPayloadInput): string {
   if (!privateKey) initAsymmetricKeys();
 
-  const roles = payload.roles || (payload.role ? [payload.role] : ['RIDER']);
+  const roles = payload.roles && payload.roles.length > 0 ? payload.roles : ['RIDER'];
   const role = payload.role || roles[0] || 'RIDER';
   return jwt.sign({ ...payload, role, roles, tokenType: 'ACCESS' }, privateKey, {
     algorithm: 'RS256',
@@ -74,8 +67,11 @@ export function getPublicKey(): string {
 export interface AuthTokenPayload extends jwt.JwtPayload {
   userId?: string;
   email?: string;
+  firstName?: string;
+  lastName?: string;
   role?: string;
   roles?: string[];
+  driverId?: string;
   sessionId?: string;
   tokenType?: string;
 }
