@@ -20,6 +20,7 @@ function NavBar() {
   const { user, isAuthenticated } = useAuthContext();
 
   const firstName = user?.firstName ? user.firstName : "Account";
+  const dashboardPath = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
 
   // 2. Detect scroll for a sleek glassmorphism parchment effect
   useEffect(() => {
@@ -49,7 +50,7 @@ function NavBar() {
         {/* Logo */}
         <div 
           className="flex items-center gap-3 cursor-pointer group"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate(dashboardPath)}
         >
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] text-[#ffd88a] shadow-[0_8px_20px_-8px_rgba(58,31,10,0.6)] transition-transform duration-300 group-hover:scale-105">
             <Car size={22} />
@@ -91,7 +92,7 @@ function NavBar() {
 
               <Button 
                 className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 py-2.5 text-sm font-semibold text-[#ffe9be] shadow-[0_12px_28px_-10px_rgba(58,31,10,0.6)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(58,31,10,0.8)]"
-                onClick={() => navigate("/dashboard")}
+                onClick={() => navigate(dashboardPath)}
               >
                 <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
                 <span className="relative z-10">Dashboard</span>
@@ -175,7 +176,7 @@ function NavBar() {
                       className="w-full rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-6 text-base font-semibold text-[#ffe9be] shadow-[0_14px_30px_-10px_rgba(58,31,10,0.7)]"
                       onClick={() => {
                         setIsOpen(false);
-                        navigate("/dashboard");
+                        navigate(dashboardPath);
                       }}
                     >
                       Go to Dashboard

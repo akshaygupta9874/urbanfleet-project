@@ -7,7 +7,7 @@ import { AuditRepository } from '../repositories/audit.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
 import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, createLogger, ServiceUnavailableError, InternalServerError } from '@urbanfleet/common';
 import { Role } from '../db/client.js';
-import { cacheTokens, revokeCachedTokens } from '../redis/token-cache.js';
+import { cacheTokens, revokeCachedTokens, cacheUser } from '../redis/token-cache.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
 import { EventTopics } from '@urbanfleet/contracts';
@@ -103,6 +103,13 @@ export class AuthService {
     // Token caching in Redis (non-blocking performance layer)
     try {
       await cacheTokens(user.id, session.id, accessToken, refreshToken);
+      await cacheUser({
+        id: user.id,
+        email: user.email,
+        roles: user.roles,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      });
     } catch (err: unknown) {
       logger.warn('Failed to cache tokens in Redis on registration:', {
         error: err instanceof Error ? err.message : String(err),
@@ -429,6 +436,13 @@ export class AuthService {
     // Cache tokens in Redis (non-blocking performance layer)
     try {
       await cacheTokens(user.id, session.id, accessToken, refreshToken);
+      await cacheUser({
+        id: user.id,
+        email: user.email,
+        roles: user.roles,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      });
     } catch (err: unknown) {
       logger.warn('Failed to cache tokens in Redis on OTP login:', {
         error: err instanceof Error ? err.message : String(err),
@@ -1068,6 +1082,13 @@ export class AuthService {
     // Cache tokens in Redis
     try {
       await cacheTokens(user.id, session.id, accessToken, refreshToken);
+      await cacheUser({
+        id: user.id,
+        email: user.email,
+        roles: user.roles,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      });
     } catch (err: unknown) {
       logger.warn('Failed to cache Google user tokens in Redis:', {
         error: err instanceof Error ? err.message : String(err),

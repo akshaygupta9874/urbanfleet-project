@@ -283,6 +283,12 @@ export default function RideDetails() {
   const socketRef = useRef<WebSocket | null>(null);
   const { user } = useAuthContext();
 
+  useEffect(() => {
+    if (user?.roles?.includes("DRIVER")) {
+      navigate("/driver-dashboard", { replace: true });
+    }
+  }, [user, navigate]);
+
   const fetchRideDetails = async (id?: string) => {
     try {
       const endpoint = id ? `/ride/${id}` : "/ride/current";

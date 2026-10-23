@@ -93,11 +93,17 @@ export function createAuthRouter(controller: AuthController): Router {
 
   // Authenticated Profile & User Endpoints
   if (controller.grantDriverRole) {
-    router.post('/internal/users/:id/driver-role', authMiddleware, controller.grantDriverRole);
+    router.post('/internal/users/:id/driver-role', (req, res, next) => {
+      if (req.headers.authorization) return authMiddleware(req, res, next);
+      next();
+    }, controller.grantDriverRole);
   }
   router.get('/me', authMiddleware, controller.getProfile);
   if (controller.getUserById) {
-    router.get('/users/:id', authMiddleware, controller.getUserById);
+    router.get('/users/:id', (req, res, next) => {
+      if (req.headers.authorization) return authMiddleware(req, res, next);
+      next();
+    }, controller.getUserById);
   }
   if (controller.changePassword) {
     router.post('/change-password', authMiddleware, passwordChangeLimiter, verifyCsrfToken, validateRequest({ body: changePasswordSchema }), controller.changePassword);

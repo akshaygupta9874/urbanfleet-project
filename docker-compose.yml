@@ -201,8 +201,8 @@ services:
       AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
-      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_key}
-      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-sample}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_TEErdPFF4jHU8N}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-m90q7HlKr3kE07EgoFXZwNYh}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-your-razorpay-webhook-secret}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:

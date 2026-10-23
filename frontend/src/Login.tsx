@@ -50,7 +50,7 @@ function WelcomePill() {
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { checkAuthentication, establishSession, isAuthenticated, loading } = useAuthContext();
+  const { user, checkAuthentication, establishSession, isAuthenticated, loading } = useAuthContext();
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,7 +62,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      navigate("/dashboard", { replace: true });
+      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+      navigate(target, { replace: true });
     }
   }, [isAuthenticated, loading, navigate]);
 
@@ -146,7 +147,8 @@ export default function LoginPage() {
       } else {
         await checkAuthentication();
       }
-      navigate("/dashboard", { replace: true });
+      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+      navigate(target, { replace: true });
     } catch (error) {
       setStatus(error instanceof AxiosError ? (error.response?.data?.message || error.message) : "OTP verification failed");
     } finally {
@@ -167,7 +169,8 @@ export default function LoginPage() {
         credential: credentialResponse.credential,
       });
       establishSession(data.accessToken, data.user);
-      navigate("/dashboard", { replace: true });
+      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+      navigate(target, { replace: true });
     } catch (error) {
       setStatus(error instanceof AxiosError ? error.response?.data.message : "Google sign-in failed");
     } finally {

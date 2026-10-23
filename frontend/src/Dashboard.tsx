@@ -95,6 +95,10 @@ export default function Dashboard() {
         if (cancelled) return;
         const ride = response.data.data;
         if (ride && ride.status !== "COMPLETED" && ride.status !== "CANCELLED") {
+          if (user?.roles?.includes("DRIVER")) {
+            navigate("/driver-dashboard", { replace: true });
+            return;
+          }
           navigate(`/ride/${ride.id}`, { replace: true });
           return;
         }
@@ -107,7 +111,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, user]);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
