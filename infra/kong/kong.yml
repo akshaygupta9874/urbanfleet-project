@@ -124,7 +124,9 @@ plugins:
       origins:
         - "http://localhost:5173"
         - "http://localhost:3000"
-        - "https://*.vercel.app"
+        - "http://13.201.98.35:5173"
+        - "^http://.*:5173$"
+        - "^https://.*\\.vercel\\.app$"
       methods:
         - GET
         - POST
