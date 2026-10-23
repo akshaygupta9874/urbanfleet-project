@@ -2,11 +2,11 @@ import { Request, Response } from "express";
 
 import {
     AppError,
-} from "../../utils/AppError.js";
+} from '../utils/AppError.js';
 
 import { webhookService } from "../services/webhook.service.js";
 
-import asyncHandler from "../../middlewares/asyncHandler.js";
+import asyncHandler from '../middlewares/asyncHandler.js';
 
 import { RazorpayWebhookPayload } from "../types/razorpay.types.js";
 

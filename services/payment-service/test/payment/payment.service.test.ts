@@ -56,9 +56,9 @@ vi.mock("../../src/redis/client.js", () => ({
  * --------------------------------------------------------------------------
  */
 
-import { paymentService } from "../../src/payment/services/payment.service.js";
-import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
-import { ledgerService } from "../../src/payment/services/ledger.service.js";
+import { paymentService } from "../../src/services/payment.service.js";
+import { paymentRepository } from "../../src/repositories/payment.repository.js";
+import { ledgerService } from "../../src/services/ledger.service.js";
 import { razorpayClient } from "../../src/config/razorpay.config.js";
 import { rideClient } from "../../src/clients/ride.client.js";
 
@@ -82,13 +82,13 @@ const RidePaymentStatus = {
   REFUNDED: 'REFUNDED',
 } as const;
 
-import { NonRetryablePaymentError } from "../../src/payment/errors/payment.errors.js";
-import { PaymentStatus } from "../../src/payment/types/payment.types.js";
+import { NonRetryablePaymentError } from "../../src/errors/payment.errors.js";
+import { PaymentStatus } from "../../src/types/payment.types.js";
 
 import {
   CAPTURABLE_FROM_STATUSES,
   MAX_PAYMENT_ATTEMPTS,
-} from "../../src/payment/constants/payment.constants.js";
+} from "../../src/constants/payment.constants.js";
 
 import {
   capturedEntity,

@@ -1,5 +1,5 @@
-import { razorpayClient } from "../../config/razorpay.config.js";
-import { AppError } from "../../utils/AppError.js";
+import { razorpayClient } from '../config/razorpay.config.js';
+import { AppError } from '../utils/AppError.js';
 
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerRepository } from "../repositories/ledger.repository.js";

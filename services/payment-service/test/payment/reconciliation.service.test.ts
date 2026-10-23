@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { reconciliationService } from "../../src/payment/services/reconciliation.service.js";
-import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
-import { ledgerRepository } from "../../src/payment/repositories/ledger.repository.js";
-import { paymentService } from "../../src/payment/services/payment.service.js";
-import { refundService } from "../../src/payment/services/refund.service.js";
+import { reconciliationService } from "../../src/services/reconciliation.service.js";
+import { paymentRepository } from "../../src/repositories/payment.repository.js";
+import { ledgerRepository } from "../../src/repositories/ledger.repository.js";
+import { paymentService } from "../../src/services/payment.service.js";
+import { refundService } from "../../src/services/refund.service.js";
 import { razorpayClient } from "../../src/config/razorpay.config.js";
-import { LedgerAccount as A, LedgerEntryType as T, LedgerReferenceType, PaymentStatus, RefundStatus } from "../../src/payment/types/payment.types.js";
+import { LedgerAccount as A, LedgerEntryType as T, LedgerReferenceType, PaymentStatus, RefundStatus } from "../../src/types/payment.types.js";
 import { capturedEntity, makePayment, oid } from "../helpers/helpers.js";
 
 const leg = (transactionId: string, account: A, entryType: T, amountPaise: number) => ({ transactionId, account, entryType, amountPaise });

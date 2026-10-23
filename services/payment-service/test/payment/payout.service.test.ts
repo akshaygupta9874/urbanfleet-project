@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { payoutService } from "../../src/payment/services/payout.service.js";
-import { payoutRepository } from "../../src/payment/repositories/payout.repository.js";
-import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
-import { ledgerService } from "../../src/payment/services/ledger.service.js";
-import { NonRetryablePaymentError } from "../../src/payment/errors/payment.errors.js";
-import { PaymentStatus, PayoutStatus, RefundStatus } from "../../src/payment/types/payment.types.js";
+import { payoutService } from "../../src/services/payout.service.js";
+import { payoutRepository } from "../../src/repositories/payout.repository.js";
+import { paymentRepository } from "../../src/repositories/payment.repository.js";
+import { ledgerService } from "../../src/services/ledger.service.js";
+import { NonRetryablePaymentError } from "../../src/errors/payment.errors.js";
+import { PaymentStatus, PayoutStatus, RefundStatus } from "../../src/types/payment.types.js";
 import { fakeSession, makePayment, oid } from "../helpers/helpers.js";
 
 const payout = (over: Record<string, unknown> = {}): any => ({

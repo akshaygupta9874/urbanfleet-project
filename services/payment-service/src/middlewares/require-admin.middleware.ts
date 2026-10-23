@@ -1,8 +1,8 @@
 import { NextFunction, Request, Response } from "express";
 
-import { AppError } from "../../utils/AppError.js";
-import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import { prisma, UserRole } from "../../db/client.js";
+import { AppError } from '../utils/AppError.js';
+import { AuthenticatedRequest } from './auth.middleware.js';
+import { prisma, UserRole } from '../db/client.js';
 import { paymentRepository } from "../repositories/payment.repository.js";
 
 /**

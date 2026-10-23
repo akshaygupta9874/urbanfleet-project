@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { PaymentStatus } from "../../src/payment/types/payment.types.js";
+import { PaymentStatus } from "../../src/types/payment.types.js";
 
 /** A session whose transactions simply run the callback once. */
 export function fakeSession() {

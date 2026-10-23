@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { allocateRefund } from "../../src/payment/utils/refund-allocation.js";
-import { computeRefundTotals } from "../../src/payment/utils/refund-totals.js";
-import { RefundStatus } from "../../src/payment/types/payment.types.js";
+import { allocateRefund } from "../../src/utils/refund-allocation.js";
+import { computeRefundTotals } from "../../src/utils/refund-totals.js";
+import { RefundStatus } from "../../src/types/payment.types.js";
 
 /** deterministic PRNG so failures are reproducible */
 function prng(seed: number) {

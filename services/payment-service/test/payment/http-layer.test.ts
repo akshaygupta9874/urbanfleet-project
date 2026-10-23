@@ -3,13 +3,13 @@ import { createHash } from "crypto";
 import {
   createOrderSchema, verifyCheckoutSchema, refundSchema, listPaymentsQuerySchema,
   paymentIdParamSchema, validate,
-} from "../../src/payment/validation/payment.validation.js";
-import { requireAdmin } from "../../src/payment/middlewares/require-admin.middleware.js";
-import * as controller from "../../src/payment/controllers/payment.controller.js";
-import { paymentService } from "../../src/payment/services/payment.service.js";
-import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
+} from "../../src/validation/payment.validation.js";
+import { requireAdmin } from "../../src/middlewares/require-admin.middleware.js";
+import * as controller from "../../src/controllers/payment.controller.js";
+import { paymentService } from "../../src/services/payment.service.js";
+import { paymentRepository } from "../../src/repositories/payment.repository.js";
 import { prisma, UserRole } from "../../src/db/client.js";
-import { PaymentStatus, RefundStatus } from "../../src/payment/types/payment.types.js";
+import { PaymentStatus, RefundStatus } from "../../src/types/payment.types.js";
 import { makePayment, oid } from "../helpers/helpers.js";
 
 const rideId = "6aafbb5e07d38f34801eddfd";

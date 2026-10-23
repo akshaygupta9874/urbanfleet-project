@@ -44,17 +44,17 @@ vi.mock("../../src/redis/client.js", () => ({
 // Imports
 // -----------------------------------------------------------------------------
 
-import { paymentService } from "../../src/payment/services/payment.service.js";
-import { webhookService } from "../../src/payment/services/webhook.service.js";
-import { ledgerService } from "../../src/payment/services/ledger.service.js";
-import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
+import { paymentService } from "../../src/services/payment.service.js";
+import { webhookService } from "../../src/services/webhook.service.js";
+import { ledgerService } from "../../src/services/ledger.service.js";
+import { paymentRepository } from "../../src/repositories/payment.repository.js";
 import { prisma } from "../../src/db/client.js";
 
 import {
     PaymentStatus,
-} from "../../src/payment/types/payment.types.js";
+} from "../../src/types/payment.types.js";
 
-import { allocateRefund } from "../../src/payment/utils/refund-allocation.js";
+import { allocateRefund } from "../../src/utils/refund-allocation.js";
 
 // -----------------------------------------------------------------------------
 // Test lifecycle

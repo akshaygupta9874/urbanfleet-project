@@ -1,12 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { RideClient, rideClient } from '../../src/clients/ride.client.js';
-import { PayoutService } from '../../src/payment/services/payout.service.js';
-import { payoutRepository } from '../../src/payment/repositories/payout.repository.js';
-import { paymentRepository } from '../../src/payment/repositories/payment.repository.js';
-import { ledgerService } from '../../src/payment/services/ledger.service.js';
+import { PayoutService } from '../../src/services/payout.service.js';
+import { payoutRepository } from '../../src/repositories/payout.repository.js';
+import { paymentRepository } from '../../src/repositories/payment.repository.js';
+import { ledgerService } from '../../src/services/ledger.service.js';
 import { initPaymentConsumer } from '../../src/consumers/payment.consumer.js';
 import { authClient } from '../../src/clients/auth.client.js';
-import { requireAdmin } from '../../src/payment/middlewares/require-admin.middleware.js';
+import { requireAdmin } from '../../src/middlewares/require-admin.middleware.js';
 import { prisma, UserRole } from '../../src/db/client.js';
 import { redisClient } from '../../src/redis/client.js';
 import type { RideDto } from '@urbanfleet/common';

@@ -2,19 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { createLogger, AppError, configureBigIntSerialization } from '@urbanfleet/common';
-import { PaymentRepository } from './repositories/payment.repository.js';
-import { LedgerRepository } from './repositories/ledger.repository.js';
-import { RefundRepository } from './repositories/refund.repository.js';
-import { PayoutRepository } from './repositories/payout.repository.js';
-import { OutboxRepository } from './repositories/outbox.repository.js';
-import { LedgerService } from './services/ledger.service.js';
-import { PayoutService } from './services/payout.service.js';
-import { PaymentService } from './services/payment.service.js';
+import { paymentService } from './services/payment.service.js';
 import { OutboxWorker } from './workers/outbox.worker.js';
 import { initPaymentConsumer } from './consumers/payment.consumer.js';
-import paymentRouter from './payment/routes/payment.routes.js';
-import webhookRouter from './payment/routes/webhook.routes.js';
-import { startPaymentReconciliationJob } from './payment/jobs/payment-reconciliation.job.js';
+import paymentRouter from './routes/payment.routes.js';
+import webhookRouter from './routes/webhook.routes.js';
+import { startPaymentReconciliationJob } from './jobs/payment-reconciliation.job.js';
 import { connectRedis, disconnectRedis, redisClient } from './redis/client.js';
 
 const logger = createLogger('payment-service');
@@ -28,16 +21,7 @@ const port = process.env.PORT || 4005;
 // Connect Redis & Initialize Outbox & Consumers
 connectRedis().catch(err => logger.error('Redis connect error on startup:', err));
 
-// Repositories & Services
-const paymentRepo = new PaymentRepository(prisma);
-const ledgerRepo = new LedgerRepository(prisma);
-const refundRepo = new RefundRepository(prisma);
-const payoutRepo = new PayoutRepository(prisma);
-const outboxRepo = new OutboxRepository(prisma);
-
-const ledgerService = new LedgerService(ledgerRepo);
-const payoutService = new PayoutService(payoutRepo, ledgerService);
-const paymentService = new PaymentService(paymentRepo, refundRepo, ledgerService, outboxRepo);
+// paymentService is imported as singleton from ./services/payment.service.js
 
 // Start Outbox Worker, Reconciliation Job & Consumer
 const outboxWorker = new OutboxWorker(prisma);

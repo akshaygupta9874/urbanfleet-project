@@ -1,52 +1,89 @@
-import { Router } from 'express';
-import { PaymentController } from '../controllers/payment.controller.js';
-import { slidingWindowRateLimit } from '@urbanfleet/common';
-import { redisClient } from '../redis/client.js';
-import { authMiddleware, requireRole } from '../middlewares/auth.middleware.js';
+import { Router } from "express";
+import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { requireAdmin } from "../middlewares/require-admin.middleware.js";
+import {
+    validate,
+    createOrderSchema,
+    verifyCheckoutSchema,
+    refundSchema,
+    paymentIdParamSchema,
+    rideIdParamSchema,
+    listPaymentsQuerySchema,
+} from "../validation/payment.validation.js";
+import {
+    createOrder,
+    verifyCheckout,
+    getPayment,
+    getPaymentsByRide,
+    listPayments,
+    refundPayment,
+    getDriverBalance,
+    requestPayout,
+    listPayouts,
+} from "../controllers/payment.controller.js";
 
-export function createPaymentRouter(controller: PaymentController): Router {
-  const router = Router();
+const router = Router();
 
-  // Sliding Window Rate Limiters
-  const orderLimiter = slidingWindowRateLimit({
-    redis: redisClient as any,
-    limit: 20,
-    windowSeconds: 60,
-    keyPrefix: 'rl:pay:order',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
-    failOpen: true,
-  });
+// Public health check endpoints
+router.get("/health", (_req, res) => res.status(200).json({ status: "UP", service: "payment-service" }));
+router.get("/healthz", (_req, res) => res.status(200).json({ status: "ok", service: "payment-service" }));
 
-  const verifyLimiter = slidingWindowRateLimit({
-    redis: redisClient as any,
-    limit: 20,
-    windowSeconds: 60,
-    keyPrefix: 'rl:pay:verify',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
-    failOpen: true,
-  });
+router.use(authMiddleware);
 
-  const payoutLimiter = slidingWindowRateLimit({
-    redis: redisClient as any,
-    limit: 10,
-    windowSeconds: 60,
-    keyPrefix: 'rl:pay:payout',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
-    failOpen: true,
-  });
+// Driver payout management (must stay ABOVE "/:paymentId")
+router.get(
+    "/payouts/balance",
+    getDriverBalance
+);
 
-  // Public Webhook from Razorpay
-  router.post('/webhook', controller.handleRazorpayWebhook);
+router.post(
+    "/payouts/request",
+    requestPayout
+);
 
-  // Authenticated Endpoints
-  router.use(authMiddleware);
+router.get(
+    "/payouts",
+    listPayouts
+);
 
-  router.post('/order', orderLimiter, controller.createPaymentOrder);
-  router.post('/verify', verifyLimiter, controller.verifyPayment);
-  router.get('/ride/:rideId', controller.getPaymentByRideId);
+router.post(
+    "/orders",
+    validate(createOrderSchema),
+    createOrder
+);
 
-  // Driver Payouts
-  router.post('/payout', requireRole('DRIVER'), payoutLimiter, controller.requestPayout);
+router.post(
+    "/verify",
+    validate(verifyCheckoutSchema),
+    verifyCheckout
+);
 
-  return router;
-}
+router.get(
+    "/",
+    validate(listPaymentsQuerySchema),
+    listPayments
+);
+
+// must stay ABOVE "/:paymentId", otherwise "ride" would be read as a payment id
+router.get(
+    "/ride/:rideId",
+    validate(rideIdParamSchema),
+    getPaymentsByRide
+);
+
+router.get(
+    "/:paymentId",
+    validate(paymentIdParamSchema),
+    getPayment
+);
+
+// admin only: money leaves the platform
+router.post(
+    "/:paymentId/refund",
+    requireAdmin,
+    validate(paymentIdParamSchema),
+    validate(refundSchema),
+    refundPayment
+);
+
+export default router;

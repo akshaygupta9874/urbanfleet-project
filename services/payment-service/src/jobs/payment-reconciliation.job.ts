@@ -1,6 +1,6 @@
 import { REDIS_KEYS } from "../constants/payment.constants.js";
 import { reconciliationService } from "../services/reconciliation.service.js";
-import { acquireLock } from "../../redis/redis-lock.js";
+import { acquireLock } from '../redis/redis-lock.js';
 import { paymentLog } from "../utils/payment-logger.js";
 
 export interface ReconciliationJobOptions {

@@ -153,27 +153,27 @@ vi.mock("../../src/redis/client.js", () => ({
 
 import {
   webhookService,
-} from "../../src/payment/services/webhook.service.js";
+} from "../../src/services/webhook.service.js";
 
 import {
   paymentService,
-} from "../../src/payment/services/payment.service.js";
+} from "../../src/services/payment.service.js";
 
 import {
   refundService,
-} from "../../src/payment/services/refund.service.js";
+} from "../../src/services/refund.service.js";
 
 import {
   payoutService,
-} from "../../src/payment/services/payout.service.js";
+} from "../../src/services/payout.service.js";
 
 import {
   handleRazorpayWebhook,
-} from "../../src/payment/controllers/webhook.controller.js";
+} from "../../src/controllers/webhook.controller.js";
 
 import {
   NonRetryablePaymentError,
-} from "../../src/payment/errors/payment.errors.js";
+} from "../../src/errors/payment.errors.js";
 
 /**
  * --------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { redisClient } from "../../redis/client.js";
+import { redisClient } from '../redis/client.js';
 import { NonRetryablePaymentError } from "../errors/payment.errors.js";
 import { paymentLog } from "../utils/payment-logger.js";
 import { paymentService } from "./payment.service.js";

@@ -71,17 +71,17 @@ vi.mock("../../src/redis/client.js", () => ({
 // Imports
 // -----------------------------------------------------------------------------
 
-import { refundService } from "../../src/payment/services/refund.service.js";
-import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
-import { ledgerService } from "../../src/payment/services/ledger.service.js";
-import { payoutService } from "../../src/payment/services/payout.service.js";
+import { refundService } from "../../src/services/refund.service.js";
+import { paymentRepository } from "../../src/repositories/payment.repository.js";
+import { ledgerService } from "../../src/services/ledger.service.js";
+import { payoutService } from "../../src/services/payout.service.js";
 import { razorpayClient } from "../../src/config/razorpay.config.js";
 
 import {
   PaymentStatus,
   RefundOrigin,
   RefundStatus,
-} from "../../src/payment/types/payment.types.js";
+} from "../../src/types/payment.types.js";
 
 import {
   makePayment,

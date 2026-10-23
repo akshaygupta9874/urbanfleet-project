@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 
-import { razorpayClient } from "../../config/razorpay.config.js";
-import { AppError } from "../../utils/AppError.js";
+import { razorpayClient } from '../config/razorpay.config.js';
+import { AppError } from '../utils/AppError.js';
 
 import {
     describeGatewayError,
@@ -12,7 +12,7 @@ import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
 import { payoutService } from "./payout.service.js";
 
-import { acquireLock } from "../../redis/redis-lock.js";
+import { acquireLock } from '../redis/redis-lock.js';
 import { paymentLog } from "../utils/payment-logger.js";
 import { allocateRefund } from "../utils/refund-allocation.js";
 import { computeRefundTotals } from "../utils/refund-totals.js";

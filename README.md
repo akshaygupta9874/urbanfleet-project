@@ -75,7 +75,7 @@ urbanfleet-project/
 │   ├── driver-service/            # Profiles, documents, vehicles, atomic consumer idempotency (Port 4002)
 │   ├── ride-service/              # Lifecycle, Redis GEOSEARCH, Native WS, Outbox publisher + lease recovery (Port 4004)
 │   ├── payment-service/           # Razorpay, balanced double-entry ledger, normalized refunds, Outbox publisher (Port 4005)
-│   └── notification-service/      # Durable PostgreSQL inbox, SendGrid dispatcher, templates (Port 4003)
+│   └── notification-service/      # Durable PostgreSQL inbox, SendGrid dispatcher, templates (Port 4003) — [Docs](services/notification-service/README.md)
 ├── infra/
 │   ├── init-databases.sql         # 5 databases + 5 least-privilege roles
 │   ├── kafka-init.sh              # KRaft topic creation script

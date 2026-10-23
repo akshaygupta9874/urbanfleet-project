@@ -1,4 +1,4 @@
-import { AppError } from "../../utils/AppError.js";
+import { AppError } from '../utils/AppError.js';
 import { IPayment } from "../types/payment.models.js";
 import { Paise, RefundStatus } from "../types/payment.types.js";
 

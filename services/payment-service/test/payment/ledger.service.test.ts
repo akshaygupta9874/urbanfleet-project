@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
-import { ledgerService } from "../../src/payment/services/ledger.service.js";
-import { ledgerRepository } from "../../src/payment/repositories/ledger.repository.js";
+import { ledgerService } from "../../src/services/ledger.service.js";
+import { ledgerRepository } from "../../src/repositories/ledger.repository.js";
 import {
   LedgerAccount as A,
   LedgerEntryType as T,
   LedgerReferenceType,
-} from "../../src/payment/types/payment.types.js";
+} from "../../src/types/payment.types.js";
 import { fakeSession, makePayment, oid } from "../helpers/helpers.js";
 
 function captureInserts() {
