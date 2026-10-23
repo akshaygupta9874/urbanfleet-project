@@ -32,7 +32,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_JVM_PERFORMANCE_OPTS: "-Xms160m -Xmx256m -XX:+UseG1GC"
+      KAFKA_HEAP_OPTS: "-Xms128m -Xmx256m"
+      KAFKA_JVM_PERFORMANCE_OPTS: "-Xms128m -Xmx256m -XX:+UseG1GC"
     volumes:
       - kafka_data:/var/lib/kafka/data
     networks:
@@ -65,6 +66,8 @@ services:
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_NGINX_WORKER_PROCESSES: "2"
+      KONG_MEM_CACHE_SIZE: "64m"
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
