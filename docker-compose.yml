@@ -63,6 +63,7 @@ services:
   kong:
     image: kong:3.9
     container_name: urbanfleet-kong
+    user: "root"
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
@@ -73,11 +74,17 @@ services:
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
+      KONG_SSL_CERT: ${KONG_SSL_CERT:-/etc/letsencrypt/live/urbanfleet.duckdns.org/fullchain.pem}
+      KONG_SSL_CERT_KEY: ${KONG_SSL_CERT_KEY:-/etc/letsencrypt/live/urbanfleet.duckdns.org/privkey.pem}
     volumes:
       - ./infra/kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+      - ${LETSENCRYPT_DIR:-/etc/letsencrypt}:/etc/letsencrypt:ro
     ports:
-      - "${KONG_PORT:-3001}:8000"           # 👈 Single Public Ingress Port!
-      - "127.0.0.1:${KONG_ADMIN_PORT:-8001}:8001" # 👈 Loopback Admin binding ONLY!
+      - "80:8000"
+      - "443:8443"
+      - "${KONG_PORT:-3001}:8000"
+      - "127.0.0.1:${KONG_ADMIN_PORT:-8001}:8001"
     networks:
       - urbanfleet_internal
     depends_on:
@@ -86,6 +93,7 @@ services:
       - ride-service
       - payment-service
       - notification-service
+      - frontend
 
   # ========================================================
   # 3. CORE MICROSERVICES
@@ -251,8 +259,6 @@ services:
       - "${FRONTEND_PORT:-5173}:5173"
     networks:
       - urbanfleet_internal
-    depends_on:
-      - kong
 
 volumes:
   kafka_data:

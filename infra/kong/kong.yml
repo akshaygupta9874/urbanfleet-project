@@ -117,6 +117,20 @@ services:
           - http
           - https
 
+  # ========================================================
+  # 7. FRONTEND SERVICE (Internal Port 5173)
+  # ========================================================
+  - name: frontend-service
+    url: http://frontend:5173
+    routes:
+      - name: frontend-catchall
+        paths:
+          - /
+        strip_path: false
+        protocols:
+          - http
+          - https
+
 plugins:
   # Global Dynamic CORS Plugin
   - name: cors
@@ -125,6 +139,9 @@ plugins:
         - "http://localhost:5173"
         - "http://localhost:3000"
         - "http://13.201.98.35:5173"
+        - "https://urbanfleet.duckdns.org"
+        - "http://urbanfleet.duckdns.org"
+        - "^https://.*\\.duckdns\\.org$"
         - "^http://.*:5173$"
         - "^https://.*\\.vercel\\.app$"
       methods:
@@ -154,4 +171,3 @@ plugins:
       header_name: X-Request-ID
       generator: uuid
       echo_downstream: true
-
