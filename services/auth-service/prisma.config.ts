@@ -13,6 +13,7 @@ export default defineConfig({
   },
   datasource: {
     url:
+      process.env.DIRECT_DATABASE_URL ||
       process.env.DATABASE_URL ||
       'postgresql://auth_user:auth_secure_pass@localhost:5432/urbanfleet_auth?schema=public',
   },
