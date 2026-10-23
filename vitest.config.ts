@@ -25,6 +25,9 @@ export default defineConfig({
       RAZORPAY_WEBHOOK_SECRET: "your-razorpay-webhook-secret",
       SENDGRID_API_KEY: "test-sendgrid-key",
       SENDGRID_FROM_EMAIL: "test@example.com",
+      CLOUDINARY_CLOUD_NAME: "test-cloud",
+      CLOUDINARY_API_KEY: "test-api-key",
+      CLOUDINARY_API_SECRET: "test-api-secret",
     },
   },
 });

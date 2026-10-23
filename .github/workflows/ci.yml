@@ -46,6 +46,9 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       KAFKA_BROKERS: localhost:9092
       FRONTEND_URL: http://localhost:5173
+      CLOUDINARY_CLOUD_NAME: test-cloud
+      CLOUDINARY_API_KEY: test-key
+      CLOUDINARY_API_SECRET: test-secret
 
     steps:
       - name: Checkout repository

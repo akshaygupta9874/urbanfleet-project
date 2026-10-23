@@ -21,23 +21,23 @@ import 'dotenv/config';
 //   // Ignore in environments where network options cannot be configured
 // }
 
-const {
-  CLOUDINARY_CLOUD_NAME,
-  CLOUDINARY_API_KEY,
-  CLOUDINARY_API_SECRET,
-} = process.env;
+const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+
+const cloudName = process.env.CLOUDINARY_CLOUD_NAME || (isTestEnv ? 'test-cloud' : undefined);
+const apiKey = process.env.CLOUDINARY_API_KEY || (isTestEnv ? 'test-api-key' : undefined);
+const apiSecret = process.env.CLOUDINARY_API_SECRET || (isTestEnv ? 'test-api-secret' : undefined);
 
 export const isCloudinaryConfigured = Boolean(
-  CLOUDINARY_CLOUD_NAME &&
-  CLOUDINARY_API_KEY &&
-  CLOUDINARY_API_SECRET
+  cloudName &&
+  apiKey &&
+  apiSecret
 );
 
 if (isCloudinaryConfigured) {
   cloudinary.config({
-    cloud_name: CLOUDINARY_CLOUD_NAME,
-    api_key: CLOUDINARY_API_KEY,
-    api_secret: CLOUDINARY_API_SECRET,
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
     secure: true,
   });
 }
