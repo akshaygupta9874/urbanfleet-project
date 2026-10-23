@@ -62,19 +62,19 @@ describe("validation schemas", () => {
 
 describe("requireAdmin", () => {
   const run = async (req: any, user: any) => {
-    vi.spyOn(prisma.user, "findUnique").mockResolvedValue(user ? ({ roles: user.role } as any) : null);
+    vi.spyOn(prisma.user, "findUnique").mockResolvedValue(user ? ({ roles: user.roles } as any) : null);
     const next = vi.fn();
     await requireAdmin(req, {} as any, next);
     return next;
   };
 
   it("lets admins through", async () => {
-    const next = await run({ userId: "u1" }, { role: [UserRole.RIDER, UserRole.ADMIN] });
+    const next = await run({ userId: "u1" }, { roles: [UserRole.RIDER, UserRole.ADMIN] });
     expect(next).toHaveBeenCalledWith();
   });
 
   it("FIXED: riders / drivers get 403, anonymous and unknown users 401", async () => {
-    expect((await run({ userId: "u1" }, { role: [UserRole.RIDER, UserRole.DRIVER] })).mock.calls[0]![0]).toMatchObject({ statusCode: 403 });
+    expect((await run({ userId: "u1" }, { roles: [UserRole.RIDER, UserRole.DRIVER] })).mock.calls[0]![0]).toMatchObject({ statusCode: 403 });
     expect((await run({}, null)).mock.calls[0]![0]).toMatchObject({ statusCode: 401 });
     expect((await run({ userId: "u1" }, null)).mock.calls[0]![0]).toMatchObject({ statusCode: 401 });
   });

@@ -22,7 +22,6 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
   userId?: string;
   roles?: string[];
-  role?: string[];
   driverId?: string;
 }
 
@@ -31,7 +30,6 @@ export interface AuthPayload extends JwtPayload {
   userId?: string;
   sessionId?: string;
   email?: string;
-  role?: string;
   roles?: string[];
 }
 
@@ -105,7 +103,6 @@ export const authMiddleware: RequestHandler = asyncHandler(
     interface CachedUserRecord {
       id?: string;
       email?: string;
-      role?: string;
       roles?: string[];
       firstName?: string;
       lastName?: string;
@@ -160,7 +157,6 @@ export const authMiddleware: RequestHandler = asyncHandler(
     const userRoles = Array.isArray(user.roles) ? user.roles : ["RIDER"];
     request.userId = userId;
     request.roles = userRoles;
-    request.role = userRoles;
     request.driverId = user.driver?.id || user.driverId;
     request.user = {
       userId,
@@ -182,7 +178,7 @@ export const requireRole = (...allowedRoles: string[]) => {
     if (!req.userId) {
       return next(new AppError("User unauthenticated", 401, "UNAUTHORIZED"));
     }
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles: string[] = req.roles ?? req.user?.roles ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

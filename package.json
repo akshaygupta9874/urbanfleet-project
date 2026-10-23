@@ -8,12 +8,13 @@
     "services/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build:packages": "npm run build --workspace=@urbanfleet/common && npm run build --workspace=@urbanfleet/contracts",
+    "build": "npm run build:packages && npm run build --workspaces --if-present",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "vitest run",
     "prisma:generate:all": "npm run prisma:generate --workspaces --if-present",
-    "postinstall": "npm run prisma:generate:all",
+    "postinstall": "npm run build:packages && npm run prisma:generate:all",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { AuthController } from '../controllers/auth.controller.js';
 import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
@@ -25,7 +25,7 @@ export function createAuthRouter(controller: AuthController): Router {
     limit: 10,
     windowSeconds: 60,
     keyPrefix: 'rl:auth:login',
-    keyGenerator: (req) => `${req.ip}:${req.body?.email || 'anon'}`,
+    keyGenerator: (req: Request) => `${req.ip}:${req.body?.email || 'anon'}`,
     failOpen: true,
   });
 
@@ -34,7 +34,7 @@ export function createAuthRouter(controller: AuthController): Router {
     limit: 5,
     windowSeconds: 300,
     keyPrefix: 'rl:auth:otp',
-    keyGenerator: (req) => `${req.body?.email || req.body?.userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${req.body?.email || req.body?.userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 
@@ -51,7 +51,7 @@ export function createAuthRouter(controller: AuthController): Router {
     limit: 5,
     windowSeconds: 300,
     keyPrefix: 'rl:auth:recovery',
-    keyGenerator: (req) => `${req.body?.email || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${req.body?.email || req.ip || 'anon'}`,
     failOpen: true,
   });
 
@@ -60,7 +60,7 @@ export function createAuthRouter(controller: AuthController): Router {
     limit: 5,
     windowSeconds: 300,
     keyPrefix: 'rl:auth:pwd-change',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${(req as any).userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 

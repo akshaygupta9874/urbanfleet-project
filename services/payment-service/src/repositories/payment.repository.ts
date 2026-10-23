@@ -566,10 +566,10 @@ class PaymentRepository {
             try {
                 const cached = await redisClient.get(`auth:user:${userId}`);
                 if (cached) {
-                    const u = JSON.parse(cached) as { id?: string; roles?: string[]; role?: string };
+                    const u = JSON.parse(cached) as { id?: string; roles?: string[] };
                     return {
                         id: u.id || userId,
-                        roles: u.roles || (u.role ? [u.role] : [UserRole.RIDER]),
+                        roles: Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [UserRole.RIDER],
                     };
                 }
             } catch (err: unknown) {
@@ -583,7 +583,7 @@ class PaymentRepository {
             if (user) {
                 return {
                     id: user.id,
-                    roles: user.roles || (user.role ? [user.role] : [UserRole.RIDER]),
+                    roles: Array.isArray(user.roles) && user.roles.length > 0 ? user.roles : [UserRole.RIDER],
                 };
             }
         } catch (err: unknown) {

@@ -71,6 +71,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres_admin_pwd@127.0.0.1:5432/postgres?schema=public
 
+      - name: Build shared packages
+        run: npm run build:packages
+
       - name: Typecheck monorepo packages & services
         run: npm run typecheck
 

@@ -39,7 +39,7 @@ export async function requireAdmin(
             });
         } else {
             // First check roles already verified & attached to request context by authMiddleware
-            const roles = req.role || null;
+            const roles = req.roles ?? req.user?.roles ?? null;
             if (roles && Array.isArray(roles) && roles.length > 0) {
                 user = { roles };
             } else {

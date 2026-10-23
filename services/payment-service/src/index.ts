@@ -9,6 +9,7 @@ import paymentRouter from './routes/payment.routes.js';
 import webhookRouter from './routes/webhook.routes.js';
 import { startPaymentReconciliationJob } from './jobs/payment-reconciliation.job.js';
 import { connectRedis, disconnectRedis, redisClient } from './redis/client.js';
+import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
 
 const logger = createLogger('payment-service');
 import { prisma } from './db/client.js';
@@ -93,28 +94,9 @@ app.use('/v1/payment', paymentRouter);
 app.use('/api/payment', paymentRouter);
 app.use('/api/payments', paymentRouter);
 
-// Global Error Handler
-app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const errObj = (typeof err === 'object' && err !== null ? err : {}) as {
-    statusCode?: number;
-    status?: number;
-    code?: string;
-    isOperational?: boolean;
-    message?: string;
-  };
-  const statusCode = errObj.statusCode ?? 500;
-  const code = errObj.code ?? (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
-  const message = errObj.message || (err instanceof Error ? err.message : 'Internal server error');
-  if (statusCode < 500 || errObj.isOperational) {
-    return res.status(statusCode).json({
-      success: false,
-      code,
-      message,
-    });
-  }
-  logger.error('Unhandled internal error:', err);
-  res.status(statusCode).json({ success: false, code, message });
-});
+// 404 Route Handler & Centralized Global Error Handler
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 const server = app.listen(port, () => {
   logger.info(`Payment Service running internally on port ${port}`);
@@ -142,3 +124,16 @@ const gracefulShutdown = async (signal: string) => {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason: unknown) => {
+  logger.error('Unhandled Promise Rejection in Payment Service:', {
+    error: reason instanceof Error ? reason.stack || reason.message : String(reason),
+  });
+});
+
+process.on('uncaughtException', (err: Error) => {
+  logger.error('Uncaught Exception in Payment Service:', {
+    error: err.stack || err.message,
+  });
+  void gracefulShutdown('uncaughtException');
+});

@@ -5,9 +5,10 @@ export interface AuthUser {
   email: string;
   firstName: string;
   lastName: string;
-  role: string;
-  roles?: string[];
+  roles: string[];
   isEmailVerified: boolean;
+  phone?: string;
+  driverId?: string;
 }
 
 export class AuthClient {

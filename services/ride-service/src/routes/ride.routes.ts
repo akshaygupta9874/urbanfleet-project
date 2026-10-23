@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { RideController } from '../controllers/ride.controller.js';
 import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
 import { rideRedisClient } from '../redis/client.js';
@@ -31,7 +31,7 @@ export function createRideRouter(controller: RideController): Router {
     limit: 10,
     windowSeconds: 60,
     keyPrefix: 'rl:ride:request',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${(req as any).userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 
@@ -40,7 +40,7 @@ export function createRideRouter(controller: RideController): Router {
     limit: 10,
     windowSeconds: 60,
     keyPrefix: 'rl:ride:start',
-    keyGenerator: (req) => `${req.params?.id}:${(req as any).userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${req.params?.id}:${(req as any).userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 
@@ -49,7 +49,7 @@ export function createRideRouter(controller: RideController): Router {
     limit: 10,
     windowSeconds: 60,
     keyPrefix: 'rl:ride:rate',
-    keyGenerator: (req) => `${req.params?.id}:${(req as any).userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${req.params?.id}:${(req as any).userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 

@@ -577,7 +577,7 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
         email: 'user2@example.com',
         firstName: 'User',
         lastName: 'Two',
-        role: 'ADMIN',
+        
         roles: ['ADMIN'],
         isEmailVerified: true,
       });
@@ -593,7 +593,7 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
     it('requireAdmin reads roles from request context without querying database', async () => {
       const req: any = {
         userId: 'admin-1',
-        role: ['ADMIN'],
+        roles: ['ADMIN'],
         user: { userId: 'admin-1', roles: ['ADMIN'] },
       };
       const res: any = {};
@@ -605,7 +605,7 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       // Rejects non-admin user
       const riderReq: any = {
         userId: 'rider-1',
-        role: ['RIDER'],
+        roles: ['RIDER'],
         user: { userId: 'rider-1', roles: ['RIDER'] },
       };
       const riderNext = vi.fn();

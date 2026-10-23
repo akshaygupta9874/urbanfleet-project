@@ -39,7 +39,7 @@ async function loadRequester(
   userId: string,
   req?: AuthenticatedRequest
 ): Promise<{ isAdmin: boolean }> {
-  const roles = req?.role;
+  const roles = req?.roles ?? req?.user?.roles;
   if (roles && Array.isArray(roles) && roles.length > 0) {
     return { isAdmin: roles.includes("ADMIN") || roles.includes("admin") };
   }

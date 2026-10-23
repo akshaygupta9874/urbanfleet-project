@@ -12,7 +12,7 @@ const connectionString =
   'postgresql://payment_user:payment_secure_pass@localhost:5432/urbanfleet_payment?schema=public';
 
 /**
- * Production-grade PostgreSQL connection pooling:
+ * PostgreSQL connection pooling:
  * - max: 20 concurrent connections in pool
  * - min: 2 warm idle connections
  * - idleTimeoutMillis: 30000 (close idle connections after 30s)

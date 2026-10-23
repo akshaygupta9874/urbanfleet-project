@@ -3,6 +3,7 @@ import { PrismaClient } from '../db/client.js';
 import { createLogger } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 import { PaymentService } from '../services/payment.service.js';
+import { NonRetryablePaymentError } from '../errors/payment.errors.js';
 import crypto from 'crypto';
 
 const logger = createLogger('payment-event-consumer');
@@ -51,69 +52,30 @@ export async function initPaymentConsumer(
         const eventType = raw.eventType as string | undefined;
         const payload = (typeof raw.payload === 'object' && raw.payload !== null ? raw.payload : raw) as Record<string, unknown>;
 
-        await prisma.$transaction(async (tx) => {
-          // Idempotency check
-          const existing = await tx.processedEvent.findUnique({
-            where: { eventId_consumerGroup: { eventId, consumerGroup } }
-          });
-          if (existing) return;
-
-          await tx.processedEvent.create({
-            data: { eventId, consumerGroup }
-          });
-
-          const creator: PaymentOrderCreator = paymentService;
-
-          if (eventType === 'RIDE_ARRIVED_AT_DESTINATION') {
-            const rideId = String(payload.rideId || '');
-            let riderId = String(payload.riderId || '');
-            let totalFarePaise = Number(payload.totalFarePaise || 0);
-            let driverId = payload.driverId ? String(payload.driverId) : undefined;
-            let fareBreakdown = (payload.fareBreakdown && typeof payload.fareBreakdown === 'object')
-              ? (payload.fareBreakdown as Record<string, unknown>)
-              : undefined;
-
-            // If riderId or totalFarePaise or fareBreakdown missing, fetch authoritative details from rideClient
-            if ((!riderId || !totalFarePaise || !fareBreakdown) && rideId) {
-              try {
-                const { rideClient } = await import('../clients/ride.client.js');
-                const rideDetails = await rideClient.getRideById(rideId);
-                if (rideDetails) {
-                  riderId = riderId || String(rideDetails.riderId || '');
-                  totalFarePaise = totalFarePaise || rideDetails.fare.breakdown.totalPaise;
-                  driverId = driverId || rideDetails.driverId || undefined;
-                  fareBreakdown = fareBreakdown || (rideDetails.fare.breakdown as unknown as Record<string, unknown>);
-                }
-              } catch (err: unknown) {
-                const fetchErrMessage = err instanceof Error ? err.message : String(err);
-                logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${fetchErrMessage}`);
-              }
-            }
-
-            await creator.createOrder({
-              rideId,
-              riderId,
-              amountPaise: totalFarePaise,
-              driverId,
-              fareBreakdown,
-              idempotencyKey: `ride-order-${rideId}`,
+        try {
+          await prisma.$transaction(async (tx) => {
+            // Idempotency check
+            const existing = await tx.processedEvent.findUnique({
+              where: { eventId_consumerGroup: { eventId, consumerGroup } }
             });
-            logger.info(`Initialized payment order for ride ${rideId} at arrival stage`);
-          } else if (eventType === 'RIDE_COMPLETED') {
-            const rideId = String(payload.rideId || '');
-            let riderId = String(payload.riderId || '');
-            let totalFarePaise = Number(payload.totalFarePaise || 0);
-            let driverId = payload.driverId ? String(payload.driverId) : undefined;
-            let fareBreakdown = (payload.fareBreakdown && typeof payload.fareBreakdown === 'object')
-              ? (payload.fareBreakdown as Record<string, unknown>)
-              : undefined;
+            if (existing) return;
 
-            // Check if payment already exists for this ride
-            const existingPayment = await tx.payment.findUnique({ where: { rideId } });
-            if (existingPayment) {
-              logger.info(`Ride ${rideId} completed; payment order ${existingPayment.id} already exists with status ${existingPayment.status}`);
-            } else {
-              // Resilient fallback: order wasn't created at arrival stage (e.g. driver completed directly)
+            await tx.processedEvent.create({
+              data: { eventId, consumerGroup }
+            });
+
+            const creator: PaymentOrderCreator = paymentService;
+
+            if (eventType === 'RIDE_ARRIVED_AT_DESTINATION') {
+              const rideId = String(payload.rideId || '');
+              let riderId = String(payload.riderId || '');
+              let totalFarePaise = Number(payload.totalFarePaise || 0);
+              let driverId = payload.driverId ? String(payload.driverId) : undefined;
+              let fareBreakdown = (payload.fareBreakdown && typeof payload.fareBreakdown === 'object')
+                ? (payload.fareBreakdown as Record<string, unknown>)
+                : undefined;
+
+              // If riderId or totalFarePaise or fareBreakdown missing, fetch authoritative details from rideClient
               if ((!riderId || !totalFarePaise || !fareBreakdown) && rideId) {
                 try {
                   const { rideClient } = await import('../clients/ride.client.js');
@@ -138,33 +100,83 @@ export async function initPaymentConsumer(
                 fareBreakdown,
                 idempotencyKey: `ride-order-${rideId}`,
               });
-              logger.info(`Initialized fallback payment order for completed ride ${rideId}`);
-            }
-          } else if (eventType === 'RIDE_CANCELLED') {
-            const rideId = String(payload.rideId || '');
-            const riderId = String(payload.riderId || '');
-            const cancellationFeePaise = Number(payload.cancellationFeePaise || 0);
-            const existingPayment = await tx.payment.findUnique({ where: { rideId } });
+              logger.info(`Initialized payment order for ride ${rideId} at arrival stage`);
+            } else if (eventType === 'RIDE_COMPLETED') {
+              const rideId = String(payload.rideId || '');
+              let riderId = String(payload.riderId || '');
+              let totalFarePaise = Number(payload.totalFarePaise || 0);
+              let driverId = payload.driverId ? String(payload.driverId) : undefined;
+              let fareBreakdown = (payload.fareBreakdown && typeof payload.fareBreakdown === 'object')
+                ? (payload.fareBreakdown as Record<string, unknown>)
+                : undefined;
 
-            // Compensating Saga: If payment was captured, issue partial refund deducting cancellation fee
-            if (existingPayment && existingPayment.status === 'CAPTURED') {
-              const refundAmount = existingPayment.amountPaise - cancellationFeePaise;
-              if (refundAmount > 0) {
-                await creator.issueRefund(
-                  existingPayment.id,
-                  refundAmount,
-                  `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${String(payload.cancellationReason || 'Rider Cancelled')}`
-                );
-                logger.info(`Compensating partial refund of ${refundAmount} paise executed for cancelled ride ${rideId}`);
+              // Check if payment already exists for this ride
+              const existingPayment = await tx.payment.findUnique({ where: { rideId } });
+              if (existingPayment) {
+                logger.info(`Ride ${rideId} completed; payment order ${existingPayment.id} already exists with status ${existingPayment.status}`);
               } else {
-                logger.info(`No refund issued for cancelled ride ${rideId}; fee (${cancellationFeePaise}) covers captured amount (${existingPayment.amountPaise})`);
+                // Resilient fallback: order wasn't created at arrival stage (e.g. driver completed directly)
+                if ((!riderId || !totalFarePaise || !fareBreakdown) && rideId) {
+                  try {
+                    const { rideClient } = await import('../clients/ride.client.js');
+                    const rideDetails = await rideClient.getRideById(rideId);
+                    if (rideDetails) {
+                      riderId = riderId || String(rideDetails.riderId || '');
+                      totalFarePaise = totalFarePaise || rideDetails.fare.breakdown.totalPaise;
+                      driverId = driverId || rideDetails.driverId || undefined;
+                      fareBreakdown = fareBreakdown || (rideDetails.fare.breakdown as unknown as Record<string, unknown>);
+                    }
+                  } catch (err: unknown) {
+                    const fetchErrMessage = err instanceof Error ? err.message : String(err);
+                    logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${fetchErrMessage}`);
+                  }
+                }
+
+                await creator.createOrder({
+                  rideId,
+                  riderId,
+                  amountPaise: totalFarePaise,
+                  driverId,
+                  fareBreakdown,
+                  idempotencyKey: `ride-order-${rideId}`,
+                });
+                logger.info(`Initialized fallback payment order for completed ride ${rideId}`);
               }
-            } else if (existingPayment && (existingPayment.status === 'PENDING' || existingPayment.status === 'CREATED')) {
-              await tx.payment.update({
-                where: { id: existingPayment.id },
-                data: { status: 'CANCELLED' }
-              });
-              if (cancellationFeePaise > 0) {
+            } else if (eventType === 'RIDE_CANCELLED') {
+              const rideId = String(payload.rideId || '');
+              const riderId = String(payload.riderId || '');
+              const cancellationFeePaise = Number(payload.cancellationFeePaise || 0);
+              const existingPayment = await tx.payment.findUnique({ where: { rideId } });
+
+              // Compensating Saga: If payment was captured, issue partial refund deducting cancellation fee
+              if (existingPayment && existingPayment.status === 'CAPTURED') {
+                const refundAmount = existingPayment.amountPaise - cancellationFeePaise;
+                if (refundAmount > 0) {
+                  await creator.issueRefund(
+                    existingPayment.id,
+                    refundAmount,
+                    `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${String(payload.cancellationReason || 'Rider Cancelled')}`
+                  );
+                  logger.info(`Compensating partial refund of ${refundAmount} paise executed for cancelled ride ${rideId}`);
+                } else {
+                  logger.info(`No refund issued for cancelled ride ${rideId}; fee (${cancellationFeePaise}) covers captured amount (${existingPayment.amountPaise})`);
+                }
+              } else if (existingPayment && (existingPayment.status === 'PENDING' || existingPayment.status === 'CREATED')) {
+                await tx.payment.update({
+                  where: { id: existingPayment.id },
+                  data: { status: 'CANCELLED' }
+                });
+                if (cancellationFeePaise > 0) {
+                  await creator.createOrder({
+                    rideId,
+                    riderId,
+                    amountPaise: cancellationFeePaise,
+                    driverId: payload.driverId ? String(payload.driverId) : undefined,
+                    idempotencyKey: `cancellation-fee-${rideId}`,
+                  });
+                  logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on cancelled ride ${rideId}`);
+                }
+              } else if (!existingPayment && cancellationFeePaise > 0) {
                 await creator.createOrder({
                   rideId,
                   riderId,
@@ -172,20 +184,32 @@ export async function initPaymentConsumer(
                   driverId: payload.driverId ? String(payload.driverId) : undefined,
                   idempotencyKey: `cancellation-fee-${rideId}`,
                 });
-                logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on cancelled ride ${rideId}`);
+                logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on unbilled cancelled ride ${rideId}`);
               }
-            } else if (!existingPayment && cancellationFeePaise > 0) {
-              await creator.createOrder({
-                rideId,
-                riderId,
-                amountPaise: cancellationFeePaise,
-                driverId: payload.driverId ? String(payload.driverId) : undefined,
-                idempotencyKey: `cancellation-fee-${rideId}`,
-              });
-              logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on unbilled cancelled ride ${rideId}`);
             }
+          });
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          // If error is NonRetryablePaymentError or operational 4xx, log warning and do not rethrow (skip poison message)
+          if (
+            err instanceof NonRetryablePaymentError ||
+            (typeof err === 'object' && err !== null && (err as { isOperational?: boolean; statusCode?: number }).isOperational && (err as { statusCode?: number }).statusCode! < 500)
+          ) {
+            logger.warn(`Non-retryable operational error processing ${eventType} event ${eventId}: ${errMsg}`, {
+              eventId,
+              eventType,
+              error: errMsg,
+            });
+            return;
           }
-        });
+
+          logger.error(`Error processing Kafka event ${eventType} (${eventId}): ${errMsg}`, {
+            eventId,
+            eventType,
+            error: err instanceof Error ? err.stack || err.message : String(err),
+          });
+          throw err;
+        }
       }
     });
 

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { DriverController } from '../controllers/driver.controller.js';
 import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
 import { driverRedisClient } from '../redis/client.js';
@@ -20,7 +20,7 @@ export function createDriverRouter(controller: DriverController): Router {
     limit: 10,
     windowSeconds: 60,
     keyPrefix: 'rl:driver:register',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${(req as any).userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 
@@ -29,7 +29,7 @@ export function createDriverRouter(controller: DriverController): Router {
     limit: 15,
     windowSeconds: 60,
     keyPrefix: 'rl:driver:upload',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${(req as any).userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 
@@ -38,7 +38,7 @@ export function createDriverRouter(controller: DriverController): Router {
     limit: 20,
     windowSeconds: 60,
     keyPrefix: 'rl:driver:doc',
-    keyGenerator: (req) => `${(req as any).userId || req.ip || 'anon'}`,
+    keyGenerator: (req: Request) => `${(req as any).userId || req.ip || 'anon'}`,
     failOpen: true,
   });
 

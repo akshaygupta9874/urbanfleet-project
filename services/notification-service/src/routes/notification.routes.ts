@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { NotificationRepository } from '../repositories/notification.repository.js';
 import { authMiddleware, AuthenticatedRequest } from '../middlewares/auth.middleware.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
@@ -10,7 +10,7 @@ export function createNotificationRouter(notifRepo: NotificationRepository): Rou
   router.get('/health', (_req, res) => res.status(200).json({ status: 'UP', service: 'notification-service' }));
 
   // List recent notifications for the authenticated user
-  router.get('/my', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  router.get('/my', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const email = req.user?.email;
     const userId = req.userId;
 
@@ -31,7 +31,7 @@ export function createNotificationRouter(notifRepo: NotificationRepository): Rou
   }));
 
   // Get single notification status (strictly enforcing recipient ownership or admin privilege)
-  router.get('/:id', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  router.get('/:id', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const record = await notifRepo.findById(req.params.id);
     if (!record) {
       return res.status(404).json({ success: false, message: 'Notification not found' });
