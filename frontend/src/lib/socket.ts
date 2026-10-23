@@ -64,15 +64,32 @@ interface RiderSocketOptions {
   onNoDriversAvailable: (payload: RideIdPayload) => void;
 }
 
-const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/+$/u, "");
+const getApiUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL || "").trim();
+  if (typeof window !== "undefined") {
+    if (window.location.protocol === "https:" && (!envUrl || envUrl.startsWith("http://"))) {
+      return window.location.origin;
+    }
+  }
+  return (envUrl || "http://localhost:3001").replace(/\/+$/u, "");
+};
+
+const apiUrl = getApiUrl();
 const inferredWebSocketUrl = apiUrl.replace(/^http/u, (protocol: string) =>
   protocol === "https" ? "wss" : "ws"
 );
 
-// In production the WebSocket server is hosted by the same service as the API.
-// This keeps the real-time connection on Render even when VITE_WS_URL was not
-// separately configured at build time.
-const baseWsUrl = (import.meta.env.VITE_WS_URL || inferredWebSocketUrl).replace(/\/+$/u, "");
+const getBaseWsUrl = (): string => {
+  const envWs = (import.meta.env.VITE_WS_URL || "").trim();
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    if (!envWs || envWs.startsWith("ws://")) {
+      return inferredWebSocketUrl;
+    }
+  }
+  return (envWs || inferredWebSocketUrl).replace(/\/+$/u, "");
+};
+
+const baseWsUrl = getBaseWsUrl();
 const WS_URL = baseWsUrl.includes("/ws") ? baseWsUrl : `${baseWsUrl}/ws/ride`;
 
 export function connectRiderSocket(options: RiderSocketOptions): WebSocket {

@@ -4,9 +4,19 @@ import axios, {
   type AxiosRequestConfig,
 } from "axios";
 
-const apiBaseUrl = (
-  import.meta.env.VITE_API_URL || "http://localhost:3001"
-).replace(/\/+$/u, "");
+const getApiBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL || "").trim();
+  if (typeof window !== "undefined") {
+    // If running over HTTPS in production, prevent Mixed Content and CORS issues
+    // by falling back to same-origin (Kong handles both frontend and backend)
+    if (window.location.protocol === "https:" && (!envUrl || envUrl.startsWith("http://"))) {
+      return window.location.origin;
+    }
+  }
+  return (envUrl || "http://localhost:3001").replace(/\/+$/u, "");
+};
+
+const apiBaseUrl = getApiBaseUrl();
 
 const apiBasePath = `${apiBaseUrl}/v1`;
 const authBasePath = `${apiBasePath}/auth`;
