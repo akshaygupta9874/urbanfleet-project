@@ -36,8 +36,7 @@ async function main() {
       firstName: 'John',
       lastName: 'Rider',
       roles: [Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     },
     create: {
       id: DEMO_RIDER_ID,
@@ -46,8 +45,7 @@ async function main() {
       firstName: 'John',
       lastName: 'Rider',
       roles: [Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     }
   });
   console.log(`✅ Upserted Demo Rider 1: ${rider1.email} (${rider1.id})`);
@@ -60,8 +58,7 @@ async function main() {
       firstName: 'Sarah',
       lastName: 'Rider',
       roles: [Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     },
     create: {
       id: DEMO_RIDER_2_ID,
@@ -70,8 +67,7 @@ async function main() {
       firstName: 'Sarah',
       lastName: 'Rider',
       roles: [Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     }
   });
   console.log(`✅ Upserted Demo Rider 2: ${rider2.email} (${rider2.id})`);
@@ -84,8 +80,7 @@ async function main() {
       firstName: 'Alex',
       lastName: 'Driver',
       roles: [Role.DRIVER, Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     },
     create: {
       id: DEMO_DRIVER_USER_ID,
@@ -94,8 +89,7 @@ async function main() {
       firstName: 'Alex',
       lastName: 'Driver',
       roles: [Role.DRIVER, Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     }
   });
   console.log(`✅ Upserted Demo Driver User 1: ${driver1.email} (${driver1.id})`);
@@ -108,8 +102,7 @@ async function main() {
       firstName: 'Rajesh',
       lastName: 'Kumar',
       roles: [Role.DRIVER, Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     },
     create: {
       id: DEMO_DRIVER_USER_2_ID,
@@ -118,8 +111,7 @@ async function main() {
       firstName: 'Rajesh',
       lastName: 'Kumar',
       roles: [Role.DRIVER, Role.RIDER],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     }
   });
   console.log(`✅ Upserted Demo Driver User 2: ${driver2.email} (${driver2.id})`);
@@ -132,8 +124,7 @@ async function main() {
       firstName: 'Fleet',
       lastName: 'Administrator',
       roles: [Role.ADMIN],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     },
     create: {
       id: DEMO_ADMIN_ID,
@@ -142,8 +133,7 @@ async function main() {
       firstName: 'Fleet',
       lastName: 'Administrator',
       roles: [Role.ADMIN],
-      isEmailVerified: true,
-      status: 'ACTIVE'
+      isEmailVerified: true
     }
   });
   console.log(`✅ Upserted Demo Admin: ${admin.email} (${admin.id})`);

@@ -29,7 +29,6 @@ model User {
   roles                      Role[]        @default([RIDER])
   isEmailVerified            Boolean       @default(false) @map("is_email_verified")
   avatarUrl                  String?       @map("avatar_url") @db.VarChar(500)
-  status                     String        @default("ACTIVE") @db.VarChar(20)
 
   createdAt                  DateTime      @default(now()) @map("created_at")
   updatedAt                  DateTime      @updatedAt @map("updated_at")
