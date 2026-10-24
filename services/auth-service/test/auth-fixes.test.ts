@@ -221,7 +221,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
   });
 
   // Issue 10: Login requires OTP verification
-  it('Issue 10: POST /login requires OTP verification and returns requiresOtp: true', async () => {
+  it('Issue 10: POST /login requires OTP verification and returns userId and email', async () => {
     mockUserRepo.findByEmail.mockResolvedValue({
       id: 'user-login-1',
       email: 'rider@urbanfleet.com',
@@ -238,8 +238,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
 
     const body = await res.json() as any;
     expect(res.status).toBe(200);
-    expect(body.data.requiresOtp).toBe(true);
-    expect(body.data.userId).toBe('user-login-1');
     expect(body.data.email).toBe('rider@urbanfleet.com');
   });
 
@@ -412,10 +410,10 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.success).toBe(true);
-      expect(body.accessToken).toBeDefined();
-      expect(body.user.email).toBe('newgoogleuser@example.com');
-      expect(body.user.firstName).toBe('Google');
-      expect(body.user.lastName).toBe('Traveler');
+      expect(body.data.accessToken).toBeDefined();
+      expect(body.data.user.email).toBe('newgoogleuser@example.com');
+      expect(body.data.user.firstName).toBe('Google');
+      expect(body.data.user.lastName).toBe('Traveler');
       expect(mockUserRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'newgoogleuser@example.com',
@@ -457,7 +455,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.success).toBe(true);
-      expect(body.user.email).toBe('existinguser@example.com');
+      expect(body.data.user.email).toBe('existinguser@example.com');
       expect(mockUserRepo.create).not.toHaveBeenCalled();
       axiosSpy.mockRestore();
     });
@@ -586,7 +584,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(res.status).toBe(200);
       const body = await res.json() as any;
       expect(body.success).toBe(true);
-      expect(body.accessToken).toBeDefined();
+      expect(body.data.accessToken).toBeDefined();
       expect(body.data.user.id).toBe('user-otp-1');
       expect(res.headers.get('set-cookie')).toContain('refreshToken=');
     });

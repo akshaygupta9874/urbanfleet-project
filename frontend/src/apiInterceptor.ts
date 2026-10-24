@@ -183,7 +183,7 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
           const response = await refreshClient.post("/refresh");
 
           const newAccessToken =
-            response.data?.accessToken;
+            response.data?.data?.accessToken ?? response.data?.accessToken;
 
           const validToken =
             typeof newAccessToken === "string" ? newAccessToken : null;

@@ -18,66 +18,57 @@ export class AuthController {
   }
 
   register = asyncHandler(async (req: Request, res: Response) => {
-    const userAgent = req.body?.userAgent ?? req.body?.useragent;
-    const ipAddress = req.body?.ipAddress ?? req.body?.ip;
-
-    if (!userAgent || typeof userAgent !== 'string' || !userAgent.trim()) {
-      throw new BadRequestError('userAgent is required in request body');
-    }
-    if (!ipAddress || typeof ipAddress !== 'string' || !ipAddress.trim()) {
-      throw new BadRequestError('ipAddress is required in request body');
+    const userAgent = req.headers['user-agent'];
+    const ipAddress = req.ip;
+    if (!userAgent || !ipAddress) {
+      throw new BadRequestError('User agent and IP address are required in request body');
     }
 
-    const result = await this.authService.register({
-      ...req.body,
-      ipAddress,
-      userAgent
-    });
+    const result = await this.authService.register(req.body);
 
     res.status(201).json({
       success: true,
-      message: result.message || 'User registered successfully. Please verify your email before logging in.',
+      message: result.message,
       data: {
         user: result.user,
       },
-      user: result.user,
     });
   });
 
   login = asyncHandler(async (req: Request, res: Response) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      throw new BadRequestError('Email and password are required in request body');
+    }
+
     const result = await this.authService.login({
-      ...req.body,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      email,
+      password,
     });
 
     res.status(200).json({
       success: true,
-      message: 'Verification code sent to your email',
+      message: result.message,
       data: {
-        requiresOtp: true,
-        userId: result.userId,
         email: result.email,
       },
     });
   });
 
   verifyOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { email, userId, otp } = req.body;
-    const submittedOtp = otp;
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      throw new BadRequestError('Email and OTP are required in request body');
+    }
 
     const result = await this.authService.verifyLoginOtp({
       email,
-      userId,
-      otp: submittedOtp,
+      otp,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
     res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
-
-
-    // Generate CSRF cookie
     const csrfToken = await generateCSRFToken(result.user.id, res);
 
     res.status(200).json({
@@ -87,32 +78,25 @@ export class AuthController {
         user: result.user,
         accessToken: result.accessToken,
         csrfToken,
-        tokens: {
-          accessToken: result.accessToken,
-        }
       },
-      tokens: {
-        accessToken: result.accessToken,
-      },
-      user: result.user,
-      accessToken: result.accessToken,
     });
   });
 
   googleAuth = asyncHandler(async (req: Request, res: Response) => {
     const { credential } = req.body;
+    const userAgent = req.headers['user-agent'];
+    const ipAddress = req.ip;
+    if (!userAgent || !ipAddress) {
+      throw new BadRequestError('User agent and IP address are required in request body');
+    }
     const result = await this.authService.googleAuth(
       credential,
-      req.ip,
-      req.headers['user-agent']
+      ipAddress,
+      userAgent
     );
 
-    // 1. Set httpOnly refresh cookie
-    if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
-    }
+    res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
 
-    // 2. Set CSRF cookie
     const csrfToken = await generateCSRFToken(result.user.id, res);
 
     res.status(200).json({
@@ -122,15 +106,7 @@ export class AuthController {
         user: result.user,
         accessToken: result.accessToken,
         csrfToken,
-        tokens: {
-          accessToken: result.accessToken,
-        },
       },
-      tokens: {
-        accessToken: result.accessToken,
-      },
-      user: result.user,
-      accessToken: result.accessToken,
     });
   });
 
@@ -141,12 +117,10 @@ export class AuthController {
     }
     const result = await this.authService.refreshAccessToken(token);
 
-    // Rotate httpOnly refresh token cookie
     if (result.refreshToken) {
       res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
     }
 
-    // Rotate CSRF token cookie
     const csrfToken = await refreshCSRFToken(result.user.id, res);
 
     res.status(200).json({
@@ -155,15 +129,7 @@ export class AuthController {
         user: result.user,
         accessToken: result.accessToken,
         csrfToken,
-        tokens: {
-          accessToken: result.accessToken,
-        }
       },
-      tokens: {
-        accessToken: result.accessToken,
-      },
-      user: result.user,
-      accessToken: result.accessToken,
     });
   });
 
@@ -277,7 +243,7 @@ export class AuthController {
     res.status(200).json({
       success: true,
       message: 'CSRF Token Refreshed',
-      data: { csrfToken }
+      data: { csrfToken },
     });
   });
 }

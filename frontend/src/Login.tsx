@@ -58,7 +58,6 @@ export default function LoginPage() {
   const [status, setStatus] = useState("");
   const [showOtp, setShowOtp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
@@ -79,8 +78,6 @@ export default function LoginPage() {
         accessToken?: string;
         user?: User;
         data?: {
-          requiresOtp?: boolean;
-          userId?: string;
           email?: string;
           devOtp?: string;
           message?: string;
@@ -91,11 +88,6 @@ export default function LoginPage() {
         email,
         password,
       });
-
-      const resolvedUserId = data.data?.userId || null;
-      if (resolvedUserId) {
-        setUserId(resolvedUserId);
-      }
 
       const receivedDevOtp = data.data?.devOtp ?? data.devOtp;
       if (receivedDevOtp) {
@@ -121,14 +113,6 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const payload: Record<string, string> = {
-        email,
-        otp: otp.trim(),
-      };
-      if (userId) {
-        payload.userId = userId;
-      }
-
       const { data } = await api.post<{
         message?: string;
         accessToken?: string;
@@ -137,7 +121,10 @@ export default function LoginPage() {
           accessToken?: string;
           user?: User;
         };
-      }>("/verify-otp", payload);
+      }>("/verify-otp", {
+        email,
+        otp: otp.trim(),
+      });
 
       const accessToken = data.data?.accessToken ?? data.accessToken;
       const user = data.data?.user ?? data.user;
@@ -165,10 +152,14 @@ export default function LoginPage() {
     setStatus("");
     setIsSubmitting(true);
     try {
-      const { data } = await api.post<{ accessToken: string; user: User }>("/google", {
+      const { data } = await api.post<{ data?: { accessToken: string; user: User }; accessToken?: string; user?: User }>("/google", {
         credential: credentialResponse.credential,
       });
-      establishSession(data.accessToken, data.user);
+      const resolvedToken = data.data?.accessToken ?? data.accessToken;
+      const resolvedUser = data.data?.user ?? data.user;
+      if (resolvedToken && resolvedUser) {
+        establishSession(resolvedToken, resolvedUser);
+      }
       const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
       navigate(target, { replace: true });
     } catch (error) {
@@ -349,7 +340,6 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => {
                   setShowOtp(false);
-                  setUserId(null);
                   setOtp("");
                   setStatus("");
                 }}

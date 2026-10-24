@@ -22,7 +22,7 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
       login: vi.fn(async (req, res) => {
         res.status(200).json({
           success: true,
-          data: { requiresOtp: true, message: 'OTP sent' },
+          data: { message: 'OTP sent' },
         });
       }),
       googleAuth: vi.fn(async (req, res) => {

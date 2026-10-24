@@ -140,9 +140,6 @@ describe('Auth Service Business Logic', () => {
       email: 'test@urbanfleet.com',
       password: 'Password@123',
     });
-
-    expect(result.requiresOtp).toBe(true);
-    expect(result.userId).toBe('u-123');
     expect(result.email).toBe('test@urbanfleet.com');
     expect(authRedisClient.set).toHaveBeenCalled();
     expect(mockOutboxRepo.stageEvent).toHaveBeenCalled();
@@ -168,7 +165,7 @@ describe('Auth Service Business Logic', () => {
   });
 
   it('should verify login OTP and complete authentication session', async () => {
-    mockUserRepo.findById.mockResolvedValue({
+    mockUserRepo.findByEmail.mockResolvedValue({
       id: 'u-123',
       email: 'test@urbanfleet.com',
       firstName: 'Test',
@@ -179,7 +176,7 @@ describe('Auth Service Business Logic', () => {
     vi.spyOn(authRedisClient, 'get').mockResolvedValue('849201');
 
     const result = await authService.verifyLoginOtp({
-      userId: 'u-123',
+      email: 'test@urbanfleet.com',
       otp: '849201',
     });
 
@@ -191,7 +188,7 @@ describe('Auth Service Business Logic', () => {
   });
 
   it('BLOCKING: should reject invalid OTP with UnauthorizedError', async () => {
-    mockUserRepo.findById.mockResolvedValue({
+    mockUserRepo.findByEmail.mockResolvedValue({
       id: 'u-123',
       email: 'test@urbanfleet.com',
       roles: ['RIDER'],
@@ -200,13 +197,13 @@ describe('Auth Service Business Logic', () => {
     vi.spyOn(authRedisClient, 'get').mockResolvedValue('849201');
 
     await expect(authService.verifyLoginOtp({
-      userId: 'u-123',
+      email: 'test@urbanfleet.com',
       otp: '999999',
     })).rejects.toThrow(UnauthorizedError);
   });
 
   it('BLOCKING: should fail with ServiceUnavailableError when Redis throws an unexpected error during verify OTP', async () => {
-    mockUserRepo.findById.mockResolvedValue({
+    mockUserRepo.findByEmail.mockResolvedValue({
       id: 'u-123',
       email: 'test@urbanfleet.com',
       roles: ['RIDER'],
@@ -215,7 +212,7 @@ describe('Auth Service Business Logic', () => {
     vi.spyOn(authRedisClient, 'get').mockRejectedValue(new Error('Redis connection timeout'));
 
     await expect(authService.verifyLoginOtp({
-      userId: 'u-123',
+      email: 'test@urbanfleet.com',
       otp: '849201',
     })).rejects.toThrow(ServiceUnavailableError);
   });

@@ -195,11 +195,10 @@ export class AuthService {
         isEmailVerified: user.isEmailVerified
       },
       message: 'Registration successful. Please verify your email before logging in.',
-      verifyToken
     };
   }
 
-  async login(input: { email: string; password: string; ipAddress?: string; userAgent?: string }) {
+  async login(input: { email: string; password: string }) {
     const user = await this.userRepo.findByEmail(input.email);
     if (!user) {
       throw new UnauthorizedError('Invalid email or password');
@@ -222,10 +221,7 @@ export class AuthService {
       if (!authRedisClient || !authRedisClient.isOpen) {
         throw new ServiceUnavailableError('Verification service is temporarily unavailable', 'REDIS_UNAVAILABLE');
       }
-      await Promise.all([
-        authRedisClient.set(authRedisKey(`otp:login:${user.id}`), otp, { EX: 300 }),
-        authRedisClient.set(authRedisKey(`otp:login:${user.email.toLowerCase()}`), otp, { EX: 300 }),
-      ]);
+      await authRedisClient.set(authRedisKey(`otp:login:${user.id}`), otp, { EX: 300 });
     } catch (err: unknown) {
       logger.error('Failed to store login OTP in Redis:', {
         error: err instanceof Error ? err.message : String(err),
@@ -287,28 +283,21 @@ export class AuthService {
     });
 
     return {
-      requiresOtp: true,
-      userId: user.id,
       email: user.email,
+      message: 'Verification code sent to your email',
     };
   }
 
   async verifyLoginOtp(input: {
     email: string;
-    userId?: string;
     otp: string;
     ipAddress?: string;
     userAgent?: string;
   }) {
-    let user = null;
-    if (input.userId) {
-      user = await this.userRepo.findById(input.userId);
-    } else if (input.email) {
-      user = await this.userRepo.findByEmail(input.email.toLowerCase());
-    }
+    const user = await this.userRepo.findByEmail(input.email.toLowerCase());
 
     if (!user) {
-      throw new UnauthorizedError('User account not found');
+      throw new UnauthorizedError('Invalid or expired verification code');
     }
 
     if (!user.isEmailVerified) {
@@ -325,9 +314,6 @@ export class AuthService {
         throw new ServiceUnavailableError('Verification service is temporarily unavailable', 'REDIS_UNAVAILABLE');
       }
       storedOtp = await authRedisClient.get(authRedisKey(`otp:login:${user.id}`));
-      if (!storedOtp && user.email) {
-        storedOtp = await authRedisClient.get(authRedisKey(`otp:login:${user.email.toLowerCase()}`));
-      }
       if (storedOtp && storedOtp === submittedOtp) {
         isValid = true;
       }
@@ -351,10 +337,7 @@ export class AuthService {
     // Invalidate consumed OTP keys
     try {
       if (authRedisClient && authRedisClient.isOpen) {
-        await Promise.all([
-          authRedisClient.del(authRedisKey(`otp:login:${user.id}`)),
-          authRedisClient.del(authRedisKey(`otp:login:${user.email.toLowerCase()}`)),
-        ]);
+        await authRedisClient.del(authRedisKey(`otp:login:${user.id}`));
       }
     } catch (err: unknown) {
       logger.warn('Failed to delete consumed OTP from Redis:', {
@@ -363,8 +346,8 @@ export class AuthService {
       });
     }
 
-    const firstName = user.firstName || 'User';
-    const lastName = user.lastName || '';
+    const firstName = user.firstName ;
+    const lastName = user.lastName ;
 
     const sessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
@@ -857,7 +840,7 @@ export class AuthService {
     }
   }
 
-  async googleAuth(credential: string, ipAddress?: string, userAgent?: string) {
+  async googleAuth(credential: string, ipAddress: string, userAgent: string) {
     if (!credential || typeof credential !== 'string') {
       throw new BadRequestError('A Google credential is required');
     }

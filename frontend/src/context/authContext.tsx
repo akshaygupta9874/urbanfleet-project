@@ -28,9 +28,10 @@ export interface AuthContextType {
 
 async function requestAuthentication(): Promise<{ accessToken: string; user: User } | null> {
   try {
-    const response = await api.post<{ accessToken?: unknown; user?: Partial<User> & Record<string, unknown> }>("/refresh");
-    const accessToken = response.data.accessToken;
-    const rawUser = response.data.user;
+    const response = await api.post<{ data?: { accessToken?: unknown; user?: Partial<User> & Record<string, unknown> }; accessToken?: unknown; user?: Partial<User> & Record<string, unknown> }>("/refresh");
+    const payload = response.data?.data ?? response.data;
+    const accessToken = payload?.accessToken;
+    const rawUser = payload?.user;
     if (typeof accessToken !== "string" || !rawUser || typeof rawUser !== "object") {
       return null;
     }
