@@ -10,11 +10,8 @@ services:
       - name: auth-routes
         paths:
           - /auth
-          - /admin
           - /api/auth
           - /v1/auth
-          - /api/admin
-          - /v1/admin
         strip_path: false
         protocols:
           - http

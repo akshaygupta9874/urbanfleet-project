@@ -480,10 +480,10 @@ export class DriverController {
 
   verifyDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const roles: string[] = req.roles ?? req.role ?? [];
-    const isVerifier = roles.includes('ADMIN') || roles.includes('VERIFIER');
+    const isVerifier = roles.includes('VERIFIER');
 
     if (!isVerifier) {
-      throw new AppError('Forbidden: Only administrators or verifiers can verify documents', 403, 'FORBIDDEN');
+      throw new AppError('Forbidden: Only verifiers can verify documents', 403, 'FORBIDDEN');
     }
 
     const { status, rejectionReason } = req.body;
@@ -496,10 +496,10 @@ export class DriverController {
 
   verifyDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const roles: string[] = req.roles ?? req.role ?? [];
-    const isVerifier = roles.includes('ADMIN') || roles.includes('VERIFIER');
+    const isVerifier = roles.includes('VERIFIER');
 
     if (!isVerifier) {
-      throw new AppError('Forbidden: Only administrators or verifiers can verify drivers', 403, 'FORBIDDEN');
+      throw new AppError('Forbidden: Only verifiers can verify drivers', 403, 'FORBIDDEN');
     }
 
     const paramId = req.params.id;
@@ -558,9 +558,7 @@ export class DriverController {
     }
     const callerId = req.userId;
     const roles = req.role || [];
-    const isAdmin = roles.includes('ADMIN');
-    const isOwner = Boolean(callerId && profile.userId === callerId);
-    const isPrivileged = isAdmin || isOwner;
+    const isPrivileged = Boolean(callerId && profile.userId === callerId);
 
     const data = isPrivileged ? profile : this.driverService.sanitizePublicProfile(profile);
     res.status(200).json({ success: true, data });
@@ -573,9 +571,7 @@ export class DriverController {
     }
     const callerId = req.userId;
     const roles = req.role || [];
-    const isAdmin = roles.includes('ADMIN');
-    const isOwner = Boolean(callerId && profile.userId === callerId);
-    const isPrivileged = isAdmin || isOwner;
+    const isPrivileged = Boolean(callerId && profile.userId === callerId);
 
     const data = isPrivileged ? profile : this.driverService.sanitizePublicProfile(profile);
     res.status(200).json({ success: true, data });

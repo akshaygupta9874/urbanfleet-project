@@ -41,7 +41,7 @@ export function registerDispatcher(socket: AuthenticatedSocket): void {
       const { event, data } = result.data;
       const userRoles = socket.user?.role || [];
       const isDriver = userRoles.includes('DRIVER');
-      const isRider = userRoles.includes('RIDER') || userRoles.includes('ADMIN');
+      const isRider = userRoles.includes('RIDER');
 
       // Handle driver events
       if (Object.values(DriverEvents).includes(event as DriverEvent)) {

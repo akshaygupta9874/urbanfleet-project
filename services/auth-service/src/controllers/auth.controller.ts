@@ -204,11 +204,8 @@ export class AuthController {
       throw new UnauthorizedError('User unauthenticated');
     }
 
-    const roles: string[] = req.roles || [];
-    const isPrivileged = roles.includes('ADMIN');
     const isSelf = callerId === targetId;
-
-    if (!isPrivileged && !isSelf) {
+    if (!isSelf) {
       throw new ForbiddenError('You are not authorized to view another user profile');
     }
 
@@ -226,9 +223,7 @@ export class AuthController {
   });
 
   grantDriverRole = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    if (!(req.roles ?? []).includes('ADMIN')) {
-      throw new ForbiddenError('Only administrators can grant driver access');
-    }
+    
     const userId = req.params.id;
     const user = await this.userService.addDriverRole(userId);
     res.status(200).json({ success: true, data: user });

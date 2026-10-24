@@ -9,7 +9,7 @@ export const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters long')
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number'),
-  roles: z.array(z.enum(['RIDER', 'DRIVER', 'ADMIN'])).optional().default(['RIDER']),
+  roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional().default(['RIDER']),
   userAgent: z.string({ required_error: 'User agent is required' }).min(1, 'User agent is required').max(1000),
   ipAddress: z.string({ required_error: 'IP address is required' }).ip('Invalid IP address format'),
 });

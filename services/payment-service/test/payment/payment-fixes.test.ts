@@ -6,7 +6,6 @@ import { paymentRepository } from '../../src/repositories/payment.repository.js'
 import { ledgerService } from '../../src/services/ledger.service.js';
 import { initPaymentConsumer } from '../../src/consumers/payment.consumer.js';
 import { authClient } from '../../src/clients/auth.client.js';
-import { requireAdmin } from '../../src/middlewares/require-admin.middleware.js';
 import { prisma, UserRole } from '../../src/db/client.js';
 import { redisClient } from '../../src/redis/client.js';
 import type { RideDto } from '@urbanfleet/common';
@@ -578,45 +577,16 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
         firstName: 'User',
         lastName: 'Two',
         
-        roles: ['ADMIN'],
+        roles: ['DRIVER'],
         isEmailVerified: true,
       });
 
       const userFromAuth = await paymentRepository.findUserById('user-auth-2');
       expect(userFromAuth.id).toBe('user-auth-2');
-      expect(userFromAuth.roles).toContain('ADMIN');
+      expect(userFromAuth.roles).toContain('DRIVER');
       expect(authSpy).toHaveBeenCalledWith('user-auth-2');
 
       authSpy.mockRestore();
-    });
-
-    it('requireAdmin reads roles from request context without querying database', async () => {
-      const req: any = {
-        userId: 'admin-1',
-        roles: ['ADMIN'],
-        user: { userId: 'admin-1', roles: ['ADMIN'] },
-      };
-      const res: any = {};
-      const next = vi.fn();
-
-      await requireAdmin(req, res, next);
-      expect(next).toHaveBeenCalledWith();
-
-      // Rejects non-admin user
-      const riderReq: any = {
-        userId: 'rider-1',
-        roles: ['RIDER'],
-        user: { userId: 'rider-1', roles: ['RIDER'] },
-      };
-      const riderNext = vi.fn();
-
-      await requireAdmin(riderReq, res, riderNext);
-      expect(riderNext).toHaveBeenCalledWith(
-        expect.objectContaining({
-          statusCode: 403,
-          code: 'FORBIDDEN',
-        })
-      );
     });
 
     it('prisma.$transaction attaches ride and user delegates to transactional client', async () => {

@@ -686,8 +686,6 @@ Every single function and endpoint currently existing in `backend/src` is preser
   13. `verify2FA` (`POST /2fa/verify`)
   14. `disable2FA` (`POST /2fa/disable`)
   15. `login2FA` (`POST /2fa/login`)
-* `admin.controller.ts`:
-  16. `getSystemStats` (`GET /stats`)
 
 #### 2. `driver-service` (7 Handlers + 1 Constant)
 * `driver.controller.ts`:
@@ -725,11 +723,10 @@ Every single function and endpoint currently existing in `backend/src` is preser
 
 ### 4.2 Service Methods (Reconciled Count: 77 Domain Methods)
 
-#### 1. `auth-service` (24 Methods across 4 Services)
+#### 1. `auth-service` (22 Methods across 3 Services)
 * `auth.service.ts` (14): `register`, `login`, `refreshAccessToken`, `logout`, `changePassword`, `requestPasswordReset`, `resetPassword`, `verifyEmail`, `resendVerificationToken`, `generateTokens`, `hashPassword`, `comparePassword`, `verifyAccessToken`, `verifyRefreshToken`.
 * `user.service.ts` (4): `getUserById`, `getUserByEmail`, `updateUser`, `deleteUser`.
 * `two-factor.service.ts` (4): `generateSecret`, `verifyToken`, `enable2FA`, `disable2FA`.
-* `admin.service.ts` (2): `getSystemStats`, `listUsers`.
 
 #### 2. `driver-service` (10 Methods across 2 Services)
 * `driver.service.ts` (6): `createDriverProfile`, `getDriverByUserId`, `updateProfile`, `updateVehicleInfo`, `setAvailability`, `calculateEarnings`.
@@ -865,7 +862,6 @@ generator client {
 enum Role {
   RIDER
   DRIVER
-  ADMIN
 }
 
 model User {

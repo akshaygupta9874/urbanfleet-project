@@ -112,12 +112,9 @@ export class RideService {
     if (!ride) throw new NotFoundError('Ride not found');
 
     if (requestingUserId) {
-      const roles = Array.isArray(userRole) ? userRole : [userRole || 'RIDER'];
-      const isAdmin = roles.includes('ADMIN');
       const isRider = ride.riderId === requestingUserId;
       const isDriver = ride.driverId === requestingUserId;
-
-      if (!isAdmin && !isRider && !isDriver) {
+      if (!isRider && !isDriver) {
         throw new AppError('Forbidden: You are not authorized to view this ride', 403, 'FORBIDDEN');
       }
 

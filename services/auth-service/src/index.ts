@@ -9,11 +9,8 @@ import { UserRepository } from './repositories/user.repository.js';
 import { SessionRepository } from './repositories/session.repository.js';
 import { AuthService } from './services/auth.service.js';
 import { UserService } from './services/user.service.js';
-import { AdminService } from './services/admin.service.js';
 import { AuthController } from './controllers/auth.controller.js';
-import { AdminController } from './controllers/admin.controller.js';
 import { createAuthRouter } from './routes/auth.routes.js';
-import { createAdminRouter } from './routes/admin.routes.js';
 
 import { initAuthRedis, authRedisClient } from './redis/client.js';
 import { OutboxRepository } from './repositories/outbox.repository.js';
@@ -46,10 +43,8 @@ outboxWorker.start();
 
 const authService = new AuthService(userRepo, sessionRepo, outboxRepo);
 const userService = new UserService(userRepo);
-const adminService = new AdminService(userRepo);
 
 const authController = new AuthController(authService, userService);
-const adminController = new AdminController(adminService);
 
 // Health check endpoint (mounted before router)
 const healthHandler = async (_req: express.Request, res: express.Response) => {
@@ -91,14 +86,10 @@ app.get('/api/auth/health', healthHandler);
 
 // 4. Mounting Routes
 const authRouter = createAuthRouter(authController);
-const adminRouter = createAdminRouter(adminController);
 
 app.use('/auth', authRouter);
-app.use('/admin', adminRouter);
 app.use('/api/auth', authRouter);
 app.use('/v1/auth', authRouter);
-app.use('/api/admin', adminRouter);
-app.use('/v1/admin', adminRouter);
 
 // 5. Global Error Handler
 app.use((err: unknown, req: express.Request, res: express.Response, next: NextFunction) => {

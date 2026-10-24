@@ -1031,15 +1031,8 @@ export class PaymentService {
     return refundService.initiateRefund(input);
   }
 
-  async loadRequester(userId: string): Promise<{ isAdmin: boolean }> {
-    const user = await paymentRepository.findUserById(userId);
-    if (!user) {
-      throw new AppError("User not found", 404, "USER_NOT_FOUND");
-    }
-    const roles = Array.isArray(user.roles) ? user.roles : ["RIDER"];
-    return {
-      isAdmin: roles.includes(UserRole.ADMIN) || roles.includes("ADMIN"),
-    };
+  async loadRequester(_userId: string): Promise<{ isAdmin: boolean }> {
+    return { isAdmin: false };
   }
 
   async getPaymentById(paymentId: string): Promise<IPayment | null> {

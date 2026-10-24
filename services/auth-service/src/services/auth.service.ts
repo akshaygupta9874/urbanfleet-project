@@ -46,7 +46,7 @@ export class AuthService {
     password: string;
     firstName: string;
     lastName: string;
-    roles?: Array<Role | 'RIDER' | 'DRIVER' | 'ADMIN'>;
+    roles?: Array<Role | 'RIDER' | 'DRIVER'>;
     ipAddress?: string;
     userAgent?: string;
   }) {

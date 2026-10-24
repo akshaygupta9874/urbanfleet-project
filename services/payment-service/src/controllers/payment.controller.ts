@@ -36,14 +36,10 @@ function unauthenticated(): AppError {
 
 /** One user lookup per request (handled via service or authenticated request context). */
 async function loadRequester(
-  userId: string,
-  req?: AuthenticatedRequest
+  _userId: string,
+  _req?: AuthenticatedRequest
 ): Promise<{ isAdmin: boolean }> {
-  const roles = req?.roles ?? req?.user?.roles;
-  if (roles && Array.isArray(roles) && roles.length > 0) {
-    return { isAdmin: roles.includes("ADMIN") || roles.includes("admin") };
-  }
-  return paymentService.loadRequester(userId);
+  return { isAdmin: false };
 }
 
 function isParticipant(

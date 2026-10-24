@@ -190,5 +190,4 @@ export const requireRole = (...allowedRoles: string[]) => {
   };
 };
 
-export const requireAdmin = requireRole('ADMIN');
 export default authMiddleware;

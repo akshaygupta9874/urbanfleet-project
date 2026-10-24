@@ -688,7 +688,7 @@ export default function DriverRegistration() {
                       />
                     </div>
                     <p className="mt-6 text-sm font-medium text-[#6b3a12]">
-                      Once approved by the admin, you'll be able to access your driver dashboard and
+                      Once approved, you'll be able to access your driver dashboard and
                       receive ride requests.
                     </p>
                   </div>

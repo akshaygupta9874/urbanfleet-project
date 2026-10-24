@@ -4,7 +4,6 @@ import {
   createOrderSchema, verifyCheckoutSchema, refundSchema, listPaymentsQuerySchema,
   paymentIdParamSchema, validate,
 } from "../../src/validation/payment.validation.js";
-import { requireAdmin } from "../../src/middlewares/require-admin.middleware.js";
 import * as controller from "../../src/controllers/payment.controller.js";
 import { paymentService } from "../../src/services/payment.service.js";
 import { paymentRepository } from "../../src/repositories/payment.repository.js";
@@ -60,26 +59,6 @@ describe("validation schemas", () => {
   });
 });
 
-describe("requireAdmin", () => {
-  const run = async (req: any, user: any) => {
-    vi.spyOn(prisma.user, "findUnique").mockResolvedValue(user ? ({ roles: user.roles } as any) : null);
-    const next = vi.fn();
-    await requireAdmin(req, {} as any, next);
-    return next;
-  };
-
-  it("lets admins through", async () => {
-    const next = await run({ userId: "u1" }, { roles: [UserRole.RIDER, UserRole.ADMIN] });
-    expect(next).toHaveBeenCalledWith();
-  });
-
-  it("FIXED: riders / drivers get 403, anonymous and unknown users 401", async () => {
-    expect((await run({ userId: "u1" }, { roles: [UserRole.RIDER, UserRole.DRIVER] })).mock.calls[0]![0]).toMatchObject({ statusCode: 403 });
-    expect((await run({}, null)).mock.calls[0]![0]).toMatchObject({ statusCode: 401 });
-    expect((await run({ userId: "u1" }, null)).mock.calls[0]![0]).toMatchObject({ statusCode: 401 });
-  });
-});
-
 describe("controllers", () => {
   const call = async (handler: any, req: any) => {
     const res: any = { statusCode: 0, body: undefined, status(c: number) { this.statusCode = c; return this; }, json(b: unknown) { this.body = b; return this; } };
@@ -128,11 +107,6 @@ describe("controllers", () => {
 
     let out = await call(controller.getPayment, { userId: oid().toString(), params: { paymentId: "x" } });
     expect(out.next.mock.calls[0]![0]).toMatchObject({ statusCode: 403 });
-
-    asUser([UserRole.ADMIN]);
-    out = await call(controller.getPayment, { userId: oid().toString(), params: { paymentId: "x" } });
-    expect(out.res.body.data).toHaveProperty("idempotencyKey");
-    expect(out.res.body.data.refunds[0]).toHaveProperty("driverReversalPaise");
   });
 
   it("listPayments: riders are limited to their own payments; response is paginated but `data` is still an array", async () => {
@@ -143,10 +117,6 @@ describe("controllers", () => {
     expect(list).toHaveBeenCalledWith({ rider: riderId, status: PaymentStatus.CAPTURED }, 2, 20);
     expect(Array.isArray(res.body.data)).toBe(true);
     expect(res.body.meta).toEqual({ page: 2, limit: 20, total: 41, totalPages: 3 });
-
-    asUser([UserRole.ADMIN]);
-    await call(controller.listPayments, { userId: riderId, query: { page: 1, limit: 20 } });
-    expect(list.mock.calls[1]![0]).toEqual({ status: undefined });
   });
 
   it("refundPayment returns 202 with the refund result", async () => {

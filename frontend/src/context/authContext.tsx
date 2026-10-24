@@ -7,7 +7,7 @@ import {
 import api, { clearAccessToken, setAccessToken } from "../apiInterceptor";
 import { AuthContext } from "./auth-context";
 
-type UserRole = "RIDER" | "DRIVER" | "ADMIN";
+type UserRole = "RIDER" | "DRIVER";
 
 export interface User {
   id: string;

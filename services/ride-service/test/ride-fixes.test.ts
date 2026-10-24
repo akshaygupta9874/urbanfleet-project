@@ -212,7 +212,7 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       );
     });
 
-    it('reveals OTP only to the owning rider and redacts it from drivers and admins', async () => {
+    it('reveals OTP only to the owning rider and redacts it from drivers', async () => {
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED' });
       await mockOtpService.storeRideOtp('ride-test-1', '7890');
 
@@ -228,11 +228,6 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'COMPLETED' });
       const completedDriverView: any = await rideService.getRideById('ride-test-1', 'driver-xyz', 'DRIVER');
       expect(completedDriverView.otp).toBeNull();
-
-      // 4. Admin cannot retrieve the rider-only OTP
-      mockRideRepo.findById.mockResolvedValue({ ...baseRide, status: 'DRIVER_ASSIGNED' });
-      const adminView: any = await rideService.getRideById('ride-test-1', 'admin-1', 'ADMIN');
-      expect(adminView.otp).toBeNull();
 
       // 5. Unrelated third-party is Forbidden (403)
       await expect(

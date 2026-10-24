@@ -92,7 +92,7 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       const req: any = {
         params: { id: 'doc-verified' },
         body: { status: 'VERIFIED' },
-        roles: ['ADMIN'],
+        roles: ['VERIFIER'],
       };
       const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
@@ -117,24 +117,8 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       expect(next).toHaveBeenCalledWith(expect.any(AppError));
       const passedError = next.mock.calls[0][0];
       expect(passedError.statusCode).toBe(403);
-      expect(passedError.message).toContain('Only administrators or verifiers can verify documents');
+      expect(passedError.message).toContain('Only verifiers can verify documents');
       expect(mockDocService.verifyDocument).not.toHaveBeenCalled();
-    });
-
-    it('allows document verification by user with ADMIN role', async () => {
-      const req: any = {
-        params: { id: 'doc-1' },
-        body: { status: 'VERIFIED' },
-        user: { id: 'admin-1', role: 'ADMIN' },
-        role: 'ADMIN',
-        headers: {},
-      };
-      const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
-
-      await driverController.verifyDocument(req, res, () => {});
-
-      expect(mockDocService.verifyDocument).toHaveBeenCalledWith('doc-1', 'VERIFIED', undefined);
-      expect(res.status).toHaveBeenCalledWith(200);
     });
 
     it('allows document verification by user with VERIFIER role', async () => {

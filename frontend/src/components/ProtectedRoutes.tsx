@@ -6,7 +6,7 @@ import UnauthorizedPage from "./UnauthorizedPage";
 import { fetchDriverProfile, isDriverApproved } from "../lib/driverApi";
 import { refreshAccessToken } from "../apiInterceptor";
 
-export type UserRole = "RIDER" | "DRIVER" | "ADMIN";
+export type UserRole = "RIDER" | "DRIVER";
 
 export const ProtectedRoutes = ({
   allowedroles,

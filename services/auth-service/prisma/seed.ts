@@ -18,7 +18,6 @@ export const DEMO_RIDER_ID = '11111111-1111-1111-1111-111111111111';
 export const DEMO_RIDER_2_ID = '11111111-1111-1111-1111-111111111112';
 export const DEMO_DRIVER_USER_ID = '22222222-2222-2222-2222-222222222222';
 export const DEMO_DRIVER_USER_2_ID = '22222222-2222-2222-2222-222222222223';
-export const DEMO_ADMIN_ID = '33333333-3333-3333-3333-333333333333';
 
 async function main() {
   console.log('🌱 Seeding urbanfleet_auth database...');
@@ -115,28 +114,6 @@ async function main() {
     }
   });
   console.log(`✅ Upserted Demo Driver User 2: ${driver2.email} (${driver2.id})`);
-
-  // 5. Demo Admin
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@urbanfleet.com' },
-    update: {
-      passwordHash,
-      firstName: 'Fleet',
-      lastName: 'Administrator',
-      roles: [Role.ADMIN],
-      isEmailVerified: true
-    },
-    create: {
-      id: DEMO_ADMIN_ID,
-      email: 'admin@urbanfleet.com',
-      passwordHash,
-      firstName: 'Fleet',
-      lastName: 'Administrator',
-      roles: [Role.ADMIN],
-      isEmailVerified: true
-    }
-  });
-  console.log(`✅ Upserted Demo Admin: ${admin.email} (${admin.id})`);
 
 }
 

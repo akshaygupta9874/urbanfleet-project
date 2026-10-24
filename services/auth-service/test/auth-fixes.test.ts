@@ -517,28 +517,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(body.data.id).toBe(userA.id);
     });
 
-    it('allows an ADMIN user to view any user profile', async () => {
-      mockUserRepo.findById.mockResolvedValue(userB);
-
-      const adminToken = signAccessToken({
-        userId: 'admin-uuid-1',
-        email: 'admin@urbanfleet.com',
-        firstName: 'Admin',
-        lastName: 'Fleet',
-        roles: ['ADMIN'],
-      });
-
-      const res = await fetch(`${baseUrl}/users/${userB.id}`, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-
-      expect(res.status).toBe(200);
-      const body = await res.json() as any;
-      expect(body.success).toBe(true);
-      expect(body.data.id).toBe(userB.id);
-    });
-
     it('rejects unauthenticated requests even if x-internal-service-key header is supplied', async () => {
       mockUserRepo.findById.mockResolvedValue(userB);
 

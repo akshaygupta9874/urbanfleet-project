@@ -251,12 +251,6 @@ export class RideController {
   });
 
   updatePaymentStatus = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const roles = req.roles ?? req.role ?? [];
-    const isAdmin = roles.includes('ADMIN');
-
-    if (!isAdmin) {
-      throw new AppError('Unauthorized: Only administrators can update payment status', 403, 'FORBIDDEN');
-    }
 
     const rideId = getRideId(req);
     const body = extractRecord(req.body) || {};
