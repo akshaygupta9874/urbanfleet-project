@@ -6,26 +6,33 @@ export class SocketRegistry {
   private readonly socketUsers = new Map<AuthenticatedSocket, AuthenticatedSocketUser>();
 
   register(socket: AuthenticatedSocket): void {
-    const { userId, driverId } = socket.user;
+    const { userId, driverId, role } = socket.user;
 
     this.socketUsers.set(socket, socket.user);
 
-    if (driverId) {
-      let sockets = this.driverSockets.get(driverId);
-      if (!sockets) {
-        sockets = new Set();
-        this.driverSockets.set(driverId, sockets);
+    const roles = Array.isArray(role) ? role : role ? [role] : ['RIDER'];
+    const hasRiderRole = roles.includes('RIDER') || !driverId;
+    const hasDriverRole = roles.includes('DRIVER') && Boolean(driverId);
+
+    // 1. Register in riderSockets if user has RIDER capability
+    if (hasRiderRole) {
+      let rSockets = this.riderSockets.get(userId);
+      if (!rSockets) {
+        rSockets = new Set();
+        this.riderSockets.set(userId, rSockets);
       }
-      sockets.add(socket);
-      return;
+      rSockets.add(socket);
     }
 
-    let sockets = this.riderSockets.get(userId);
-    if (!sockets) {
-      sockets = new Set();
-      this.riderSockets.set(userId, sockets);
+    // 2. Register in driverSockets if user has DRIVER capability
+    if (hasDriverRole && driverId) {
+      let dSockets = this.driverSockets.get(driverId);
+      if (!dSockets) {
+        dSockets = new Set();
+        this.driverSockets.set(driverId, dSockets);
+      }
+      dSockets.add(socket);
     }
-    sockets.add(socket);
   }
 
   unregister(socket: AuthenticatedSocket): void {
@@ -34,23 +41,30 @@ export class SocketRegistry {
 
     this.socketUsers.delete(socket);
 
-    if (user.driverId) {
-      const sockets = this.driverSockets.get(user.driverId);
-      if (!sockets) return;
+    const roles = Array.isArray(user.role) ? user.role : user.role ? [user.role] : ['RIDER'];
+    const hasRiderRole = roles.includes('RIDER') || !user.driverId;
+    const hasDriverRole = roles.includes('DRIVER') && Boolean(user.driverId);
 
-      sockets.delete(socket);
-      if (sockets.size === 0) {
-        this.driverSockets.delete(user.driverId);
+    // 1. Unregister from riderSockets
+    if (hasRiderRole) {
+      const rSockets = this.riderSockets.get(user.userId);
+      if (rSockets) {
+        rSockets.delete(socket);
+        if (rSockets.size === 0) {
+          this.riderSockets.delete(user.userId);
+        }
       }
-      return;
     }
 
-    const sockets = this.riderSockets.get(user.userId);
-    if (!sockets) return;
-
-    sockets.delete(socket);
-    if (sockets.size === 0) {
-      this.riderSockets.delete(user.userId);
+    // 2. Unregister from driverSockets
+    if (hasDriverRole && user.driverId) {
+      const dSockets = this.driverSockets.get(user.driverId);
+      if (dSockets) {
+        dSockets.delete(socket);
+        if (dSockets.size === 0) {
+          this.driverSockets.delete(user.driverId);
+        }
+      }
     }
   }
 

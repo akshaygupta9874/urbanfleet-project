@@ -104,7 +104,7 @@ export function initRideWebSocketServer(
 
     const user: AuthenticatedSocketUser = {
       userId: userPayload.userId || '',
-      driverId: roles.includes('DRIVER') ? userPayload.userId : undefined,
+      driverId: roles.includes('DRIVER') ? (userPayload.driverId || userPayload.userId) : undefined,
       role: roles,
       sessionId: userPayload.sessionId,
     };

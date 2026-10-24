@@ -334,4 +334,33 @@ describe("Ride WebSocket Gateway Integration Suite", () => {
 
     ws.close();
   });
+
+  it("registers dual-role user in BOTH riderSockets and driverSockets simultaneously", async () => {
+    const { socketRegistry } = await import("../src/websocket/registry/socket.registry.js");
+
+    const dualUserToken = jwt.sign(
+      { userId: "dual-user-123", driverId: "driver-profile-456", roles: ["RIDER", "DRIVER"] },
+      privateKey,
+      { algorithm: "RS256", issuer: "urbanfleet-auth", audience: "urbanfleet-api" }
+    );
+
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/ride?token=${dualUserToken}`);
+    activeSockets.push(ws);
+    await once(ws, "open");
+
+    // Give socket connection handshake 50ms to register
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Must be found in riderSockets by userId
+    const riderSockets = socketRegistry.getRiderSockets("dual-user-123");
+    expect(riderSockets).toBeDefined();
+    expect(riderSockets?.size).toBeGreaterThanOrEqual(1);
+
+    // AND must be found in driverSockets by driverId
+    const driverSockets = socketRegistry.getDriverSockets("driver-profile-456");
+    expect(driverSockets).toBeDefined();
+    expect(driverSockets?.size).toBeGreaterThanOrEqual(1);
+
+    ws.close();
+  });
 });
