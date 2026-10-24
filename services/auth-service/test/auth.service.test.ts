@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AuthService } from '../src/services/auth.service.js';
 import { UserService } from '../src/services/user.service.js';
 import { authRedisClient } from '../src/redis/client.js';
-import { ServiceUnavailableError, UnauthorizedError } from '@urbanfleet/common';
+import { ServiceUnavailableError, UnauthorizedError, ForbiddenError } from '@urbanfleet/common';
 
 describe('Auth Service Business Logic', () => {
   const mockUserRepo: any = {
@@ -50,7 +50,7 @@ describe('Auth Service Business Logic', () => {
     expect(await authService.comparePassword('WrongPassword', hash)).toBe(false);
   });
 
-  it('should register a new user and return tokens when Redis and Outbox succeed', async () => {
+  it('should register a new user without issuing tokens and staging verification events', async () => {
     mockUserRepo.findByEmail.mockResolvedValue(null);
     mockUserRepo.create.mockImplementation((data: any) => Promise.resolve({ id: 'u-123', ...data, isEmailVerified: false, roles: ['RIDER'] }));
 
@@ -59,16 +59,37 @@ describe('Auth Service Business Logic', () => {
       password: 'Password@123',
       firstName: 'New',
       lastName: 'Rider',
-      roles: ['RIDER']
+      roles: ['RIDER'],
+      userAgent: 'Mozilla/5.0',
+      ipAddress: '127.0.0.1',
     });
 
     expect(res.user.firstName).toBe('New');
     expect(res.user.lastName).toBe('Rider');
     expect(res.user.email).toBe('newrider@urbanfleet.com');
-    expect(res.accessToken).toBeDefined();
-    expect(res.refreshToken).toBeDefined();
+    expect(res.user.isEmailVerified).toBe(false);
+    expect((res as any).accessToken).toBeUndefined();
+    expect((res as any).refreshToken).toBeUndefined();
     expect(authRedisClient.set).toHaveBeenCalled();
     expect(mockOutboxRepo.stageEvent).toHaveBeenCalled();
+  });
+
+  it('should block login when user email is not verified', async () => {
+    const passwordHash = await authService.hashPassword('Password@123');
+    mockUserRepo.findByEmail.mockResolvedValue({
+      id: 'u-123',
+      email: 'unverified@urbanfleet.com',
+      passwordHash,
+      firstName: 'Test',
+      lastName: 'User',
+      roles: ['RIDER'],
+      isEmailVerified: false,
+    });
+
+    await expect(authService.login({
+      email: 'unverified@urbanfleet.com',
+      password: 'Password@123',
+    })).rejects.toThrow(ForbiddenError);
   });
 
   it('BLOCKING: should fail fast with ServiceUnavailableError when Redis is down during registration', async () => {
@@ -82,6 +103,8 @@ describe('Auth Service Business Logic', () => {
       firstName: 'Failed',
       lastName: 'Redis',
       roles: ['RIDER'],
+      userAgent: 'Mozilla/5.0',
+      ipAddress: '127.0.0.1',
     })).rejects.toThrow(ServiceUnavailableError);
   });
 
@@ -96,6 +119,8 @@ describe('Auth Service Business Logic', () => {
       firstName: 'Failed',
       lastName: 'Outbox',
       roles: ['RIDER'],
+      userAgent: 'Mozilla/5.0',
+      ipAddress: '127.0.0.1',
     })).rejects.toThrow(ServiceUnavailableError);
   });
 
@@ -108,7 +133,7 @@ describe('Auth Service Business Logic', () => {
       firstName: 'Test',
       lastName: 'User',
       roles: ['RIDER'],
-      isEmailVerified: false,
+      isEmailVerified: true,
     });
 
     const result = await authService.login({
@@ -132,7 +157,7 @@ describe('Auth Service Business Logic', () => {
       firstName: 'Test',
       lastName: 'User',
       roles: ['RIDER'],
-      isEmailVerified: false,
+      isEmailVerified: true,
     });
     vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(false);
 
@@ -170,6 +195,7 @@ describe('Auth Service Business Logic', () => {
       id: 'u-123',
       email: 'test@urbanfleet.com',
       roles: ['RIDER'],
+      isEmailVerified: true,
     });
     vi.spyOn(authRedisClient, 'get').mockResolvedValue('849201');
 
@@ -184,6 +210,7 @@ describe('Auth Service Business Logic', () => {
       id: 'u-123',
       email: 'test@urbanfleet.com',
       roles: ['RIDER'],
+      isEmailVerified: true,
     });
     vi.spyOn(authRedisClient, 'get').mockRejectedValue(new Error('Redis connection timeout'));
 

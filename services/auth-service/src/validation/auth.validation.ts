@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const registerSchema = z.object({
+const baseRegisterSchema = z.object({
   firstName: z.string().min(2, 'First name must be at least 2 characters').max(50),
   lastName: z.string().min(1, 'Last name must be at least 1 character').max(50),
   email: z.string().email('Invalid email address format'),
@@ -10,7 +10,25 @@ export const registerSchema = z.object({
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number'),
   roles: z.array(z.enum(['RIDER', 'DRIVER', 'ADMIN'])).optional().default(['RIDER']),
+  userAgent: z
+    .string({ required_error: 'User agent is required' })
+    .min(1, 'User agent is required')
+    .max(1000, 'User agent cannot exceed 1000 characters'),
+  ipAddress: z
+    .string({ required_error: 'IP address is required' })
+    .ip({ message: 'Invalid IP address format' }),
 });
+
+export const registerSchema = z.preprocess((obj: any) => {
+  if (obj && typeof obj === 'object') {
+    return {
+      ...obj,
+      userAgent: obj.userAgent ?? obj.useragent,
+      ipAddress: obj.ipAddress ?? obj.ip,
+    };
+  }
+  return obj;
+}, baseRegisterSchema);
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address format'),

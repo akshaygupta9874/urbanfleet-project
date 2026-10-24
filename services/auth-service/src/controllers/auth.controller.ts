@@ -18,36 +18,29 @@ export class AuthController {
   }
 
   register = asyncHandler(async (req: Request, res: Response) => {
-    const result = await this.authService.register({
-      ...req.body,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
-    });
+    const userAgent = req.body?.userAgent ?? req.body?.useragent;
+    const ipAddress = req.body?.ipAddress ?? req.body?.ip;
 
-    // 1. Set httpOnly refresh cookie (XSS mitigation)
-    if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+    if (!userAgent || typeof userAgent !== 'string' || !userAgent.trim()) {
+      throw new BadRequestError('userAgent is required in request body');
+    }
+    if (!ipAddress || typeof ipAddress !== 'string' || !ipAddress.trim()) {
+      throw new BadRequestError('ipAddress is required in request body');
     }
 
-    // 2. Set double-submit anti-CSRF token cookie
-    const csrfToken = await generateCSRFToken(result.user.id, res);
+    const result = await this.authService.register({
+      ...req.body,
+      ipAddress,
+      userAgent
+    });
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: result.message || 'User registered successfully. Please verify your email before logging in.',
       data: {
         user: result.user,
-        accessToken: result.accessToken,
-        csrfToken,
-        tokens: {
-          accessToken: result.accessToken,
-        }
-      },
-      tokens: {
-        accessToken: result.accessToken,
       },
       user: result.user,
-      accessToken: result.accessToken,
     });
   });
 
@@ -81,10 +74,8 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
 
-    // Set httpOnly refresh cookie
-    if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
-    }
+    res.cookie('refreshToken', result.refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+
 
     // Generate CSRF cookie
     const csrfToken = await generateCSRFToken(result.user.id, res);

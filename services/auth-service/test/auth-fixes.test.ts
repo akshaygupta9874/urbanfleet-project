@@ -102,6 +102,8 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         firstName: 'John',
         lastName: 'Doe',
         roles: ['RIDER'],
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        ipAddress: '127.0.0.1',
       }),
     });
 
@@ -161,8 +163,8 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     expect(createdSessionId).not.toBe(oldSessionId);
   });
 
-  // Issue 7: Cookie-only refresh tokens (omitted from JSON response)
-  it('Issue 7: Registration and verify-otp set refreshToken cookie while omitting from JSON data', async () => {
+  // Issue 7: Registration creates unverified user without issuing tokens or session cookies
+  it('Issue 7: Registration creates unverified user without issuing tokens or session cookies', async () => {
     mockUserRepo.findByEmail.mockResolvedValue(null);
 
     const res = await fetch(`${baseUrl}/register`, {
@@ -173,18 +175,17 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         password: 'Password123!',
         firstName: 'Cookie',
         lastName: 'Tester',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        ipAddress: '127.0.0.1',
       }),
     });
 
     const body = await res.json() as any;
     expect(res.status).toBe(201);
-    expect(body.data.accessToken).toBeDefined();
-    // refreshToken must NOT be exposed in JSON response body
-    expect(body.data.refreshToken).toBeUndefined();
-    expect(body.refreshToken).toBeUndefined();
-    // But cookie must be set
-    const setCookie = res.headers.get('set-cookie');
-    expect(setCookie).toContain('refreshToken=');
+    expect(body.data.user.email).toBe('cookie.test@urbanfleet.com');
+    expect(body.data.user.isEmailVerified).toBe(false);
+    expect(body.data.accessToken).toBeUndefined();
+    expect(res.headers.get('set-cookie')).toBeNull();
   });
 
   // Issue 8: verifyEmail accepts path params, body params, and query params
@@ -226,6 +227,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       email: 'rider@urbanfleet.com',
       passwordHash: await authService.hashPassword('RiderPassword123!'),
       roles: ['RIDER'],
+      isEmailVerified: true,
     });
 
     const res = await fetch(`${baseUrl}/login`, {
@@ -239,6 +241,26 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     expect(body.data.requiresOtp).toBe(true);
     expect(body.data.userId).toBe('user-login-1');
     expect(body.data.email).toBe('rider@urbanfleet.com');
+  });
+
+  it('Issue 10b: POST /login rejects unverified user with 403 Forbidden', async () => {
+    mockUserRepo.findByEmail.mockResolvedValue({
+      id: 'user-unverified-1',
+      email: 'unverified@urbanfleet.com',
+      passwordHash: await authService.hashPassword('RiderPassword123!'),
+      roles: ['RIDER'],
+      isEmailVerified: false,
+    });
+
+    const res = await fetch(`${baseUrl}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'unverified@urbanfleet.com', password: 'RiderPassword123!' }),
+    });
+
+    expect(res.status).toBe(403);
+    const body = await res.json() as any;
+    expect(body.error).toContain('verify your email');
   });
 
   // Issue 11: verifyOtpSchema rejects empty or malformed OTP
@@ -574,6 +596,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         id: 'user-otp-2',
         email: 'userotp2@urbanfleet.com',
         roles: ['RIDER'],
+        isEmailVerified: true,
       });
 
       const res = await fetch(`${baseUrl}/verify-otp`, {

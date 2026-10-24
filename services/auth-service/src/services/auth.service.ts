@@ -5,7 +5,7 @@ import { UserRepository } from '../repositories/user.repository.js';
 import { SessionRepository } from '../repositories/session.repository.js';
 import { AuditRepository } from '../repositories/audit.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
-import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, createLogger, ServiceUnavailableError, InternalServerError } from '@urbanfleet/common';
+import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, ForbiddenError, createLogger, ServiceUnavailableError, InternalServerError } from '@urbanfleet/common';
 import { Role } from '../db/client.js';
 import { cacheTokens, revokeCachedTokens, cacheUser } from '../redis/token-cache.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
@@ -70,52 +70,7 @@ export class AuthService {
       isEmailVerified: false,
     });
 
-    const sessionId = crypto.randomUUID();
-    const accessToken = signAccessToken({
-      userId: user.id,
-      email: user.email,
-      roles: user.roles,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      sessionId,
-      tokenType: 'ACCESS',
-    });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
-
-    let session;
-    try {
-      session = await this.sessionRepo.create({
-        id: sessionId,
-        userId: user.id,
-        refreshToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        ipAddress: input.ipAddress,
-        userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined
-      });
-    } catch (err: unknown) {
-      logger.error('Failed to create user session in database during registration:', {
-        error: err instanceof Error ? err.message : String(err),
-        userId: user.id,
-      });
-      throw new InternalServerError('Failed to establish user session. Please try logging in.');
-    }
-
-    // Token caching in Redis (non-blocking performance layer)
-    try {
-      await cacheTokens(user.id, session.id, accessToken, refreshToken);
-      await cacheUser({
-        id: user.id,
-        email: user.email,
-        roles: user.roles,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      });
-    } catch (err: unknown) {
-      logger.warn('Failed to cache tokens in Redis on registration:', {
-        error: err instanceof Error ? err.message : String(err),
-        userId: user.id,
-      });
-    }
+    // Registration creates an unverified account. Tokens and sessions are only issued after email verification upon login.
 
     // Audit logging
     try {
@@ -239,8 +194,8 @@ export class AuthService {
         roles: user.roles,
         isEmailVerified: user.isEmailVerified
       },
-      accessToken,
-      refreshToken
+      message: 'Registration successful. Please verify your email before logging in.',
+      verifyToken
     };
   }
 
@@ -253,6 +208,10 @@ export class AuthService {
     const isValid = await this.comparePassword(input.password, user.passwordHash);
     if (!isValid) {
       throw new UnauthorizedError('Invalid email or password');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new ForbiddenError('Please verify your email address before logging in');
     }
 
     // Generate 6-digit cryptographically secure OTP for login verification
@@ -350,6 +309,10 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedError('User account not found');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new ForbiddenError('Please verify your email address before logging in');
     }
 
     let isValid = false;
