@@ -36,6 +36,7 @@ import { Button } from "./components/ui/button";
 import { appApi } from "./lib/api";
 import { connectDriverSocket, sendDriverLocation } from "./lib/socket";
 import { fetchDriverProfile, isDriverApproved } from "./lib/driverApi";
+import DriverCTA from "./components/DriverCTA";
 import { useAuthContext } from "./context/auth-context";
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
@@ -819,33 +820,15 @@ export default function DriverDashboard() {
     return (
       <div className="relative flex min-h-screen w-full items-center justify-center bg-[#f5e6c8] p-6 font-sans text-[#2e1808] overflow-hidden">
         <CityMapBackground />
-        <div className="relative z-10 w-full max-w-lg rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-8 shadow-2xl backdrop-blur-2xl">
-          <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] text-[#ffd88a] shadow-md">
-              <Shield className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>Driver verification required</h1>
-              <p className="text-xs text-[#7a4416]">Access restricted to verified drivers</p>
-            </div>
-          </div>
-          {error ? (
-            <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/20 p-4 text-sm text-rose-900">
-              {error}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-[#6b3a12]">
-              Your driver profile is currently pending verification or has not been fully registered. Please complete the registration flow to start accepting rides.
-            </p>
-          )}
-          <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
-            <Button onClick={() => navigate("/driver-registration")} className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-90 border border-[#c58a3a]/40 shadow-md">
-              Register as driver
-            </Button>
-            <Button variant="outline" onClick={() => navigate("/dashboard")} className="w-full border-[#7a4416]/30 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc]">
-              Go to rider dashboard
-            </Button>
+        <div className="relative z-10 w-full max-w-2xl">
+          <DriverCTA driver={profile} loading={loading} />
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="text-xs font-semibold text-[#6b3a12] underline hover:text-[#3a1f0a] transition-colors"
+            >
+              Return to Rider Dashboard
+            </button>
           </div>
         </div>
       </div>

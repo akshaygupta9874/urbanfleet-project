@@ -279,12 +279,39 @@ export default function RideDetails() {
   const [toast, setToast] = useState("");
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
+  const [ratingScore, setRatingScore] = useState<number>(5);
+  const [hoverRating, setHoverRating] = useState<number | null>(null);
+  const [ratingFeedback, setRatingFeedback] = useState<string>("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [ratingError, setRatingError] = useState("");
+
+  const handleRateRide = async () => {
+    if (!ride) return;
+    setIsSubmittingRating(true);
+    setRatingError("");
+    try {
+      const combinedFeedback = [selectedTags.join(", "), ratingFeedback.trim()].filter(Boolean).join(" - ") || undefined;
+      await appApi.post(`/ride/${ride.id}/rate`, {
+        score: ratingScore,
+        feedback: combinedFeedback,
+      });
+      setRatingSubmitted(true);
+      setToast("Thank you for your rating!");
+    } catch (err: any) {
+      setRatingError(err.response?.data?.message || "Failed to submit rating. You may have already rated this trip.");
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
 
   const socketRef = useRef<WebSocket | null>(null);
   const { user } = useAuthContext();
 
   useEffect(() => {
-    if (user?.roles?.includes("DRIVER")) {
+    if (user?.roles?.includes("DRIVER") && !user?.roles?.includes("RIDER")) {
       navigate("/driver-dashboard", { replace: true });
     }
   }, [user, navigate]);
@@ -838,6 +865,128 @@ export default function RideDetails() {
                   </p>
                 </div>
               </div>
+            )}
+
+            {/* Ride Rating Section */}
+            {ride.status === "COMPLETED" && (
+              <section className="mt-4 rounded-2xl border border-[#c58a3a]/30 bg-gradient-to-b from-[#fffaf0] via-[#fff4dc] to-[#f7e2b8] p-5 shadow-md">
+                <div className="flex items-center gap-2 mb-3">
+                  <Star className="h-5 w-5 fill-[#ffd88a] text-[#b8722c]" />
+                  <h3 className="font-serif text-base font-bold text-[#2e1808]">
+                    {ratingSubmitted || (ride.ratings && ride.ratings.length > 0) ? "Trip Experience Rated" : "Rate Your Ride & Driver"}
+                  </h3>
+                </div>
+
+                {ratingSubmitted || (ride.ratings && ride.ratings.length > 0) ? (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-50/80 p-4 text-center">
+                    <div className="flex justify-center gap-1 mb-2">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`h-5 w-5 ${
+                            star <= (ride.ratings?.[0]?.score || ratingScore)
+                              ? "fill-[#ffd88a] text-[#b8722c]"
+                              : "text-neutral-300"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-xs font-bold text-emerald-900">
+                      Thank you! Your feedback helps us maintain premium service standards.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-xs text-[#6b3a12]">
+                      How was your journey with {driverFirstName || "your driver"}?
+                    </p>
+
+                    {/* Star Rating Selector */}
+                    <div className="flex justify-center items-center gap-2 py-1">
+                      {[1, 2, 3, 4, 5].map((star) => {
+                        const filled = (hoverRating ?? ratingScore) >= star;
+                        return (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setRatingScore(star)}
+                            onMouseEnter={() => setHoverRating(star)}
+                            onMouseLeave={() => setHoverRating(null)}
+                            className="p-1 transition-transform hover:scale-125 focus:outline-none"
+                            aria-label={`Rate ${star} stars`}
+                          >
+                            <Star
+                              className={`h-7 w-7 transition-colors ${
+                                filled
+                                  ? "fill-[#f4b860] text-[#b8722c] filter drop-shadow-sm"
+                                  : "text-[#7a4416]/30 hover:text-[#b8722c]/50"
+                              }`}
+                            />
+                          </button>
+                        );
+                      })}
+                      <span className="ml-2 text-sm font-bold text-[#3a1f0a]">
+                        {hoverRating ?? ratingScore}.0
+                      </span>
+                    </div>
+
+                    {/* Quick Tags */}
+                    <div className="flex flex-wrap gap-1.5 justify-center">
+                      {[
+                        "Polite Driver",
+                        "Clean Vehicle",
+                        "Smooth Ride",
+                        "Optimal Route",
+                        "Safe Driving",
+                      ].map((tag) => {
+                        const isSelected = selectedTags.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() =>
+                              setSelectedTags((prev) =>
+                                isSelected ? prev.filter((t) => t !== tag) : [...prev, tag]
+                              )
+                            }
+                            className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-all ${
+                              isSelected
+                                ? "bg-gradient-to-r from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-xs"
+                                : "border border-[#7a4416]/25 bg-[#fffaf0] text-[#6b3a12] hover:bg-[#fff4dc]"
+                            }`}
+                          >
+                            {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Feedback textarea */}
+                    <textarea
+                      placeholder="Add an optional comment for the driver..."
+                      value={ratingFeedback}
+                      onChange={(e) => setRatingFeedback(e.target.value)}
+                      maxLength={500}
+                      rows={2}
+                      className="w-full resize-none rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/90 p-3 text-xs text-[#2e1808] placeholder:text-[#7a4416]/45 focus:border-[#b8722c] focus:outline-none focus:ring-1 focus:ring-[#b8722c]"
+                    />
+
+                    {ratingError && (
+                      <p className="text-xs text-rose-700 font-medium">{ratingError}</p>
+                    )}
+
+                    <TicketButton
+                      variant="primary"
+                      className="w-full h-11 text-xs font-bold uppercase tracking-wider"
+                      onClick={handleRateRide}
+                      disabled={isSubmittingRating}
+                    >
+                      {isSubmittingRating && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {isSubmittingRating ? "Submitting Rating…" : "Submit Trip Rating"}
+                    </TicketButton>
+                  </div>
+                )}
+              </section>
             )}
 
             {/* Actions */}

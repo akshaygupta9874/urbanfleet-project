@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, type Variants, AnimatePresence } from "framer-motion";
-import { MapPin, Navigation } from "lucide-react";
+import { MapPin, Navigation, Car, User as UserIcon } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext, type User } from "./context/auth-context";
@@ -32,7 +32,8 @@ const itemVariants: Variants = {
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { establishSession, isAuthenticated, loading } = useAuthContext();
+  const { establishSession, isAuthenticated, loading, user } = useAuthContext();
+  const [selectedRole, setSelectedRole] = useState<"RIDER" | "DRIVER">("RIDER");
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -42,10 +43,11 @@ export default function SignupPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && isAuthenticated) {
-      navigate("/dashboard", { replace: true });
+    if (!loading && isAuthenticated) {
+      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+      navigate(target, { replace: true });
     }
-  }, [isAuthenticated, loading, navigate]);
+  }, [isAuthenticated, loading, navigate, user]);
 
   async function handleSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,7 +59,8 @@ export default function SignupPage() {
         firstName,
         lastName,
         email,
-        password,
+        password,
+        roles: [selectedRole],
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'UrbanFleet-Web/1.0',
         ipAddress: '127.0.0.1',
       });
@@ -85,8 +88,9 @@ export default function SignupPage() {
       const { data } = await api.post<{ accessToken: string; user: User }>("/google", {
         credential: credentialResponse.credential,
       });
-      establishSession(data.accessToken, data.user);
-      navigate("/dashboard", { replace: true });
+      establishSession(data.accessToken, data.user);
+      const target = data.user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+      navigate(target, { replace: true });
     } catch (error) {
       setStatus(error instanceof AxiosError ? error.response?.data.message : "Google sign-up failed");
     } finally {
@@ -166,6 +170,34 @@ export default function SignupPage() {
               animate={{ opacity: focusedField ? 0.35 : 0 }}
             />
 
+            {/* Role Toggle: Rider vs Driver */}
+            <div className="relative mb-2 grid grid-cols-2 gap-2 rounded-xl border border-[#7a4416]/20 bg-[#2e1808]/5 p-1.5 shadow-inner">
+              <button
+                type="button"
+                onClick={() => setSelectedRole("RIDER")}
+                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                  selectedRole === "RIDER"
+                    ? "bg-gradient-to-r from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-md shadow-[#3a1f0a]/30"
+                    : "text-[#6b3a12] hover:text-[#2e1808]"
+                }`}
+              >
+                <UserIcon size={14} />
+                Ride
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRole("DRIVER")}
+                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                  selectedRole === "DRIVER"
+                    ? "bg-gradient-to-r from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-md shadow-[#3a1f0a]/30"
+                    : "text-[#6b3a12] hover:text-[#2e1808]"
+                }`}
+              >
+                <Car size={14} />
+                Drive
+              </button>
+            </div>
+
             {/* Name Grid */}
             <div className="relative grid grid-cols-2 gap-4">
               <input

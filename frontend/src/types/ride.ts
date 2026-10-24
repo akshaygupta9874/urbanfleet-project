@@ -62,6 +62,14 @@ export interface RideDto {
   driver: RideDriver | null;
   cancelledBy: string | null;
   cancellationReason: string | null;
+  ratings?: Array<{
+    id: string;
+    rideId: string;
+    fromId: string;
+    toId: string;
+    score: number;
+    feedback?: string | null;
+  }>;
   otp?: string | null;
   createdAt?: string;
   updatedAt?: string;

@@ -20,7 +20,6 @@ import { Input } from "./components/ui/input";
 import { appApi } from "./lib/api";
 import { useAuthContext } from "./context/auth-context";
 import { isDriverApproved, type DriverProfile } from "./lib/driverApi";
-import DriverCTA from "./components/DriverCTA";
 import { searchPlaces, reverseGeocode } from "./services/geoapify.service";
 import PinpointLocation from "./components/PinpointLocation";
 import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } from "./types/geoapify";
@@ -32,7 +31,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user, logout } = useAuthContext();
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
-  const [isLoadingDriver, setIsLoadingDriver] = useState(true);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -70,8 +68,6 @@ export default function Dashboard() {
         setDriverProfile(profile);
       } catch {
         setDriverProfile(null);
-      } finally {
-        setIsLoadingDriver(false);
       }
     }
     loadDriver();
@@ -614,14 +610,6 @@ export default function Dashboard() {
           {/* Brass bottom rail */}
           <div className="pointer-events-none absolute inset-x-8 bottom-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
         </section>
-
-        {/* Driver CTA Section — FULL WIDTH */}
-        <div className="w-full">
-          <DriverCTA
-            driver={driverProfile}
-            loading={isLoadingDriver}
-          />
-        </div>
       </div>
 
       {/* Pinpoint Map Modals */}
