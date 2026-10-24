@@ -39,7 +39,7 @@ import { prisma } from './db/client.js';
 const app = express();
 configureBigIntSerialization(app);
 
-const port = process.env.PORT || 4002;
+const port = process.env.DRIVER_PORT || process.env.PORT || 4002;
 
 // Initialize Consumer
 let driverConsumer: Consumer | null = null;

@@ -18,7 +18,7 @@ import { prisma } from './db/client.js';
 const app = express();
 configureBigIntSerialization(app);
 
-const port = process.env.PORT || 4005;
+const port = process.env.PAYMENT_PORT || process.env.PORT || 4005;
 
 // Connect Redis & Initialize Outbox & Consumers
 connectRedis().catch(err => logger.error('Redis connect error on startup:', err));

@@ -11,7 +11,7 @@ const logger = createLogger('notification-service');
 import { prisma } from './db/client.js';
 const app = express();
 
-const port = process.env.PORT || 4003;
+const port = process.env.NOTIFICATION_PORT || process.env.PORT || 4003;
 
 app.use(helmet());
 app.use(express.json());

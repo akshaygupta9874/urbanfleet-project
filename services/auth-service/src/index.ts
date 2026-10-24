@@ -21,7 +21,7 @@ const logger = createLogger('auth-service');
 import { prisma } from './db/client.js';
 const app = express();
 
-const port = process.env.PORT || 4001;
+const port = process.env.AUTH_PORT || process.env.PORT || 4001;
 
 // 1. Initialize RS256 Asymmetric Keys, Redis & Kafka Publisher
 initAsymmetricKeys();

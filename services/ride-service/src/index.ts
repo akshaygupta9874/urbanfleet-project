@@ -26,7 +26,7 @@ const redis = rideRedisClient;
 const app = express();
 const server = http.createServer(app);
 
-const port = process.env.PORT || 4004;
+const port = process.env.RIDE_PORT || process.env.PORT || 4004;
 
 // Connect Redis, Outbox Worker & Payment Kafka Consumer
 redis.connect().catch(err => logger.error('Redis connect error:', err));
