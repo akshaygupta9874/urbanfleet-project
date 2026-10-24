@@ -21,6 +21,7 @@ const DriverRegistration = lazy(() => import('./DriverRegistration.tsx'))
 const DriverDashboard = lazy(() => import('./DriverDashboard.tsx'))
 const RideDetails = lazy(() => import('./RideDetails.tsx'))
 const ChooseMode = lazy(() => import('./ChooseMode.tsx'))
+const ActiveSessions = lazy(() => import('./ActiveSessions.tsx'))
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
@@ -45,6 +46,8 @@ createRoot(document.getElementById('root')!).render(
     <Route path="/history" element={<RideHistory />} />
     <Route path="/ride/:rideId" element={<RideDetails />} />
     <Route path="/driver-registration" element={<DriverRegistration />} />
+    <Route path="/security-devices" element={<ActiveSessions />} />
+    <Route path="/sessions" element={<ActiveSessions />} />
   </Route>
 
   {/* Driver */}

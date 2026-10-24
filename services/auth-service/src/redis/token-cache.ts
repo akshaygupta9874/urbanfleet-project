@@ -217,11 +217,11 @@ export async function revokeCachedTokens(userId: string, sessionId?: string): Pr
           `session:${sessionId}`
         );
         await Promise.all([
-          authRedisClient.sRem(authRedisKey(`user-sessions:${userId}`), sessionId).catch(() => {}),
-          authRedisClient.sRem(`user-sessions:${userId}`, sessionId).catch(() => {}),
+          typeof authRedisClient.sRem === 'function' ? authRedisClient.sRem(authRedisKey(`user-sessions:${userId}`), sessionId).catch(() => {}) : Promise.resolve(),
+          typeof authRedisClient.sRem === 'function' ? authRedisClient.sRem(`user-sessions:${userId}`, sessionId).catch(() => {}) : Promise.resolve(),
         ]);
       } else {
-        const sessions = await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)).catch(() => []);
+        const sessions = typeof authRedisClient.sMembers === 'function' ? await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)).catch(() => []) : [];
         for (const s of sessions) {
           keysToDelete.push(authRedisKey(`session:${s}`), `session:${s}`);
         }
@@ -234,6 +234,40 @@ export async function revokeCachedTokens(userId: string, sessionId?: string): Pr
       error: err instanceof Error ? err.message : String(err),
       userId,
       sessionId,
+    });
+  }
+}
+
+/**
+ * Revokes all sessions and refresh tokens for a user except the currently active sessionId.
+ */
+export async function revokeOtherSessions(userId: string, exceptSessionId: string): Promise<void> {
+  try {
+    if (authRedisClient && authRedisClient.isOpen) {
+      const allSessions = (await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)).catch(() => [])) || [];
+      const sessionsToRevoke = allSessions.filter((s) => s !== exceptSessionId);
+
+      const keysToDelete: string[] = [];
+      for (const s of sessionsToRevoke) {
+        keysToDelete.push(
+          authRedisKey(`token:refresh:${userId}:${s}`),
+          authRedisKey(`session:${s}`),
+          `session:${s}`
+        );
+      }
+
+      await Promise.all([
+        ...keysToDelete.map((k) => authRedisClient.del(k).catch(() => {})),
+        sessionsToRevoke.length > 0
+          ? authRedisClient.sRem(authRedisKey(`user-sessions:${userId}`), sessionsToRevoke).catch(() => {})
+          : Promise.resolve(),
+      ]);
+    }
+  } catch (err: unknown) {
+    logger.warn('Failed to revoke other sessions from Redis:', {
+      error: err instanceof Error ? err.message : String(err),
+      userId,
+      exceptSessionId,
     });
   }
 }

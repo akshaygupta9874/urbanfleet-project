@@ -135,11 +135,11 @@ export class AuthController {
 
   logout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const token = req.cookies?.refreshToken;
-    if (token) {
-      await this.authService.logout(token);
-    }
-
+    const sessionId = req.sessionId;
     const userId = req.userId;
+
+    await this.authService.logout(token, sessionId, userId);
+
     if (userId) {
       await revokeCSRFToken(userId, res);
     }
@@ -148,6 +148,48 @@ export class AuthController {
     res.clearCookie('csrfToken', getCsrfCookieOptions());
 
     res.status(200).json({ success: true, message: 'Logged out successfully' });
+  });
+
+  listSessions = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+    const currentSessionId = req.sessionId;
+    const result = await this.authService.listActiveSessions(userId, currentSessionId);
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  });
+
+  revokeSession = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.userId;
+    if (!userId) {
+      throw new UnauthorizedError('User unauthenticated');
+    }
+    const sessionId = req.params.id;
+    if (!sessionId) {
+      throw new BadRequestError('Session ID is required');
+    }
+    const result = await this.authService.revokeSession(userId, sessionId);
+    res.status(200).json({
+      success: true,
+      message: result.message,
+    });
+  });
+
+  logoutAllOtherSessions = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.userId;
+    const currentSessionId = req.sessionId;
+    if (!userId || !currentSessionId) {
+      throw new UnauthorizedError('User unauthenticated or session not identified');
+    }
+    const result = await this.authService.revokeAllOtherSessions(userId, currentSessionId);
+    res.status(200).json({
+      success: true,
+      message: result.message,
+    });
   });
 
   changePassword = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

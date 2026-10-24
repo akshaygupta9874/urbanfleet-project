@@ -15,6 +15,7 @@ export interface AuthenticatedRequest extends Request {
   roles?: string[];
   role?: string[];
   driverId?: string;
+  sessionId?: string;
   user?: AuthUser;
   cookies: Record<string, string | undefined>;
 }

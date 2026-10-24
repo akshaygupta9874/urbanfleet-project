@@ -1,3 +1,4 @@
+import { parseClientInfo } from '../utils/user-agent.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import axios, { isAxiosError } from 'axios';
@@ -6,7 +7,7 @@ import { SessionRepository } from '../repositories/session.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
 import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, ForbiddenError, createLogger, ServiceUnavailableError, InternalServerError } from '@urbanfleet/common';
 import { Role } from '../db/client.js';
-import { cacheTokens, revokeCachedTokens, cacheUser } from '../redis/token-cache.js';
+import { cacheTokens, revokeCachedTokens, cacheUser, revokeOtherSessions, getCachedRefreshToken } from '../redis/token-cache.js';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
 import { EventTopics } from '@urbanfleet/contracts';
@@ -331,6 +332,7 @@ export class AuthService {
     const lastName = user.lastName ;
 
     const sessionId = crypto.randomUUID();
+    const clientInfo = parseClientInfo(input.userAgent, input.ipAddress);
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
@@ -340,17 +342,21 @@ export class AuthService {
       sessionId,
       tokenType: 'ACCESS',
     });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId, sessionVersion: 1, tokenType: 'REFRESH' });
 
     let session;
     try {
       session = await this.sessionRepo.create({
         id: sessionId,
         userId: user.id,
-        refreshToken,
+        version: 1,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         ipAddress: input.ipAddress,
         userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined,
+        deviceType: clientInfo.deviceType,
+        browser: clientInfo.browser,
+        os: clientInfo.os,
+        lastActiveAt: new Date(),
       });
     } catch (err: unknown) {
       logger.error('Failed to create session in database upon OTP verification:', {
@@ -391,13 +397,23 @@ export class AuthService {
     };
   }
 
-  async logout(refreshToken: string) {
+  async logout(refreshToken?: string, sessionId?: string, userId?: string) {
+    if (sessionId && userId) {
+      await Promise.all([
+        Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {}),
+        revokeCachedTokens(userId, sessionId),
+      ]);
+      return { success: true };
+    }
+
     if (!refreshToken) return { success: true };
     try {
-      const session = await this.sessionRepo.findByToken(refreshToken);
-      if (session) {
-        await this.sessionRepo.delete(session.id);
-        await revokeCachedTokens(session.userId, session.id);
+      const decoded = verifyToken(refreshToken);
+      if (decoded?.sessionId && decoded?.userId) {
+        await Promise.all([
+          this.sessionRepo.delete(decoded.sessionId).catch(() => {}),
+          revokeCachedTokens(decoded.userId, decoded.sessionId),
+        ]);
       }
     } catch (err: unknown) {
       logger.error('Error during logout:', {
@@ -408,9 +424,50 @@ export class AuthService {
   }
 
   async refreshAccessToken(refreshToken: string) {
-    const session = await this.sessionRepo.findByToken(refreshToken);
-    if (!session || new Date() > session.expiresAt) {
+    let decoded;
+    try {
+      decoded = verifyToken(refreshToken);
+    } catch {
       throw new UnauthorizedError('Refresh token expired or invalid');
+    }
+
+    if (!decoded || decoded.tokenType !== 'REFRESH' || !decoded.userId || !decoded.sessionId) {
+      throw new UnauthorizedError('Invalid refresh token');
+    }
+
+    const { userId, sessionId } = decoded;
+    const tokenSessionVersion = decoded.sessionVersion ?? 1;
+
+    // Check Redis for active refresh token
+    const cachedToken = await getCachedRefreshToken(userId, sessionId);
+    const session = await this.sessionRepo.findById(sessionId);
+
+    // Replay / Reuse detection:
+    if (session && tokenSessionVersion < session.version) {
+      // Security Alert: An old rotated token was replayed!
+      await Promise.all([
+        Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {}),
+        revokeCachedTokens(userId, sessionId),
+      ]);
+      logger.warn('Refresh token reuse detected! Revoked session.', { userId, sessionId });
+      throw new UnauthorizedError('Security alert: Token reuse detected. Session terminated.');
+    }
+
+    if (!session || new Date() > session.expiresAt) {
+      await revokeCachedTokens(userId, sessionId).catch(() => {});
+      throw new UnauthorizedError('Session expired or invalid');
+    }
+
+    if (tokenSessionVersion !== session.version) {
+      await Promise.all([
+        Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {}),
+        revokeCachedTokens(userId, sessionId),
+      ]);
+      throw new UnauthorizedError('Session version mismatch. Please log in again.');
+    }
+
+    if (cachedToken && cachedToken !== refreshToken) {
+      throw new UnauthorizedError('Refresh token has already been rotated or invalidated');
     }
 
     const user = await this.userRepo.findById(session.userId);
@@ -418,57 +475,32 @@ export class AuthService {
       throw new UnauthorizedError('User not found');
     }
 
+    // Legitimate rotation: increment session version
+    const nextVersion = session.version + 1;
+    await this.sessionRepo.updateVersion(session.id, nextVersion);
+
     const firstName = user.firstName;
     const lastName = user.lastName;
-    const newSessionId = crypto.randomUUID();
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
       roles: user.roles,
       firstName,
       lastName,
-      sessionId: newSessionId,
+      sessionId: session.id,
       tokenType: 'ACCESS',
     });
 
     const newRefreshToken = signRefreshToken({
       userId: user.id,
-      sessionId: newSessionId,
+      sessionId: session.id,
+      sessionVersion: nextVersion,
       tokenType: 'REFRESH',
     });
 
-    // Delete old session and revoke its cache
-    try {
-      await this.sessionRepo.delete(session.id);
-      await revokeCachedTokens(user.id, session.id);
-    } catch (err: unknown) {
-      logger.warn('Failed to delete old session during refresh token rotation:', {
-        error: err instanceof Error ? err.message : String(err),
-        sessionId: session.id,
-      });
-    }
-
-    // Create new session with matching newSessionId (blocking)
-    try {
-      await this.sessionRepo.create({
-        id: newSessionId,
-        userId: user.id,
-        refreshToken: newRefreshToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        ipAddress: session.ipAddress || undefined,
-        userAgent: session.userAgent || undefined
-      });
-    } catch (err: unknown) {
-      logger.error('Failed to create rotated session in database:', {
-        error: err instanceof Error ? err.message : String(err),
-        userId: user.id,
-      });
-      throw new InternalServerError('Failed to rotate session. Please log in again.');
-    }
-
     // Cache updated tokens in Redis
     try {
-      await cacheTokens(user.id, newSessionId, accessToken, newRefreshToken);
+      await cacheTokens(user.id, session.id, accessToken, newRefreshToken);
     } catch (err: unknown) {
       logger.warn('Failed to cache rotated tokens in Redis:', {
         error: err instanceof Error ? err.message : String(err),
@@ -488,6 +520,47 @@ export class AuthService {
         isEmailVerified: user.isEmailVerified,
       }
     };
+  }
+
+  async listActiveSessions(userId: string, currentSessionId?: string) {
+    const sessions = await this.sessionRepo.findByUserId(userId);
+    const now = new Date();
+    const active = sessions
+      .filter((s) => s.expiresAt > now)
+      .map((s) => ({
+        id: s.id,
+        browser: s.browser || 'Unknown Browser',
+        os: s.os || 'Unknown OS',
+        deviceType: s.deviceType || 'Desktop',
+        ipAddress: s.ipAddress || 'Unknown IP',
+        lastActiveAt: s.lastActiveAt,
+        createdAt: s.createdAt,
+        isCurrent: Boolean(currentSessionId && s.id === currentSessionId),
+      }));
+    return {
+      currentSessionId: currentSessionId || null,
+      sessions: active,
+    };
+  }
+
+  async revokeSession(userId: string, sessionId: string) {
+    const session = await this.sessionRepo.findById(sessionId);
+    if (!session || session.userId !== userId) {
+      throw new NotFoundError('Session not found');
+    }
+    await Promise.all([
+      Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {}),
+      revokeCachedTokens(userId, sessionId),
+    ]);
+    return { success: true, message: 'Session revoked successfully' };
+  }
+
+  async revokeAllOtherSessions(userId: string, currentSessionId: string) {
+    await Promise.all([
+      Promise.resolve(this.sessionRepo.deleteByUserId(userId, currentSessionId)).catch(() => {}),
+      revokeOtherSessions(userId, currentSessionId),
+    ]);
+    return { success: true, message: 'All other sessions revoked successfully' };
   }
 
   async changePassword(userId: string, oldPass: string, newPass: string) {
@@ -963,6 +1036,7 @@ export class AuthService {
 
     // 4. Session & Token generation
     const sessionId = crypto.randomUUID();
+    const clientInfo = parseClientInfo(userAgent, ipAddress);
     const accessToken = signAccessToken({
       userId: user.id,
       email: user.email,
@@ -972,17 +1046,26 @@ export class AuthService {
       sessionId,
       tokenType: 'ACCESS',
     });
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId, tokenType: 'REFRESH' });
+    const refreshToken = signRefreshToken({
+      userId: user.id,
+      sessionId,
+      sessionVersion: 1,
+      tokenType: 'REFRESH',
+    });
 
     let session;
     try {
       session = await this.sessionRepo.create({
         id: sessionId,
         userId: user.id,
-        refreshToken,
+        version: 1,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         ipAddress,
         userAgent: userAgent ? userAgent.slice(0, 1000) : undefined,
+        deviceType: clientInfo.deviceType,
+        browser: clientInfo.browser,
+        os: clientInfo.os,
+        lastActiveAt: new Date(),
       });
     } catch (err: unknown) {
       logger.error('Failed to create session for Google login:', {

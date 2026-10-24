@@ -48,10 +48,11 @@ export function signAccessToken(payload: AccessTokenPayloadInput): string {
   });
 }
 
-export function signRefreshToken(payload: { userId: string; sessionId: string; tokenType?: string }): string {
+export function signRefreshToken(payload: { userId: string; sessionId: string; sessionVersion?: number; tokenType?: string }): string {
   if (!privateKey) initAsymmetricKeys();
 
-  return jwt.sign({ ...payload, tokenType: 'REFRESH' }, privateKey, {
+  const sessionVersion = payload.sessionVersion ?? 1;
+  return jwt.sign({ ...payload, sessionVersion, tokenType: 'REFRESH' }, privateKey, {
     algorithm: 'RS256',
     expiresIn: '7d',
     issuer: 'urbanfleet-auth',
@@ -73,6 +74,7 @@ export interface AuthTokenPayload extends jwt.JwtPayload {
   roles?: string[];
   driverId?: string;
   sessionId?: string;
+  sessionVersion?: number;
   tokenType?: string;
 }
 

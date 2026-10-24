@@ -112,5 +112,16 @@ export function createAuthRouter(controller: AuthController): Router {
     router.post('/refresh-csrf', authMiddleware, controller.refreshCSRF);
   }
 
+  // Active Session Management Endpoints
+  if (controller.listSessions) {
+    router.get('/sessions', authMiddleware, controller.listSessions);
+  }
+  if (controller.revokeSession) {
+    router.delete('/sessions/:id', authMiddleware, controller.revokeSession);
+  }
+  if (controller.logoutAllOtherSessions) {
+    router.post('/sessions/logout-all', authMiddleware, controller.logoutAllOtherSessions);
+  }
+
   return router;
 }

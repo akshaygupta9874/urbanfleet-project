@@ -23,6 +23,7 @@ export interface AuthenticatedRequest extends Request {
   userId: string;
   roles: string[];
   driverId?: string;
+  sessionId?: string;
   user: UserPayloadContext;
 }
 
@@ -154,6 +155,9 @@ export const authMiddleware = asyncHandler(
     const userRoles = Array.isArray(currentUser.roles) ? currentUser.roles : ['RIDER'];
     request.userId = currentUser.id;
     request.roles = userRoles;
+    if (sessionId) {
+      request.sessionId = sessionId;
+    }
     if (currentUser.driverId) {
       request.driverId = currentUser.driverId;
     }

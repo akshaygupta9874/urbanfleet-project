@@ -61,7 +61,10 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     };
 
     mockSessionRepo = {
-      create: vi.fn().mockImplementation((d) => Promise.resolve({ id: d.id || 'sess-fix-1', ...d })),
+      create: vi.fn().mockImplementation((d) => Promise.resolve({ id: d.id || 'sess-fix-1', version: 1, ...d })),
+      findById: vi.fn().mockImplementation((id) => Promise.resolve({ id, userId: 'usr-fix-1', version: 1, expiresAt: new Date(Date.now() + 100000) })),
+      findByUserId: vi.fn().mockResolvedValue([]),
+      updateVersion: vi.fn().mockImplementation((id, version) => Promise.resolve({ id, version, lastActiveAt: new Date() })),
       findByToken: vi.fn(),
       delete: vi.fn().mockResolvedValue({}),
       deleteByUserId: vi.fn().mockResolvedValue({}),
@@ -130,12 +133,18 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     expect(user.email).toBe('sensitive@urbanfleet.com');
   });
 
-  // Issue 6: Session rotation synchronization
-  it('Issue 6: Refresh token rotation generates a new sessionId and synchronizes token and database session', async () => {
-    const oldSessionId = 'old-session-uuid';
-    mockSessionRepo.findByToken.mockResolvedValue({
-      id: oldSessionId,
+  // Issue 6: Refresh token rotation increments session version and rotates tokens in Redis
+  it('Issue 6: Refresh token rotation increments session version and rotates tokens in Redis', async () => {
+    const sessionId = 'session-uuid-1';
+    const oldRefreshToken = signRefreshToken({
       userId: 'usr-fix-1',
+      sessionId,
+      sessionVersion: 1,
+    });
+    mockSessionRepo.findById.mockResolvedValue({
+      id: sessionId,
+      userId: 'usr-fix-1',
+      version: 1,
       expiresAt: new Date(Date.now() + 100000),
     });
     mockUserRepo.findById.mockResolvedValue({
@@ -144,18 +153,12 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       roles: ['RIDER'],
     });
 
-    const res = await authService.refreshAccessToken('old-refresh-token');
+    const res = await authService.refreshAccessToken(oldRefreshToken);
 
-    expect(mockSessionRepo.delete).toHaveBeenCalledWith(oldSessionId);
-    expect(mockSessionRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.any(String),
-      userId: 'usr-fix-1',
-      refreshToken: res.refreshToken,
-    }));
-
-    // Verify created session ID does not match the old deleted session ID
-    const createdSessionId = mockSessionRepo.create.mock.calls[0][0].id;
-    expect(createdSessionId).not.toBe(oldSessionId);
+    expect(mockSessionRepo.updateVersion).toHaveBeenCalledWith(sessionId, 2);
+    expect(res.accessToken).toBeDefined();
+    expect(res.refreshToken).toBeDefined();
+    expect(res.refreshToken).not.toBe(oldRefreshToken);
   });
 
   // Issue 7: Registration creates unverified user without issuing tokens or session cookies

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
-import { Menu, X, Car, UserCircle } from "lucide-react";
+import { Menu, X, Car, UserCircle, ShieldCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuthContext } from "../context/auth-context";
@@ -97,6 +97,16 @@ function NavBar() {
                 <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
                 <span className="relative z-10">Dashboard</span>
               </Button>
+
+              <Button
+                variant="ghost"
+                className="rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/80 text-[#3a1f0a] font-semibold transition-all hover:bg-[#fff4dc] hover:text-[#2e1808] px-3.5"
+                onClick={() => navigate("/security-devices")}
+                title="Active Devices & Sessions"
+              >
+                <ShieldCheck size={16} className="text-[#b8722c] mr-1.5" />
+                Devices
+              </Button>
             </div>
           ) : (
             <>
@@ -180,6 +190,18 @@ function NavBar() {
                       }}
                     >
                       Go to Dashboard
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="w-full justify-center rounded-xl py-6 text-base font-semibold text-[#3a1f0a] hover:bg-[#fff4dc] border border-[#7a4416]/20 bg-[#fffaf0]/80"
+                      onClick={() => {
+                        setIsOpen(false);
+                        navigate("/security-devices");
+                      }}
+                    >
+                      <ShieldCheck size={18} className="mr-2 text-[#b8722c]" />
+                      Active Devices & Security
                     </Button>
                   </>
                 ) : (
