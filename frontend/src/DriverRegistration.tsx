@@ -62,28 +62,90 @@ const STEPS: { key: string; title: string; icon: LucideIcon }[] = [
 ];
 
 function createDefaultMockImage(name: string, label: string): File {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
-    <defs>
-      <linearGradient id="bg-${name}" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#1e1b18"/>
-        <stop offset="50%" stop-color="#3a1f0a"/>
-        <stop offset="100%" stop-color="#140a04"/>
-      </linearGradient>
-      <linearGradient id="gold-${name}" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#ffd88a"/>
-        <stop offset="100%" stop-color="#c58a3a"/>
-      </linearGradient>
-    </defs>
-    <rect width="600" height="400" fill="url(#bg-${name})"/>
-    <rect x="24" y="24" width="552" height="352" rx="16" fill="none" stroke="url(#gold-${name})" stroke-width="2" stroke-dasharray="8 6"/>
-    <circle cx="300" cy="160" r="50" fill="#2e1808" stroke="#c58a3a" stroke-width="2"/>
-    <path d="M285 160 L295 170 L315 150" fill="none" stroke="#ffd88a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="300" y="245" font-family="'Fraunces', Georgia, serif" font-size="22" font-weight="bold" fill="#ffe9be" text-anchor="middle">URBANFLEET VERIFIED</text>
-    <text x="300" y="278" font-family="'Inter', sans-serif" font-size="14" font-weight="500" fill="#ffd88a" text-anchor="middle">${label}</text>
-    <text x="300" y="304" font-family="monospace" font-size="11" fill="#a87132" text-anchor="middle">DOC-REF: UF-${Math.floor(100000 + Math.random() * 900000)}</text>
-  </svg>`;
-  return new File([new Blob([svg], { type: "image/svg+xml" })], name, { type: "image/svg+xml" });
+  const cleanName = name.endsWith(".jpeg") || name.endsWith(".jpg") ? name : `${name}.jpeg`;
+  if (typeof document !== "undefined") {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 800;
+      canvas.height = 500;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        const bgGrad = ctx.createLinearGradient(0, 0, 800, 500);
+        bgGrad.addColorStop(0, "#1a1612");
+        bgGrad.addColorStop(0.5, "#2d1b0d");
+        bgGrad.addColorStop(1, "#120904");
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, 800, 500);
+
+        ctx.strokeStyle = "#c58a3a";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(20, 20, 760, 460);
+
+        ctx.strokeStyle = "#ffd88a";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 6]);
+        ctx.strokeRect(30, 30, 740, 440);
+        ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.arc(400, 160, 55, 0, Math.PI * 2);
+        ctx.fillStyle = "#3a1f0a";
+        ctx.fill();
+        ctx.strokeStyle = "#ffd88a";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(380, 160);
+        ctx.lineTo(395, 175);
+        ctx.lineTo(425, 145);
+        ctx.strokeStyle = "#ffd88a";
+        ctx.lineWidth = 5;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffe9be";
+        ctx.font = "bold 26px 'Fraunces', Georgia, serif";
+        ctx.textAlign = "center";
+        ctx.fillText("URBANFLEET OFFICIAL VERIFICATION", 400, 260);
+
+        ctx.fillStyle = "#ffd88a";
+        ctx.font = "600 18px 'Inter', sans-serif";
+        ctx.fillText(label.toUpperCase(), 400, 300);
+
+        ctx.fillStyle = "#a87132";
+        ctx.font = "bold 13px monospace";
+        ctx.fillText(`DOC-REF: UF-${Math.floor(100000 + Math.random() * 900000)} | IND-COMPLIANT`, 400, 340);
+
+        ctx.fillStyle = "#ffffff44";
+        ctx.font = "11px sans-serif";
+        ctx.fillText(`TIMESTAMP: ${new Date().toISOString()}`, 400, 430);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        const byteString = atob(dataUrl.split(",")[1]);
+        const mimeString = dataUrl.split(",")[0].split(":")[1].split(";")[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        return new File([blob], cleanName, { type: "image/jpeg" });
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  const binaryJfifHeader = new Uint8Array([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48,
+    0x00, 0x48, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,
+    0xff, 0xd9,
+  ]);
+  return new File([binaryJfifHeader], cleanName, { type: "image/jpeg" });
 }
+
 
 export default function DriverRegistration() {
   const { user, isAuthenticated, loading } = useAuthContext();
@@ -97,12 +159,12 @@ export default function DriverRegistration() {
   const [referenceCode] = useState(() => `NV-${Date.now().toString().slice(-6)}`);
 
   const [form, setForm] = useState<FormState>(() => ({
-    profilePhoto: createDefaultMockImage("driver-profile.svg", "Official Driver Profile Photo"),
-    vehicleFront: createDefaultMockImage("vehicle-front.svg", "Vehicle Front Elevation View"),
-    vehicleBack: createDefaultMockImage("vehicle-back.svg", "Vehicle Rear & Plate View"),
-    vehicleLeft: createDefaultMockImage("vehicle-left.svg", "Vehicle Left Side Profile"),
-    vehicleRight: createDefaultMockImage("vehicle-right.svg", "Vehicle Right Side Profile"),
-    vehicleInterior: createDefaultMockImage("vehicle-interior.svg", "Cabin & Dashboard Interior"),
+    profilePhoto: createDefaultMockImage("driver-profile.jpeg", "Official Driver Profile Photo"),
+    vehicleFront: createDefaultMockImage("vehicle-front.jpeg", "Vehicle Front Elevation View"),
+    vehicleBack: createDefaultMockImage("vehicle-back.jpeg", "Vehicle Rear & Plate View"),
+    vehicleLeft: createDefaultMockImage("vehicle-left.jpeg", "Vehicle Left Side Profile"),
+    vehicleRight: createDefaultMockImage("vehicle-right.jpeg", "Vehicle Right Side Profile"),
+    vehicleInterior: createDefaultMockImage("vehicle-interior.jpeg", "Cabin & Dashboard Interior"),
     vehicleType: "CAR",
     vehicleBrand: "Toyota",
     vehicleModel: "Innova Crysta Luxury",
@@ -111,15 +173,15 @@ export default function DriverRegistration() {
     registrationYear: 2023,
     licenseNumber: "DL-1420110012345",
     licenseExpiry: "2032-12-31",
-    licenseFront: createDefaultMockImage("license-front.svg", "Driving License Front View"),
-    licenseBack: createDefaultMockImage("license-back.svg", "Driving License Back View"),
+    licenseFront: createDefaultMockImage("license-front.jpeg", "Driving License Front View"),
+    licenseBack: createDefaultMockImage("license-back.jpeg", "Driving License Back View"),
     registrationCertificateNumber: "RC-KA01MJ5521-IND",
-    registrationCertificateImage: createDefaultMockImage("rc-certificate.svg", "RC Smart Card Certificate"),
+    registrationCertificateImage: createDefaultMockImage("rc-certificate.jpeg", "RC Smart Card Certificate"),
     insuranceNumber: "POL-BAJAJ-8829102",
     insuranceExpiry: "2027-06-30",
-    insuranceImage: createDefaultMockImage("insurance-doc.svg", "Comprehensive Commercial Cover"),
+    insuranceImage: createDefaultMockImage("insurance-doc.jpeg", "Comprehensive Commercial Cover"),
     pollutionExpiry: "2026-12-31",
-    pollutionImage: createDefaultMockImage("puc-doc.svg", "Pollution Under Control (PUC)"),
+    pollutionImage: createDefaultMockImage("puc-doc.jpeg", "Pollution Under Control (PUC)"),
   }));
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
