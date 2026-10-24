@@ -8,7 +8,7 @@ export * from '../generated/client/index.js';
 const { Pool } = pg;
 
 const connectionString =
-  process.env.DATABASE_URL ||
+  process.env.DATABASE_URL || process.env.AUTH_DATABASE_URL ||
   'postgresql://auth_user:auth_secure_pass@localhost:5432/urbanfleet_auth?schema=public';
 
 /**

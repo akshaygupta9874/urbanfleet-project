@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';

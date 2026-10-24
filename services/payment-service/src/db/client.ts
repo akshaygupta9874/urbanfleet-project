@@ -8,7 +8,7 @@ export * from '../generated/client/index.js';
 const { Pool } = pg;
 
 const connectionString =
-  process.env.DATABASE_URL ||
+  process.env.DATABASE_URL || process.env.PAYMENT_DATABASE_URL ||
   'postgresql://payment_user:payment_secure_pass@localhost:5432/urbanfleet_payment?schema=public';
 
 /**

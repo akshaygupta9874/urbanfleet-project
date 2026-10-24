@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';

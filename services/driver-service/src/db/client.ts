@@ -8,7 +8,7 @@ export * from '../generated/client/index.js';
 const { Pool } = pg;
 
 const connectionString =
-  process.env.DATABASE_URL ||
+  process.env.DATABASE_URL || process.env.DRIVER_DATABASE_URL ||
   'postgresql://driver_user:driver_secure_pass@localhost:5432/urbanfleet_driver?schema=public';
 
 /**
