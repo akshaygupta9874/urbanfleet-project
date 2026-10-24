@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createLogger } from '@urbanfleet/common';
+import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 import { PaymentService } from '../services/payment.service.js';
 import { NonRetryablePaymentError } from '../errors/payment.errors.js';
@@ -34,34 +34,30 @@ export async function initPaymentConsumer(
     await consumer.subscribe({ topic: EventTopics.RIDE_EVENTS, fromBeginning: false });
 
     await consumer.run({
-      eachMessage: async ({ message }) => {
-        if (!message.value) return;
+      eachMessage: createResilientConsumerRunner(
+        {
+          kafka,
+          consumer,
+          consumerGroup,
+          serviceName: 'payment-service',
+          dlqTopicResolver: () => EventTopics.RIDE_DLQ,
+        },
+        async (envelope, raw) => {
+          const eventId = String(envelope.id || raw.id || crypto.randomUUID());
+          const eventType = envelope.eventType;
+          const payload = (typeof envelope.payload === 'object' && envelope.payload !== null
+            ? envelope.payload
+            : raw) as Record<string, unknown>;
 
-        let raw: Record<string, unknown>;
-        try {
-          raw = JSON.parse(message.value.toString()) as Record<string, unknown>;
-        } catch (parseErr: unknown) {
-          const parseErrorMessage = parseErr instanceof Error ? parseErr.message : String(parseErr);
-          logger.warn('Failed to parse Kafka message JSON', { error: parseErrorMessage });
-          return;
-        }
-
-        if (!raw || typeof raw !== 'object') return;
-
-        const eventId = String(raw.id || (message.key ? message.key.toString() : '') || crypto.randomUUID());
-        const eventType = raw.eventType as string | undefined;
-        const payload = (typeof raw.payload === 'object' && raw.payload !== null ? raw.payload : raw) as Record<string, unknown>;
-
-        try {
           await prisma.$transaction(async (tx) => {
             // Idempotency check
             const existing = await tx.processedEvent.findUnique({
-              where: { eventId_consumerGroup: { eventId, consumerGroup } }
+              where: { eventId_consumerGroup: { eventId, consumerGroup } },
             });
             if (existing) return;
 
             await tx.processedEvent.create({
-              data: { eventId, consumerGroup }
+              data: { eventId, consumerGroup },
             });
 
             const creator: PaymentOrderCreator = paymentService;
@@ -71,9 +67,10 @@ export async function initPaymentConsumer(
               let riderId = String(payload.riderId || '');
               let totalFarePaise = Number(payload.totalFarePaise || 0);
               let driverId = payload.driverId ? String(payload.driverId) : undefined;
-              let fareBreakdown = (payload.fareBreakdown && typeof payload.fareBreakdown === 'object')
-                ? (payload.fareBreakdown as Record<string, unknown>)
-                : undefined;
+              let fareBreakdown =
+                payload.fareBreakdown && typeof payload.fareBreakdown === 'object'
+                  ? (payload.fareBreakdown as Record<string, unknown>)
+                  : undefined;
 
               // If riderId or totalFarePaise or fareBreakdown missing, fetch authoritative details from rideClient
               if ((!riderId || !totalFarePaise || !fareBreakdown) && rideId) {
@@ -84,7 +81,9 @@ export async function initPaymentConsumer(
                     riderId = riderId || String(rideDetails.riderId || '');
                     totalFarePaise = totalFarePaise || rideDetails.fare.breakdown.totalPaise;
                     driverId = driverId || rideDetails.driverId || undefined;
-                    fareBreakdown = fareBreakdown || (rideDetails.fare.breakdown as unknown as Record<string, unknown>);
+                    fareBreakdown =
+                      fareBreakdown ||
+                      (rideDetails.fare.breakdown as unknown as Record<string, unknown>);
                   }
                 } catch (err: unknown) {
                   const fetchErrMessage = err instanceof Error ? err.message : String(err);
@@ -106,14 +105,17 @@ export async function initPaymentConsumer(
               let riderId = String(payload.riderId || '');
               let totalFarePaise = Number(payload.totalFarePaise || 0);
               let driverId = payload.driverId ? String(payload.driverId) : undefined;
-              let fareBreakdown = (payload.fareBreakdown && typeof payload.fareBreakdown === 'object')
-                ? (payload.fareBreakdown as Record<string, unknown>)
-                : undefined;
+              let fareBreakdown =
+                payload.fareBreakdown && typeof payload.fareBreakdown === 'object'
+                  ? (payload.fareBreakdown as Record<string, unknown>)
+                  : undefined;
 
               // Check if payment already exists for this ride
               const existingPayment = await tx.payment.findUnique({ where: { rideId } });
               if (existingPayment) {
-                logger.info(`Ride ${rideId} completed; payment order ${existingPayment.id} already exists with status ${existingPayment.status}`);
+                logger.info(
+                  `Ride ${rideId} completed; payment order ${existingPayment.id} already exists with status ${existingPayment.status}`
+                );
               } else {
                 // Resilient fallback: order wasn't created at arrival stage (e.g. driver completed directly)
                 if ((!riderId || !totalFarePaise || !fareBreakdown) && rideId) {
@@ -124,7 +126,9 @@ export async function initPaymentConsumer(
                       riderId = riderId || String(rideDetails.riderId || '');
                       totalFarePaise = totalFarePaise || rideDetails.fare.breakdown.totalPaise;
                       driverId = driverId || rideDetails.driverId || undefined;
-                      fareBreakdown = fareBreakdown || (rideDetails.fare.breakdown as unknown as Record<string, unknown>);
+                      fareBreakdown =
+                        fareBreakdown ||
+                        (rideDetails.fare.breakdown as unknown as Record<string, unknown>);
                     }
                   } catch (err: unknown) {
                     const fetchErrMessage = err instanceof Error ? err.message : String(err);
@@ -155,16 +159,25 @@ export async function initPaymentConsumer(
                   await creator.issueRefund(
                     existingPayment.id,
                     refundAmount,
-                    `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${String(payload.cancellationReason || 'Rider Cancelled')}`
+                    `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${String(
+                      payload.cancellationReason || 'Rider Cancelled'
+                    )}`
                   );
-                  logger.info(`Compensating partial refund of ${refundAmount} paise executed for cancelled ride ${rideId}`);
+                  logger.info(
+                    `Compensating partial refund of ${refundAmount} paise executed for cancelled ride ${rideId}`
+                  );
                 } else {
-                  logger.info(`No refund issued for cancelled ride ${rideId}; fee (${cancellationFeePaise}) covers captured amount (${existingPayment.amountPaise})`);
+                  logger.info(
+                    `No refund issued for cancelled ride ${rideId}; fee (${cancellationFeePaise}) covers captured amount (${existingPayment.amountPaise})`
+                  );
                 }
-              } else if (existingPayment && (existingPayment.status === 'PENDING' || existingPayment.status === 'CREATED')) {
+              } else if (
+                existingPayment &&
+                (existingPayment.status === 'PENDING' || existingPayment.status === 'CREATED')
+              ) {
                 await tx.payment.update({
                   where: { id: existingPayment.id },
-                  data: { status: 'CANCELLED' }
+                  data: { status: 'CANCELLED' },
                 });
                 if (cancellationFeePaise > 0) {
                   await creator.createOrder({
@@ -174,7 +187,9 @@ export async function initPaymentConsumer(
                     driverId: payload.driverId ? String(payload.driverId) : undefined,
                     idempotencyKey: `cancellation-fee-${rideId}`,
                   });
-                  logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on cancelled ride ${rideId}`);
+                  logger.info(
+                    `Cancellation fee order created for ${cancellationFeePaise} paise on cancelled ride ${rideId}`
+                  );
                 }
               } else if (!existingPayment && cancellationFeePaise > 0) {
                 await creator.createOrder({
@@ -184,36 +199,17 @@ export async function initPaymentConsumer(
                   driverId: payload.driverId ? String(payload.driverId) : undefined,
                   idempotencyKey: `cancellation-fee-${rideId}`,
                 });
-                logger.info(`Cancellation fee order created for ${cancellationFeePaise} paise on unbilled cancelled ride ${rideId}`);
+                logger.info(
+                  `Cancellation fee order created for ${cancellationFeePaise} paise on unbilled cancelled ride ${rideId}`
+                );
               }
             }
           });
-        } catch (err: unknown) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          // If error is NonRetryablePaymentError or operational 4xx, log warning and do not rethrow (skip poison message)
-          if (
-            err instanceof NonRetryablePaymentError ||
-            (typeof err === 'object' && err !== null && (err as { isOperational?: boolean; statusCode?: number }).isOperational && (err as { statusCode?: number }).statusCode! < 500)
-          ) {
-            logger.warn(`Non-retryable operational error processing ${eventType} event ${eventId}: ${errMsg}`, {
-              eventId,
-              eventType,
-              error: errMsg,
-            });
-            return;
-          }
-
-          logger.error(`Error processing Kafka event ${eventType} (${eventId}): ${errMsg}`, {
-            eventId,
-            eventType,
-            error: err instanceof Error ? err.stack || err.message : String(err),
-          });
-          throw err;
         }
-      }
+      ),
     });
 
-    logger.info('Payment Kafka Consumer initialized.');
+    logger.info('Payment Kafka Consumer initialized with Resilient DLQ Runner.');
     return consumer;
   } catch (err: unknown) {
     logger.error('Failed to initialize Payment Consumer:', err);

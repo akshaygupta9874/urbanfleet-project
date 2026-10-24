@@ -13,7 +13,9 @@ kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urb
 
 # Dead Letter Queues
 kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.auth.events.DLQ --partitions 1 --replication-factor 1
+kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.driver.events.DLQ --partitions 1 --replication-factor 1
 kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.ride.events.DLQ --partitions 1 --replication-factor 1
 kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.payment.events.DLQ --partitions 1 --replication-factor 1
+kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.notification.events.DLQ --partitions 1 --replication-factor 1
 
 echo "Kafka topics created successfully!"

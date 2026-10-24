@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createLogger } from '@urbanfleet/common';
+import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 import { emitPaymentCaptured as emitPaymentCapturedToDriver } from '../websocket/emitters/driver.emitter.js';
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from '../websocket/emitters/rider.emitter.js';
@@ -20,39 +20,35 @@ export async function initRidePaymentConsumer(prisma: PrismaClient): Promise<Con
     await consumer.subscribe({ topic: EventTopics.PAYMENT_EVENTS, fromBeginning: false });
 
     await consumer.run({
-      eachMessage: async ({ message }) => {
-        if (!message.value) return;
+      eachMessage: createResilientConsumerRunner(
+        {
+          kafka,
+          consumer,
+          consumerGroup,
+          serviceName: 'ride-service',
+          dlqTopicResolver: () => EventTopics.PAYMENT_DLQ,
+        },
+        async (envelope, raw) => {
+          const eventId = String(envelope.id || raw.id || crypto.randomUUID());
+          const eventType = envelope.eventType;
+          const payload = (typeof envelope.payload === 'object' && envelope.payload !== null
+            ? envelope.payload
+            : raw) as Record<string, unknown>;
 
-        let raw: Record<string, unknown>;
-        try {
-          raw = JSON.parse(message.value.toString()) as Record<string, unknown>;
-        } catch (parseErr: unknown) {
-          const parseErrorMessage = parseErr instanceof Error ? parseErr.message : String(parseErr);
-          logger.warn('Failed to parse Kafka message JSON in ride-payment consumer', { error: parseErrorMessage });
-          return;
-        }
+          if (eventType !== 'PAYMENT_CAPTURED') return;
 
-        if (!raw || typeof raw !== 'object') return;
+          const rideId = String(payload.rideId || '');
+          if (!rideId) return;
 
-        const eventId = String(raw.id || (message.key ? message.key.toString() : '') || crypto.randomUUID());
-        const eventType = raw.eventType as string | undefined;
-        const payload = (typeof raw.payload === 'object' && raw.payload !== null ? raw.payload : raw) as Record<string, unknown>;
-
-        if (eventType !== 'PAYMENT_CAPTURED') return;
-
-        const rideId = String(payload.rideId || '');
-        if (!rideId) return;
-
-        try {
           const updatedRide = await prisma.$transaction(async (tx) => {
             // 1. Idempotency check
             const existing = await tx.processedEvent.findUnique({
-              where: { eventId_consumerGroup: { eventId, consumerGroup } }
+              where: { eventId_consumerGroup: { eventId, consumerGroup } },
             });
             if (existing) return null;
 
             await tx.processedEvent.create({
-              data: { eventId, consumerGroup }
+              data: { eventId, consumerGroup },
             });
 
             // 2. Fetch ride
@@ -68,7 +64,7 @@ export async function initRidePaymentConsumer(prisma: PrismaClient): Promise<Con
 
             const updated = await tx.ride.update({
               where: { id: rideId },
-              data: { paymentStatus: 'CAPTURED' }
+              data: { paymentStatus: 'CAPTURED' },
             });
 
             return updated;
@@ -89,14 +85,11 @@ export async function initRidePaymentConsumer(prisma: PrismaClient): Promise<Con
             }
             logger.info(`Synced paymentStatus CAPTURED and emitted to driver for ride ${rideId}`);
           }
-        } catch (err: unknown) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          logger.error(`Error processing PAYMENT_CAPTURED event for ride ${rideId}`, err, { rideId, error: errorMsg });
         }
-      }
+      ),
     });
 
-    logger.info('Ride Payment Kafka Consumer initialized successfully.');
+    logger.info('Ride Payment Kafka Consumer initialized successfully with Resilient DLQ Runner.');
     return consumer;
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);

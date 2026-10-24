@@ -8,3 +8,4 @@ export * from './clients/service-client.js';
 export * from './utils/bigint-serializer.js';
 export * from './types/ride-contracts.js';
 export * from './middlewares/rate-limit.middleware.js';
+export * from './kafka/resilient-consumer.js';

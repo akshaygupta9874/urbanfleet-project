@@ -8,7 +8,7 @@
     "services/*"
   ],
   "scripts": {
-    "build:packages": "npm run build --workspace=@urbanfleet/common && npm run build --workspace=@urbanfleet/contracts",
+    "build:packages": "npm run build --workspace=@urbanfleet/contracts && npm run build --workspace=@urbanfleet/common",
     "build": "npm run build:packages && npm run build --workspaces --if-present",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
@@ -23,6 +23,7 @@
     "db:push:all": "npm run prisma:push --workspaces --if-present",
     "db:migrate:all": "npm run prisma:migrate --workspaces --if-present",
     "keys:generate": "node scripts/generate-keys.js",
+    "dlq:replay": "tsx scripts/replay-dlq.ts",
     "dev:auth": "npm run dev --workspace=@urbanfleet/auth-service",
     "dev:driver": "npm run dev --workspace=@urbanfleet/driver-service",
     "dev:ride": "npm run dev --workspace=@urbanfleet/ride-service",

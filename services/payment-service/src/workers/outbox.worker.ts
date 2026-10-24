@@ -1,6 +1,7 @@
 import { PrismaClient } from '../db/client.js';
 import { Kafka, Producer } from 'kafkajs';
 import { createLogger } from '@urbanfleet/common';
+import crypto from 'crypto';
 
 const logger = createLogger('payment-outbox-worker');
 const workerId = `worker-${process.pid}-${Math.random().toString(36).substring(7)}`;
@@ -113,6 +114,35 @@ export class OutboxWorker {
       } catch (publishErr: unknown) {
         const errorMessage = publishErr instanceof Error ? publishErr.message : String(publishErr);
         logger.error(`Failed to publish payment event ${event.id}:`, publishErr);
+        if (((event.retry_count || 0) + 1) >= 5 && this.producer) {
+          try {
+            const dlqTopic = `${event.topic}.DLQ`;
+            const dlqEnvelope = {
+              id: crypto.randomUUID(),
+              originalEventId: event.id,
+              originalTopic: event.topic,
+              originalPartition: 0,
+              originalOffset: '0',
+              originalKey: event.partition_key,
+              consumerGroup: 'outbox-publisher',
+              serviceName: 'payment-service',
+              failedAt: new Date().toISOString(),
+              retryCount: (event.retry_count || 0) + 1,
+              error: {
+                name: 'OutboxPublishExhaustionError',
+                message: errorMessage,
+              },
+              payload: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload,
+            };
+            this.producer.send({
+              topic: dlqTopic,
+              messages: [{ key: event.partition_key, value: JSON.stringify(dlqEnvelope) }],
+            }).catch((e: unknown) => logger.error('Async error dispatching outbox DLQ:', e));
+            logger.error(`[OUTBOX_DLQ] Event ${event.id} exhausted retries and was sent to DLQ topic ${dlqTopic}`);
+          } catch (dlqErr) {
+            logger.error(`Failed to dispatch exhausted outbox event ${event.id} to DLQ:`, dlqErr);
+          }
+        }
         const nextRetry = (event.retry_count || 0) + 1;
         const newStatus = nextRetry >= 5 ? 'FAILED' : 'PENDING';
 

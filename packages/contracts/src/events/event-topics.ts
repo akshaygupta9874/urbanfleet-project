@@ -7,6 +7,8 @@ export const EventTopics = {
   
   // Dead Letter Queues
   AUTH_DLQ: 'urbanfleet.auth.events.DLQ',
+  DRIVER_DLQ: 'urbanfleet.driver.events.DLQ',
   RIDE_DLQ: 'urbanfleet.ride.events.DLQ',
-  PAYMENT_DLQ: 'urbanfleet.payment.events.DLQ'
+  PAYMENT_DLQ: 'urbanfleet.payment.events.DLQ',
+  NOTIFICATION_DLQ: 'urbanfleet.notification.events.DLQ'
 } as const;

@@ -1,6 +1,7 @@
 import { OutboxRepository } from '../repositories/outbox.repository.js';
 import { getAuthProducer } from '../events/auth.publisher.js';
 import { createLogger } from '@urbanfleet/common';
+import crypto from 'crypto';
 
 const logger = createLogger('auth-outbox-worker');
 
@@ -112,6 +113,35 @@ export class OutboxWorker {
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.error(`Failed to publish outbox event ${event.id}:`, err);
+        if (((event.retryCount || 0) + 1) >= 5 && producer) {
+          try {
+            const dlqTopic = `${event.topic}.DLQ`;
+            const dlqEnvelope = {
+              id: crypto.randomUUID(),
+              originalEventId: event.id,
+              originalTopic: event.topic,
+              originalPartition: 0,
+              originalOffset: '0',
+              originalKey: (event as any).partitionKey || event.id,
+              consumerGroup: 'outbox-publisher',
+              serviceName: 'auth-service',
+              failedAt: new Date().toISOString(),
+              retryCount: (event.retryCount || 0) + 1,
+              error: {
+                name: 'OutboxPublishExhaustionError',
+                message: errorMsg,
+              },
+              payload: event.payload,
+            };
+            producer.send({
+              topic: dlqTopic,
+              messages: [{ key: (event as any).partitionKey || event.id, value: JSON.stringify(dlqEnvelope) }],
+            }).catch((e: unknown) => logger.error('Async error dispatching outbox DLQ in auth:', e));
+            logger.error(`[OUTBOX_DLQ] Event ${event.id} exhausted retries and was sent to DLQ topic ${dlqTopic}`);
+          } catch (dlqErr) {
+            logger.error(`Failed to dispatch exhausted outbox event ${event.id} to DLQ:`, dlqErr);
+          }
+        }
         await this.outboxRepo.markFailed(event.id, errorMsg);
       }
     }
