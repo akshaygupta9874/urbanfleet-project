@@ -37,6 +37,7 @@ import { appApi } from "./lib/api";
 import { connectDriverSocket, sendDriverLocation } from "./lib/socket";
 import { fetchDriverProfile, isDriverApproved } from "./lib/driverApi";
 import DriverCTA from "./components/DriverCTA";
+import DriverWalletModal from "./components/DriverWalletModal";
 import { useAuthContext } from "./context/auth-context";
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
@@ -352,6 +353,7 @@ export default function DriverDashboard() {
   const [showEarningsFlash, setShowEarningsFlash] = useState<number | null>(null);
   const [currentTime] = useState(() => Date.now());
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+  const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [tripOtp, setTripOtp] = useState("");
   const [isStartingRide, setIsStartingRide] = useState(false);
@@ -1801,7 +1803,11 @@ export default function DriverDashboard() {
           </div>
         )}
     </div>
+      {/* Driver Wallet Modal */}
+      <DriverWalletModal
+        isOpen={isWalletOpen}
+        onClose={() => setIsWalletOpen(false)}
+      />
     </div>
   );
 }
-

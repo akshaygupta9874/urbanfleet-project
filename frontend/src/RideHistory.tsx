@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   ChevronLeft,
@@ -112,6 +112,8 @@ function driverDisplayName(ride: RideHistoryRide) {
 export default function RideHistory() {
   const { user } = useAuthContext();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isDriverMode = searchParams.get("mode") === "driver";
   const [rides, setRides] = useState<RideHistoryRide[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -126,7 +128,8 @@ export default function RideHistory() {
   useEffect(() => {
     async function loadRideHistory() {
       try {
-        const response = await appApi.get<{ success: boolean; data: RideHistoryRide[] }>("/ride/history");
+        const endpoint = isDriverMode ? "/ride/history/driver" : "/ride/history";
+        const response = await appApi.get<{ success: boolean; data: RideHistoryRide[] }>(endpoint);
         setRides(response.data.data);
       } catch {
         setError("Unable to load ride history. Please refresh the page.");
@@ -136,7 +139,7 @@ export default function RideHistory() {
     }
 
     void loadRideHistory();
-  }, []);
+  }, [isDriverMode]);
 
   // Filter and Search logic
   const filteredRides = useMemo(() => {
@@ -157,9 +160,17 @@ export default function RideHistory() {
   const stats = useMemo(() => {
     const totalRides = rides.length;
     const completedRides = rides.filter(r => r.status === "COMPLETED").length;
-    const totalSpent = rides.reduce((acc, curr) => acc + (curr.fare.final ?? curr.fare.estimated ?? 0), 0);
-    return { totalRides, completedRides, totalSpent };
-  }, [rides]);
+    const totalSpentOrEarned = isDriverMode
+      ? rides.reduce((acc, curr) => {
+          const earnings = curr.fare.breakdown?.driverEarningPaise
+            ? curr.fare.breakdown.driverEarningPaise / 100
+            : ((curr.fare.final ? curr.fare.final / 100 : curr.fare.estimated) * 0.8);
+          return acc + earnings;
+        }, 0)
+      : rides.reduce((acc, curr) => acc + (curr.fare.final ? curr.fare.final / 100 : curr.fare.estimated), 0);
+
+    return { totalRides, completedRides, totalSpent: totalSpentOrEarned };
+  }, [rides, isDriverMode]);
 
   const handlePay = async (ride: RideHistoryRide) => {
     if (!user?.id) {
@@ -281,21 +292,33 @@ export default function RideHistory() {
             <div className="space-y-1">
               <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-[#ffd88a] shadow-[0_8px_20px_-8px_rgba(58,31,10,0.6)]">
                 <Sparkles size={12} />
-                Travel Journal
+                {isDriverMode ? "Partner Driver Log" : "Travel Journal"}
               </div>
-              <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-tight text-[#2e1808]">Ride History</h1>
+              <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-tight text-[#2e1808]">{isDriverMode ? "Driver Trip Journal" : "Ride History"}</h1>
               <p className="text-sm font-medium text-[#6b3a12]/80">
-                Review your journeys and settle invoices in pristine golden style.
+                {isDriverMode ? "Comprehensive record of accepted dispatches, rider pickups, and ledger net earnings." : "Review your journeys and settle invoices in pristine golden style."}
               </p>
             </div>
 
-            <Button
-              variant="outline"
-              className="border-[#7a4416]/30 bg-[#fffaf0]/80 text-[#3a1f0a] hover:bg-[#fff4dc] hover:text-[#2e1808] transition-all rounded-2xl shadow-sm"
-              onClick={() => navigate("/dashboard")}
-            >
-              <ChevronLeft className="mr-2 h-4 w-4" /> Dashboard
-            </Button>
+<div className="flex items-center gap-2">
+              {user?.roles?.includes("DRIVER") && (
+                <Button
+                  variant="outline"
+                  className="border-[#c58a3a]/40 bg-[#fffaf0]/90 text-[#3a1f0a] hover:bg-[#fff4dc] transition-all rounded-2xl shadow-sm text-xs font-bold"
+                  onClick={() => navigate(isDriverMode ? "/history" : "/history?mode=driver")}
+                >
+                  <Car className="mr-1.5 h-3.5 w-3.5 text-[#b8722c]" />
+                  {isDriverMode ? "Rider History" : "Driver Mode"}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="border-[#7a4416]/30 bg-[#fffaf0]/80 text-[#3a1f0a] hover:bg-[#fff4dc] hover:text-[#2e1808] transition-all rounded-2xl shadow-sm"
+                onClick={() => navigate(isDriverMode ? "/driver-dashboard" : "/dashboard")}
+              >
+                <ChevronLeft className="mr-2 h-4 w-4" /> {isDriverMode ? "Console" : "Dashboard"}
+              </Button>
+            </div>
           </div>
 
           {/* Quick Metrics Bar */}
