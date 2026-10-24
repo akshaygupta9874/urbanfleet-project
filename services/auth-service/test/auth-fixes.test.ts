@@ -15,7 +15,6 @@ import path from 'node:path';
 describe('End-to-End Auth Service Fixes & Security Verification', () => {
   let mockUserRepo: any;
   let mockSessionRepo: any;
-  let mockAuditRepo: any;
   let mockOutboxRepo: any;
   let authService: AuthService;
   let userService: UserService;
@@ -68,10 +67,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       deleteByUserId: vi.fn().mockResolvedValue({}),
     };
 
-    mockAuditRepo = {
-      record: vi.fn().mockResolvedValue({}),
-    };
-
     mockOutboxRepo = {
       stageEvent: vi.fn().mockResolvedValue({ id: 'outbox-1' }),
       getPendingEvents: vi.fn().mockResolvedValue([]),
@@ -79,7 +74,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       markFailed: vi.fn().mockResolvedValue({}),
     };
 
-    authService = new AuthService(mockUserRepo, mockSessionRepo, mockAuditRepo, mockOutboxRepo);
+    authService = new AuthService(mockUserRepo, mockSessionRepo, mockOutboxRepo);
     userService = new UserService(mockUserRepo);
     authController = new AuthController(authService, userService);
 

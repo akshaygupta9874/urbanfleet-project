@@ -885,7 +885,6 @@ model User {
   updatedAt           DateTime      @updatedAt @map("updated_at")
 
   sessions            Session[]
-  auditLogs           AuditLog[]
 
   @@map("users")
 }
@@ -904,18 +903,6 @@ model Session {
   @@map("sessions")
 }
 
-model AuditLog {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String?  @map("user_id") @db.Uuid
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action     String   @db.VarChar(100)
-  ipAddress  String?  @map("ip_address") @db.VarChar(45)
-  metadata   Json?
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  @@index([userId])
-  @@map("audit_logs")
-}
 ```
 
 ---

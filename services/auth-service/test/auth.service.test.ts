@@ -20,10 +20,6 @@ describe('Auth Service Business Logic', () => {
     deleteByUserId: vi.fn()
   };
 
-  const mockAuditRepo: any = {
-    record: vi.fn().mockResolvedValue({})
-  };
-
   const mockOutboxRepo: any = {
     stageEvent: vi.fn().mockResolvedValue({ id: 'outbox-1' }),
   };
@@ -33,7 +29,7 @@ describe('Auth Service Business Logic', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    authService = new AuthService(mockUserRepo, mockSessionRepo, mockAuditRepo, mockOutboxRepo);
+    authService = new AuthService(mockUserRepo, mockSessionRepo, mockOutboxRepo);
     userService = new UserService(mockUserRepo);
 
     // Mock open redis connection by default

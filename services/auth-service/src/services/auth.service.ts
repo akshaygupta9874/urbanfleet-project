@@ -3,7 +3,6 @@ import crypto from 'crypto';
 import axios, { isAxiosError } from 'axios';
 import { UserRepository } from '../repositories/user.repository.js';
 import { SessionRepository } from '../repositories/session.repository.js';
-import { AuditRepository } from '../repositories/audit.repository.js';
 import { signAccessToken, signRefreshToken, verifyToken } from '../crypto/keys.js';
 import { ConflictError, UnauthorizedError, NotFoundError, BadRequestError, ForbiddenError, createLogger, ServiceUnavailableError, InternalServerError } from '@urbanfleet/common';
 import { Role } from '../db/client.js';
@@ -23,18 +22,14 @@ const logger = createLogger('auth-service');
 export class AuthService {
   private userRepo: UserRepository;
   private sessionRepo: SessionRepository;
-  private auditRepo: AuditRepository;
   private outboxRepo?: OutboxRepository;
 
   constructor(
     userRepo: UserRepository,
-    sessionRepo: SessionRepository,
-    auditRepo: AuditRepository,
-    outboxRepo?: OutboxRepository
+    sessionRepo: SessionRepository,    outboxRepo?: OutboxRepository
   ) {
     this.userRepo = userRepo;
     this.sessionRepo = sessionRepo;
-    this.auditRepo = auditRepo;
     this.outboxRepo = outboxRepo;
   }
 
@@ -71,20 +66,6 @@ export class AuthService {
     });
 
     // Registration creates an unverified account. Tokens and sessions are only issued after email verification upon login.
-
-    // Audit logging
-    try {
-      await this.auditRepo.record({
-        userId: user.id,
-        action: 'USER_REGISTERED',
-        ipAddress: input.ipAddress
-      });
-    } catch (err: unknown) {
-      logger.warn('Failed to record audit log on registration:', {
-        error: err instanceof Error ? err.message : String(err),
-        userId: user.id,
-      });
-    }
 
     // Generate email verification token (24-hour expiration)
     const verifyToken = crypto.randomBytes(32).toString('hex');
@@ -391,20 +372,6 @@ export class AuthService {
       });
     } catch (err: unknown) {
       logger.warn('Failed to cache tokens in Redis on OTP login:', {
-        error: err instanceof Error ? err.message : String(err),
-        userId: user.id,
-      });
-    }
-
-    // Record audit event
-    try {
-      await this.auditRepo.record({
-        userId: user.id,
-        action: 'USER_LOGIN',
-        ipAddress: input.ipAddress,
-      });
-    } catch (err: unknown) {
-      logger.warn('Failed to record audit log for login:', {
         error: err instanceof Error ? err.message : String(err),
         userId: user.id,
       });
@@ -1037,20 +1004,6 @@ export class AuthService {
       });
     } catch (err: unknown) {
       logger.warn('Failed to cache Google user tokens in Redis:', {
-        error: err instanceof Error ? err.message : String(err),
-        userId: user.id,
-      });
-    }
-
-    // Audit log
-    try {
-      await this.auditRepo.record({
-        userId: user.id,
-        action: isNewUser ? 'USER_REGISTERED_GOOGLE' : 'USER_LOGIN_GOOGLE',
-        ipAddress,
-      });
-    } catch (err: unknown) {
-      logger.warn('Failed to record audit log for Google auth:', {
         error: err instanceof Error ? err.message : String(err),
         userId: user.id,
       });

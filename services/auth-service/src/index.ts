@@ -7,7 +7,6 @@ import { initAsymmetricKeys } from './crypto/keys.js';
 import { initAuthPublisher } from './events/auth.publisher.js';
 import { UserRepository } from './repositories/user.repository.js';
 import { SessionRepository } from './repositories/session.repository.js';
-import { AuditRepository } from './repositories/audit.repository.js';
 import { AuthService } from './services/auth.service.js';
 import { UserService } from './services/user.service.js';
 import { AdminService } from './services/admin.service.js';
@@ -40,13 +39,12 @@ app.use(express.json());
 // 3. Dependency Injection
 const userRepo = new UserRepository(prisma);
 const sessionRepo = new SessionRepository(prisma);
-const auditRepo = new AuditRepository(prisma);
 const outboxRepo = new OutboxRepository(prisma);
 
 const outboxWorker = new OutboxWorker(outboxRepo);
 outboxWorker.start();
 
-const authService = new AuthService(userRepo, sessionRepo, auditRepo, outboxRepo);
+const authService = new AuthService(userRepo, sessionRepo, outboxRepo);
 const userService = new UserService(userRepo);
 const adminService = new AdminService(userRepo);
 
