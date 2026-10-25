@@ -127,16 +127,12 @@ export const AuthContextProvider = ({
     try {
       await api.post("/logout");
     } catch {
-      // A stale CSRF cookie should not leave a server session alive. Refresh
-      // once to receive a new CSRF cookie, then retry the authenticated logout.
-      try {
-        await api.post("/refresh");
-        await api.post("/logout");
-      } catch {
-        // Client credentials are still cleared below. The next protected API
-        // response cannot restore this client-side auth state.
-      }
+      // Ignore network or server errors during logout
     } finally {
+      if (typeof document !== "undefined") {
+        document.cookie = "csrfToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+        document.cookie = "refreshToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      }
       clearAccessToken();
       setUser(null);
       setIsAuthenticated(false);

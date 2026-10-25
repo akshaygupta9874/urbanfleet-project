@@ -60,4 +60,8 @@ export const resendVerificationSchema = z.object({
 
 export const googleAuthSchema = z.object({
   credential: z.string().min(10, 'A valid Google credential token is required'),
+  roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional(),
+  role: z.enum(['RIDER', 'DRIVER']).optional(),
+  userAgent: z.string().optional(),
+  ipAddress: z.string().optional(),
 });

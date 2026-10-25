@@ -956,7 +956,7 @@ export default function DriverDashboard() {
               </Button>
               <button onClick={() => navigate("/security-devices")} className="group relative grid h-10 w-10 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] shadow-sm hover:bg-[#fff4dc] active:scale-95 transition-all" aria-label="Security & Devices" title="Active Devices & Sessions"><ShieldCheck className="h-4 w-4 text-[#b8722c] transition-colors group-hover:text-[#3a1f0a]" /></button> 
               <button
-                onClick={() => void logout().then(() => navigate("/login", { replace: true }))}
+                onClick={() => void logout().finally(() => navigate("/login", { replace: true }))}
                 className="group relative grid h-10 w-10 place-items-center rounded-xl border border-rose-500/30 bg-rose-950/20 text-rose-900 shadow-sm hover:bg-rose-950/30 active:scale-95 transition-all"
                 aria-label="Logout"
               >

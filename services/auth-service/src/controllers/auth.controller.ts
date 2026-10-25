@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { AuthService } from "../services/auth.service.js";
 import { UserService } from "../services/user.service.js";
+import { verifyToken } from "../crypto/keys.js";
+import { Role } from "../db/client.js";
 import {
   getCookieOptions,
   getCsrfCookieOptions,
@@ -109,18 +111,29 @@ export class AuthController {
   });
 
   googleAuth = asyncHandler(async (req: Request, res: Response) => {
-    const { credential } = req.body;
-    const userAgent = req.headers["user-agent"];
-    const ipAddress = req.ip;
-    if (!userAgent || !ipAddress) {
-      throw new BadRequestError(
-        "User agent and IP address are required in request body",
-      );
-    }
+    const { credential, roles, role } = req.body;
+    const userAgent =
+      (req.headers["user-agent"] as string) ||
+      (req.body.userAgent as string) ||
+      "UrbanFleet-Web/1.0";
+    const ipAddress =
+      req.ip ||
+      (req.headers["x-forwarded-for"] as string) ||
+      (req.body.ipAddress as string) ||
+      "127.0.0.1";
+
+    const requestedRoles: Role[] | undefined =
+      Array.isArray(roles) && roles.length > 0
+        ? (roles as Role[])
+        : role
+          ? [role as Role]
+          : undefined;
+
     const result = await this.authService.googleAuth(
       credential,
       ipAddress,
       userAgent,
+      requestedRoles,
     );
 
     res.cookie(
@@ -134,6 +147,8 @@ export class AuthController {
     res.status(200).json({
       success: true,
       message: "Signed in with Google successfully.",
+      accessToken: result.accessToken,
+      user: result.user,
       data: {
         user: result.user,
         accessToken: result.accessToken,
@@ -172,9 +187,47 @@ export class AuthController {
   );
 
   logout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const token = req.cookies?.refreshToken;
-    const sessionId = req.sessionId;
-    const userId = req.userId;
+    let token = req.cookies?.refreshToken;
+    let sessionId = req.sessionId;
+    let userId = req.userId;
+
+    // 1. Try resolving userId and sessionId from Authorization header if missing
+    if (!sessionId || !userId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const accessToken = authHeader.substring(7).trim();
+        try {
+          const decoded = verifyToken(accessToken);
+          if (decoded) {
+            userId = userId || decoded.userId;
+            sessionId = sessionId || decoded.sessionId;
+          }
+        } catch {
+          // Token expired or invalid - ignore
+        }
+      }
+    }
+
+    // 2. Check req.body in case client explicitly sent refreshToken or sessionId
+    if (!token && req.body?.refreshToken) {
+      token = req.body.refreshToken;
+    }
+    if (!sessionId && req.body?.sessionId) {
+      sessionId = req.body.sessionId;
+    }
+
+    // 3. If token present but sessionId/userId still unresolved, decode refresh token
+    if (token && (!sessionId || !userId)) {
+      try {
+        const decoded = verifyToken(token);
+        if (decoded) {
+          userId = userId || decoded.userId;
+          sessionId = sessionId || decoded.sessionId;
+        }
+      } catch {
+        // Refresh token may be invalid/expired
+      }
+    }
 
     await this.authService.logout(token, sessionId, userId);
 
@@ -182,8 +235,17 @@ export class AuthController {
       await revokeCSRFToken(userId, res);
     }
 
-    res.clearCookie("refreshToken", clearCookieOptions());
-    res.clearCookie("csrfToken", getCsrfCookieOptions());
+    const baseCookieOpts = clearCookieOptions();
+    res.clearCookie("refreshToken", baseCookieOpts);
+    res.clearCookie("refreshToken", { path: "/" });
+    res.clearCookie("csrfToken", clearCookieOptions({ httpOnly: false }));
+    res.clearCookie("csrfToken", { path: "/", httpOnly: false });
+
+    // Explicitly overwrite with Set-Cookie expired headers for cross-browser reliability
+    res.setHeader("Set-Cookie", [
+      `refreshToken=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly${baseCookieOpts.secure ? "; Secure; SameSite=None" : "; SameSite=Lax"}`,
+      `csrfToken=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT${baseCookieOpts.secure ? "; Secure; SameSite=None" : "; SameSite=Lax"}`
+    ]);
 
     res.status(200).json({ success: true, message: "Logged out successfully" });
   });

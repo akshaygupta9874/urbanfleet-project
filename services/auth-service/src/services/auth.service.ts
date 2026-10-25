@@ -997,7 +997,7 @@ export class AuthService {
     }
   }
 
-  async googleAuth(credential: string, ipAddress: string, userAgent: string) {
+  async googleAuth(credential: string, ipAddress: string, userAgent: string, requestedRoles?: Role[]) {
     if (!credential || typeof credential !== "string") {
       throw new BadRequestError("A Google credential is required");
     }
@@ -1012,6 +1012,7 @@ export class AuthService {
       family_name?: string;
       picture?: string;
       aud?: string;
+      azp?: string;
     };
     try {
       const response = await axios.get<{
@@ -1046,13 +1047,24 @@ export class AuthService {
     }
 
     // 2. Validate token claims
-    const googleClientId = process.env.GOOGLE_CLIENT_ID;
-    if (googleClientId && payload.aud && payload.aud !== googleClientId) {
-      logger.warn("Google token audience mismatch:", {
-        expected: googleClientId,
-        got: payload.aud,
-      });
-      throw new UnauthorizedError("Google credential audience mismatch");
+    const googleClientId = (
+      process.env.GOOGLE_CLIENT_ID ||
+      process.env.VITE_GOOGLE_CLIENT_ID ||
+      ""
+    )
+      .trim()
+      .replace(/^[\"\']|[\"\']$/g, "");
+    if (googleClientId && payload.aud) {
+      const validAud =
+        payload.aud === googleClientId || payload.azp === googleClientId;
+      if (!validAud) {
+        logger.warn("Google token audience mismatch:", {
+          expected: googleClientId,
+          gotAud: payload.aud,
+          gotAzp: payload.azp,
+        });
+        throw new UnauthorizedError("Google credential audience mismatch");
+      }
     }
 
     const isVerified =
@@ -1067,6 +1079,11 @@ export class AuthService {
     let user = await this.userRepo.findByEmail(email);
     let isNewUser = false;
     const registrationEventId = crypto.randomUUID();
+
+    const targetRoles: Role[] =
+      requestedRoles && requestedRoles.length > 0
+        ? requestedRoles
+        : [Role.RIDER];
 
     if (!user) {
       isNewUser = true;
@@ -1085,7 +1102,7 @@ export class AuthService {
         firstName: firstName.slice(0, 50),
         lastName: lastName.slice(0, 50),
         passwordHash,
-        roles: [Role.RIDER],
+        roles: targetRoles,
         avatarUrl: payload.picture
           ? String(payload.picture).slice(0, 500)
           : undefined,
@@ -1153,6 +1170,13 @@ export class AuthService {
         );
       });
     } else {
+      // If user exists and specific roles were requested, merge if not already present
+      if (requestedRoles && requestedRoles.length > 0) {
+        const mergedRoles = Array.from(new Set([...user.roles, ...requestedRoles])) as Role[];
+        if (mergedRoles.length !== user.roles.length) {
+          user = await this.userRepo.update(user.id, { roles: mergedRoles });
+        }
+      }
       // If user exists and email was not marked verified, verify it now
       if (!user.isEmailVerified) {
         user = await this.userRepo.update(user.id, { isEmailVerified: true });

@@ -457,6 +457,120 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(mockUserRepo.create).not.toHaveBeenCalled();
       axiosSpy.mockRestore();
     });
+
+    it('creates new DRIVER account when DRIVER role is selected during Google signup', async () => {
+      const axiosSpy = vi.spyOn(axios, 'get').mockResolvedValue({
+        status: 200,
+        data: {
+          sub: 'google-sub-driver-1',
+          email: 'googledriver@example.com',
+          email_verified: true,
+          name: 'Fast Driver',
+          aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
+        },
+      });
+
+      mockUserRepo.findByEmail.mockResolvedValue(null);
+      mockUserRepo.create.mockImplementation(async (data: any) => ({
+        id: 'usr-google-driver-1',
+        ...data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-driver-1' });
+
+      const res = await originalFetch(`${baseUrl}/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credential: 'valid_google_credential_driver_token',
+          roles: ['DRIVER'],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.accessToken).toBeDefined();
+      expect(body.data.accessToken).toBeDefined();
+      expect(body.data.user.roles).toEqual(['DRIVER']);
+      expect(mockUserRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'googledriver@example.com',
+          roles: ['DRIVER'],
+        })
+      );
+      axiosSpy.mockRestore();
+    });
+
+    it('merges DRIVER role when existing RIDER authenticates with DRIVER selection', async () => {
+      const axiosSpy = vi.spyOn(axios, 'get').mockResolvedValue({
+        status: 200,
+        data: {
+          sub: 'google-sub-merge-1',
+          email: 'rideranddriver@example.com',
+          email_verified: true,
+          name: 'Dual Role',
+          aud: process.env.GOOGLE_CLIENT_ID || '841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com',
+        },
+      });
+
+      const existingRider = {
+        id: 'usr-dual-1',
+        email: 'rideranddriver@example.com',
+        firstName: 'Dual',
+        lastName: 'Role',
+        roles: ['RIDER'],
+        isEmailVerified: true,
+      };
+
+      mockUserRepo.findByEmail.mockResolvedValue(existingRider);
+      mockUserRepo.update.mockResolvedValue({
+        ...existingRider,
+        roles: ['RIDER', 'DRIVER'],
+      });
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-dual-1' });
+
+      const res = await originalFetch(`${baseUrl}/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credential: 'valid_google_credential_merge_token',
+          roles: ['DRIVER'],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(mockUserRepo.update).toHaveBeenCalledWith('usr-dual-1', {
+        roles: ['RIDER', 'DRIVER'],
+      });
+      axiosSpy.mockRestore();
+    });
+  });
+
+  describe('Issue 16b: Logout endpoint POST /logout', () => {
+    const originalFetch = globalThis.fetch;
+
+    it('successfully logs out and clears cookies when called with valid session or token', async () => {
+      mockSessionRepo.delete.mockResolvedValue({ id: 'sess-logout-1' });
+
+      const res = await originalFetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'sess-logout-1' }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.message).toBe('Logged out successfully');
+
+      const setCookie = res.headers.get('set-cookie');
+      expect(setCookie).toContain('refreshToken=;');
+      expect(setCookie).toContain('csrfToken=;');
+    });
   });
 
   describe('Issue 17: Cross-User Profile Access Restrictions (GET /users/:id)', () => {

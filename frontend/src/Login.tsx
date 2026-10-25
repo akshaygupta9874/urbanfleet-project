@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, type Variants, AnimatePresence } from "framer-motion";
-import { Sparkles, MapPin, Navigation, Mail } from "lucide-react";
+import { Sparkles, MapPin, Navigation, Mail, Car, User as UserIcon } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext, type User } from "./context/auth-context";
@@ -51,6 +51,7 @@ function WelcomePill() {
 export default function LoginPage() {
   const navigate = useNavigate();
   const { user, checkAuthentication, establishSession, isAuthenticated, loading } = useAuthContext();
+  const [selectedRole, setSelectedRole] = useState<"RIDER" | "DRIVER">("RIDER");
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -64,7 +65,7 @@ export default function LoginPage() {
       const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
       navigate(target, { replace: true });
     }
-  }, [isAuthenticated, loading, navigate]);
+  }, [isAuthenticated, loading, navigate, user]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -127,14 +128,15 @@ export default function LoginPage() {
       });
 
       const accessToken = data.data?.accessToken ?? data.accessToken;
-      const user = data.data?.user ?? data.user;
+      const verifiedUser = data.data?.user ?? data.user;
 
-      if (accessToken && user) {
-        establishSession(accessToken, user);
+      if (accessToken && verifiedUser) {
+        establishSession(accessToken, verifiedUser);
       } else {
         await checkAuthentication();
       }
-      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+      const isDriver = selectedRole === "DRIVER" || verifiedUser?.roles?.includes("DRIVER");
+      const target = isDriver ? "/driver-dashboard" : "/dashboard";
       navigate(target, { replace: true });
     } catch (error) {
       setStatus(error instanceof AxiosError ? (error.response?.data?.message || error.message) : "OTP verification failed");
@@ -152,18 +154,28 @@ export default function LoginPage() {
     setStatus("");
     setIsSubmitting(true);
     try {
-      const { data } = await api.post<{ data?: { accessToken: string; user: User }; accessToken?: string; user?: User }>("/google", {
+      const response = await api.post<{
+        data?: { accessToken: string; user: User };
+        accessToken?: string;
+        user?: User;
+      }>("/google", {
         credential: credentialResponse.credential,
+        roles: [selectedRole],
       });
-      const resolvedToken = data.data?.accessToken ?? data.accessToken;
-      const resolvedUser = data.data?.user ?? data.user;
+      const resolvedToken = response.data?.data?.accessToken ?? response.data?.accessToken;
+      const resolvedUser = response.data?.data?.user ?? response.data?.user;
       if (resolvedToken && resolvedUser) {
         establishSession(resolvedToken, resolvedUser);
       }
-      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+      const isDriver = selectedRole === "DRIVER" || resolvedUser?.roles?.includes("DRIVER");
+      const target = isDriver ? "/driver-dashboard" : "/dashboard";
       navigate(target, { replace: true });
     } catch (error) {
-      setStatus(error instanceof AxiosError ? error.response?.data.message : "Google sign-in failed");
+      setStatus(
+        error instanceof AxiosError
+          ? (error.response?.data?.message || error.message)
+          : "Google sign-in failed"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -229,13 +241,42 @@ export default function LoginPage() {
             variants={itemVariants}
             className="mb-2 bg-gradient-to-br from-[#2e1808] via-[#6b3a12] to-[#b8722c] bg-clip-text text-3xl font-bold tracking-tight text-transparent md:text-4xl"
           >
-            {showOtp ? "Verify Login Code" : "Sign in to ride"}
+            {showOtp ? "Verify Login Code" : selectedRole === "DRIVER" ? "Sign in to drive" : "Sign in to ride"}
           </motion.h2>
-          <motion.p variants={itemVariants} className="mb-8 text-sm font-medium text-[#6b3a12]/80">
+          <motion.p variants={itemVariants} className="mb-6 text-sm font-medium text-[#6b3a12]/80">
             {showOtp
               ? `We sent a 6-digit verification code to ${email}.`
               : "Enter your credentials to continue your journey."}
           </motion.p>
+
+          {!showOtp && (
+            <motion.div variants={itemVariants} className="relative mb-5 grid grid-cols-2 gap-2 rounded-xl border border-[#7a4416]/20 bg-[#2e1808]/5 p-1.5 shadow-inner">
+              <button
+                type="button"
+                onClick={() => setSelectedRole("RIDER")}
+                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                  selectedRole === "RIDER"
+                    ? "bg-gradient-to-r from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-md shadow-[#3a1f0a]/30"
+                    : "text-[#6b3a12] hover:text-[#2e1808]"
+                }`}
+              >
+                <UserIcon size={14} />
+                Ride
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRole("DRIVER")}
+                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                  selectedRole === "DRIVER"
+                    ? "bg-gradient-to-r from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-md shadow-[#3a1f0a]/30"
+                    : "text-[#6b3a12] hover:text-[#2e1808]"
+                }`}
+              >
+                <Car size={14} />
+                Drive
+              </button>
+            </motion.div>
+          )}
 
           {!showOtp ? (
             <motion.form variants={itemVariants} className="relative mb-6 space-y-4" onSubmit={handleLogin}>
