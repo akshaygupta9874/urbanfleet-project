@@ -9,8 +9,7 @@ RUN npm config set fetch-retries 5 \
     && npm config set fetch-retry-mintimeout 20000 \
     && npm config set fetch-retry-maxtimeout 120000 \
     && npm install
-RUN npm run build --workspace=@urbanfleet/common
-RUN npm run build --workspace=@urbanfleet/contracts
+RUN npm run build:packages
 RUN npm run build --workspace=@urbanfleet/ride-service
 
 FROM node:22-alpine AS runner
