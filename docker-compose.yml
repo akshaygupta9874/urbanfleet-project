@@ -74,15 +74,10 @@ services:
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: "0.0.0.0:8001"
-      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
-      KONG_SSL_CERT: ${KONG_SSL_CERT:-/etc/letsencrypt/live/urbanfleet.duckdns.org/fullchain.pem}
-      KONG_SSL_CERT_KEY: ${KONG_SSL_CERT_KEY:-/etc/letsencrypt/live/urbanfleet.duckdns.org/privkey.pem}
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
     volumes:
       - ./infra/kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
-      - ${LETSENCRYPT_DIR:-/etc/letsencrypt}:/etc/letsencrypt:ro
     ports:
-      - "80:8000"
-      - "443:8443"
       - "${KONG_PORT:-3001}:8000"
       - "127.0.0.1:${KONG_ADMIN_PORT:-8001}:8001"
     networks:
@@ -103,7 +98,7 @@ services:
       context: .
       dockerfile: services/auth-service/Dockerfile
     container_name: urbanfleet-auth-service
-    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && node dist/index.js"
+    command: sh -c "npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4001"
     environment:
@@ -131,7 +126,7 @@ services:
       context: .
       dockerfile: services/driver-service/Dockerfile
     container_name: urbanfleet-driver-service
-    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && node dist/index.js"
+    command: sh -c "npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4002"
     environment:
@@ -161,7 +156,7 @@ services:
       context: .
       dockerfile: services/ride-service/Dockerfile
     container_name: urbanfleet-ride-service
-    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && node dist/index.js"
+    command: sh -c "npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4004"
     environment:
@@ -174,6 +169,7 @@ services:
       DRIVER_SERVICE_URL: "http://driver-service:4002"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
       - urbanfleet_internal
     depends_on:
@@ -187,7 +183,7 @@ services:
       context: .
       dockerfile: services/payment-service/Dockerfile
     container_name: urbanfleet-payment-service
-    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && node dist/index.js"
+    command: sh -c "npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4005"
     environment:
@@ -250,8 +246,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-https://urbanfleet.duckdns.org}
-        VITE_WS_URL: ${VITE_WS_URL:-wss://urbanfleet.duckdns.org/ws/ride}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3001/ws/ride}
         VITE_GEOAPIFY_API_KEY: ${VITE_GEOAPIFY_API_KEY:-b2e5858ed2ec4ef1bc736c6411abe296}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com}
     container_name: urbanfleet-frontend
