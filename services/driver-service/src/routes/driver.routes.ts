@@ -8,7 +8,7 @@ import {
   uploadDocumentSchema,
   uuidParamSchema,
 } from '../validation/driver.validation.js';
-import { uploadDriverDocuments, uploadSingleImage } from '../middlewares/driver-upload.middleware.js';
+import { uploadDriverDocuments, uploadSingleImage, uploadBankDocuments } from '../middlewares/driver-upload.middleware.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 export function createDriverRouter(controller: DriverController): Router {
@@ -56,6 +56,8 @@ export function createDriverRouter(controller: DriverController): Router {
   // Profile & Vehicle Management
   router.get('/profile', authMiddleware, controller.getDriverProfile);
   router.put('/profile', authMiddleware, validateRequest({ body: updateProfileSchema }), controller.updateDriverProfile);
+  router.patch('/bank-details', authMiddleware, uploadLimiter, uploadBankDocuments, controller.updateBankDetails);
+  router.put('/bank-details', authMiddleware, uploadLimiter, uploadBankDocuments, controller.updateBankDetails);
   router.put('/vehicle', authMiddleware, controller.updateVehicle);
   router.post('/documents', authMiddleware, documentLimiter, validateRequest({ body: uploadDocumentSchema }), controller.uploadDocument);
   router.get('/documents', authMiddleware, controller.getDriverDocuments);

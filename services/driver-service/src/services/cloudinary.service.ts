@@ -13,6 +13,8 @@ export const CloudinaryFolders = {
   DRIVER_RC: 'drivers/registration',
   DRIVER_INSURANCE: 'drivers/insurance',
   DRIVER_PUC: 'drivers/pollution',
+  DRIVER_AADHAAR: 'drivers/aadhaar',
+  DRIVER_PASSBOOK: 'drivers/passbook',
 } as const;
 
 export class CloudinaryService {

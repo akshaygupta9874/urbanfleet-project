@@ -1,10 +1,11 @@
 import { Ride } from '../db/client.js';
 import { FormattedDriver, IFareBreakdown, RideDto } from '@urbanfleet/common';
+import { driverClient, DriverProfile } from '../clients/driver.client.js';
 
-export function toRideDto(ride: Ride): RideDto;
-export function toRideDto(ride: null): null;
-export function toRideDto(ride: Ride | null): RideDto | null;
-export function toRideDto(ride: Ride | null): RideDto | null {
+export function toRideDto(ride: Ride, driverInfo?: DriverProfile | null): RideDto;
+export function toRideDto(ride: null, driverInfo?: DriverProfile | null): null;
+export function toRideDto(ride: Ride | null, driverInfo?: DriverProfile | null): RideDto | null;
+export function toRideDto(ride: Ride | null, driverInfo?: DriverProfile | null): RideDto | null {
   if (!ride) return null;
 
   const pickupLat = Number(ride.pickupLat);
@@ -31,17 +32,48 @@ export function toRideDto(ride: Ride | null): RideDto | null {
 
   const pickupAddress = ride.pickupAddress || 'Pickup Location';
   const destinationAddress = ride.destinationAddress || 'Destination Location';
-  const formattedDriver: FormattedDriver | null = ride.driverId
-    ? {
-        id: ride.driverId,
-        firstName: '',
-        lastName: '',
-        vehicleNumber: '',
-        email: '',
-        user: { firstName: '', lastName: '', email: '' },
-        vehicle: { registrationNumber: '', model: '', color: '' },
-      }
-    : null;
+
+  let formattedDriver: FormattedDriver | null = null;
+  if (ride.driverId) {
+    const activeVehicle = driverInfo?.vehicle || (driverInfo?.vehicles && driverInfo.vehicles[0]);
+    const vehiclePlate = driverInfo?.vehicleNumber || activeVehicle?.plateNumber || activeVehicle?.registrationNumber || '';
+    const rawPhoto = driverInfo?.profilePhoto;
+    const photoUrl = typeof rawPhoto === 'string'
+      ? rawPhoto
+      : (rawPhoto && typeof rawPhoto === 'object' ? ((rawPhoto as any).secure_url || (rawPhoto as any).url) : (driverInfo?.profilePhotoUrl || null));
+    const driverFirstName = driverInfo?.firstName || driverInfo?.user?.firstName || 'Captain';
+    const driverLastName = driverInfo?.lastName || driverInfo?.user?.lastName || '';
+    const driverEmail = driverInfo?.email || driverInfo?.user?.email || '';
+    const driverPhone = driverInfo?.phone || driverInfo?.user?.phone || '';
+    const driverRating = typeof driverInfo?.rating === 'number' ? driverInfo.rating : 4.9;
+
+    formattedDriver = {
+      id: ride.driverId,
+      firstName: driverFirstName,
+      lastName: driverLastName,
+      vehicleNumber: vehiclePlate,
+      email: driverEmail,
+      phone: driverPhone,
+      profilePhoto: photoUrl,
+      rating: driverRating,
+      totalTrips: driverInfo?.totalTrips || 0,
+      user: {
+        firstName: driverFirstName,
+        lastName: driverLastName,
+        email: driverEmail,
+        phone: driverPhone,
+      },
+      vehicle: {
+        registrationNumber: vehiclePlate,
+        plateNumber: vehiclePlate,
+        brand: activeVehicle?.brand || activeVehicle?.make || '',
+        make: activeVehicle?.brand || activeVehicle?.make || '',
+        model: activeVehicle?.model || '',
+        color: activeVehicle?.color || '',
+        type: activeVehicle?.type || activeVehicle?.category || ride.vehicleCategory || 'SEDAN',
+      },
+    };
+  }
 
   return {
     id: ride.id,
@@ -70,11 +102,29 @@ export function toRideDto(ride: Ride | null): RideDto | null {
     duration: { estimated: ride.durationMinutes || 15, actual: null },
     status: ride.status,
     paymentStatus: ride.paymentStatus,
+    vehicleCategory: ride.vehicleCategory,
+    vehicleType: ride.vehicleCategory,
     driver: formattedDriver,
     ratings: (ride as any).ratings || [],
     cancelledBy: ride.cancelledBy,
     cancellationReason: ride.cancellationReason,
-    createdAt: ride.createdAt.toISOString(),
-    updatedAt: ride.updatedAt.toISOString(),
+    createdAt: ride.createdAt instanceof Date ? ride.createdAt.toISOString() : String(ride.createdAt),
+    updatedAt: ride.updatedAt instanceof Date ? ride.updatedAt.toISOString() : String(ride.updatedAt),
   };
+}
+
+export async function toRideDtoWithDriver(ride: Ride): Promise<RideDto>;
+export async function toRideDtoWithDriver(ride: null): Promise<null>;
+export async function toRideDtoWithDriver(ride: Ride | null): Promise<RideDto | null>;
+export async function toRideDtoWithDriver(ride: Ride | null): Promise<RideDto | null> {
+  if (!ride) return null;
+  let driverInfo: DriverProfile | null = null;
+  if (ride.driverId) {
+    try {
+      driverInfo = await driverClient.getDriver(ride.driverId);
+    } catch {
+      driverInfo = null;
+    }
+  }
+  return toRideDto(ride, driverInfo);
 }

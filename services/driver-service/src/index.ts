@@ -20,6 +20,7 @@ try {
 }
 
 import express from 'express';
+import multer from 'multer';
 import cors from 'cors';
 import helmet from 'helmet';
 import { createLogger, AppError, configureBigIntSerialization } from '@urbanfleet/common';
@@ -99,6 +100,13 @@ app.use('/v1/drivers', driverRouter);
 
 // Global Error Handler
 app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({
+      success: false,
+      code: err.code,
+      message: `File upload error: ${err.message}`
+    });
+  }
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       success: false,

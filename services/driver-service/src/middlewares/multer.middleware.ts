@@ -3,8 +3,8 @@ import path from 'path';
 import { AppError } from '@urbanfleet/common';
 
 // Configuration Constants preserved from previous project
-export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
-export const MAX_FILES = 11;
+export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
+export const MAX_FILES = 25; // Accommodate all vehicle, license, KYC and banking files
 
 export const allowedMimeTypes = [
   'image/jpeg',

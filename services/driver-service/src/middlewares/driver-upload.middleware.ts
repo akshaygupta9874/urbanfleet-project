@@ -17,9 +17,15 @@ export const uploadDriverDocuments = upload.fields([
   { name: 'insurance', maxCount: 1 },
 
   { name: 'pollutionCertificate', maxCount: 1 },
+
+  { name: 'aadharFront', maxCount: 1 },
+  { name: 'aadharBack', maxCount: 1 },
+
+  { name: 'passbookPhoto', maxCount: 1 },
 ]);
 
 export const uploadSingleDocument = upload.single('document');
 export const uploadSingleImage = (fieldName = 'image') => upload.single(fieldName);
+export const uploadBankDocuments = upload.single('passbookPhoto');
 
 export default uploadDriverDocuments;

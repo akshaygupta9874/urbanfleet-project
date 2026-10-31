@@ -8,7 +8,7 @@ import { emitRideCancelled, emitToDriver } from '../emitters/driver.emitter.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { coordinatesSchema, requestRideSchema } from '../../validation/ride.validation.js';
-import { toRideDto } from '../../utils/ride-dto.js';
+import { toRideDto, toRideDtoWithDriver } from '../../utils/ride-dto.js';
 
 export interface RiderHandlerDeps {
   rideService?: RideService;
@@ -91,9 +91,12 @@ async function handleRequestRide(
         pickup: request.data.pickup,
         destination: request.data.destination,
         vehicleCategory: request.data.vehicleCategory,
+        estimatedFare: request.data.estimatedFare,
+        estimatedDistance: request.data.estimatedDistance,
+        estimatedDuration: request.data.estimatedDuration,
       });
 
-      const rideDto = toRideDto(ride);
+      const rideDto = await toRideDtoWithDriver(ride);
       const otp = await deps.rideService.getRiderOtpForRide(ride.id, riderId);
       socket.send(JSON.stringify({ event: ServerEvents.RIDE_CREATED, data: { ride: rideDto, otp } }));
       await deps.dispatchService.broadcastRideRequest(ride);

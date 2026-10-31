@@ -9,7 +9,7 @@ import {
   cloudinaryService as defaultCloudinaryService,
   CloudinaryFolders,
 } from '../services/cloudinary.service.js';
-import { driverRegistrationSchema } from '../validation/driver.validation.js';
+import { driverRegistrationSchema, updateBankDetailsSchema } from '../validation/driver.validation.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
 import { authClient, AuthClient } from '../clients/auth.client.js';
 
@@ -28,6 +28,9 @@ export interface DriverUploadFiles {
   insurance?: Express.Multer.File[];
   registrationCertificate?: Express.Multer.File[];
   pollutionCertificate?: Express.Multer.File[];
+  aadharFront?: Express.Multer.File[];
+  aadharBack?: Express.Multer.File[];
+  passbookPhoto?: Express.Multer.File[];
 }
 
 export interface RawDriverProfile {
@@ -78,6 +81,12 @@ export interface RawDriverProfile {
   documents?: unknown[];
   verificationStatus?: string;
   isVerified?: boolean;
+  accountHolderName?: string | null;
+  accountNumber?: string | null;
+  ifscCode?: string | null;
+  bankName?: string | null;
+  upiId?: string | null;
+  passbookPhoto?: unknown;
   [key: string]: unknown;
 }
 
@@ -100,10 +109,26 @@ export function formatDriverProfileForFrontend(profile: RawDriverProfile | null 
   const totalEarnings = totalEarningsPaise;
   const totalDistance = Number(profile.statistics?.totalDistance ?? 0);
 
+  const banking = {
+    accountHolderName: String(profile.accountHolderName || ''),
+    accountNumber: String(profile.accountNumber || ''),
+    ifscCode: String(profile.ifscCode || ''),
+    bankName: String(profile.bankName || ''),
+    upiId: String(profile.upiId || ''),
+    passbookPhoto: (profile.passbookPhoto as { url: string; publicId: string } | null) || null,
+  };
+
   return {
     ...profile,
     id: profile.id,
     totalEarningsPaise,
+    accountHolderName: banking.accountHolderName,
+    accountNumber: banking.accountNumber,
+    ifscCode: banking.ifscCode,
+    bankName: banking.bankName,
+    upiId: banking.upiId,
+    passbookPhoto: banking.passbookPhoto,
+    banking,
     user: profile.user || {
       id: profile.userId,
       firstName: profile.firstName || 'UrbanFleet',
@@ -217,6 +242,7 @@ export class DriverController {
     // Case 2: Full multipart form driver registration with Cloudinary
     let vehicleData = req.body?.vehicle;
     let documentsData = req.body?.documents;
+    let bankingData = req.body?.banking;
 
     if (typeof vehicleData === 'string') {
       try {
@@ -234,10 +260,19 @@ export class DriverController {
       }
     }
 
+    if (typeof bankingData === 'string') {
+      try {
+        bankingData = JSON.parse(bankingData);
+      } catch (e) {
+        return res.status(400).json({ success: false, message: 'Invalid banking JSON in form data' });
+      }
+    }
+
     const validationResult = driverRegistrationSchema.safeParse({
       userId,
       vehicle: vehicleData,
       documents: documentsData,
+      banking: bankingData,
     });
 
     if (!validationResult.success) {
@@ -248,7 +283,7 @@ export class DriverController {
       });
     }
 
-    const { vehicle, documents } = validationResult.data;
+    const { vehicle, documents, banking } = validationResult.data;
 
     const profilePhoto = files.profilePhoto?.[0];
     const vehicleFront = files.vehicleFront?.[0];
@@ -261,6 +296,9 @@ export class DriverController {
     const registrationCertificate = files.registrationCertificate?.[0];
     const insurance = files.insurance?.[0];
     const pollutionCertificate = files.pollutionCertificate?.[0];
+    const aadharFront = files.aadharFront?.[0];
+    const aadharBack = files.aadharBack?.[0];
+    const passbookPhoto = files.passbookPhoto?.[0];
 
     if (
       !profilePhoto ||
@@ -308,6 +346,9 @@ export class DriverController {
         uploadedRegistrationCertificate,
         uploadedInsurance,
         uploadedPollutionCertificate,
+        uploadedAadharFront,
+        uploadedAadharBack,
+        uploadedPassbookPhoto,
       ] = await Promise.all([
         this.cloudinaryService.uploadImage(profilePhoto, CloudinaryFolders.DRIVER_PROFILE),
         this.cloudinaryService.uploadImage(vehicleFront, CloudinaryFolders.DRIVER_VEHICLE),
@@ -320,6 +361,9 @@ export class DriverController {
         this.cloudinaryService.uploadImage(registrationCertificate, CloudinaryFolders.DRIVER_RC),
         this.cloudinaryService.uploadImage(insurance, CloudinaryFolders.DRIVER_INSURANCE),
         this.cloudinaryService.uploadImage(pollutionCertificate, CloudinaryFolders.DRIVER_PUC),
+        aadharFront ? this.cloudinaryService.uploadImage(aadharFront, CloudinaryFolders.DRIVER_AADHAAR) : Promise.resolve(null),
+        aadharBack ? this.cloudinaryService.uploadImage(aadharBack, CloudinaryFolders.DRIVER_AADHAAR) : Promise.resolve(null),
+        passbookPhoto ? this.cloudinaryService.uploadImage(passbookPhoto, CloudinaryFolders.DRIVER_PASSBOOK) : Promise.resolve(null),
       ]);
 
       uploadedPublicIds.push(
@@ -336,6 +380,60 @@ export class DriverController {
         uploadedPollutionCertificate.publicId
       );
 
+      if (uploadedAadharFront) uploadedPublicIds.push(uploadedAadharFront.publicId);
+      if (uploadedAadharBack) uploadedPublicIds.push(uploadedAadharBack.publicId);
+      if (uploadedPassbookPhoto) uploadedPublicIds.push(uploadedPassbookPhoto.publicId);
+
+      const documentsToCreate: Array<{
+        type: string;
+        number: string;
+        expiryDate?: Date;
+        frontImage: string;
+        backImage?: string;
+      }> = [
+        {
+          type: 'DRIVING_LICENSE',
+          number: documents.drivingLicense.number,
+          expiryDate: documents.drivingLicense.expiryDate,
+          frontImage: uploadedLicenseFront.url,
+          backImage: uploadedLicenseBack.url,
+        },
+        {
+          type: 'REGISTRATION_CERTIFICATE',
+          number: documents.registrationCertificate.number,
+          frontImage: uploadedRegistrationCertificate.url,
+        },
+        {
+          type: 'INSURANCE',
+          number: documents.insurance.number,
+          expiryDate: documents.insurance.expiryDate,
+          frontImage: uploadedInsurance.url,
+        },
+        {
+          type: 'POLLUTION',
+          number: 'PUC',
+          expiryDate: documents.pollutionCertificate.expiryDate,
+          frontImage: uploadedPollutionCertificate.url,
+        },
+      ];
+
+      if (uploadedAadharFront && documents.aadhar?.number) {
+        documentsToCreate.push({
+          type: 'AADHAAR_CARD',
+          number: documents.aadhar.number,
+          frontImage: uploadedAadharFront.url,
+          backImage: uploadedAadharBack?.url,
+        });
+      }
+
+      if (uploadedPassbookPhoto) {
+        documentsToCreate.push({
+          type: 'BANK_PASSBOOK',
+          number: banking?.accountNumber || 'PASSBOOK',
+          frontImage: uploadedPassbookPhoto.url,
+        });
+      }
+
       const profile = await this.driverService.registerFullDriver({
         userId,
         licenseNumber: documents.drivingLicense.number,
@@ -343,6 +441,14 @@ export class DriverController {
           url: uploadedProfilePhoto.url,
           publicId: uploadedProfilePhoto.publicId,
         },
+        accountHolderName: banking?.accountHolderName || null,
+        accountNumber: banking?.accountNumber || null,
+        ifscCode: banking?.ifscCode || null,
+        bankName: banking?.bankName || null,
+        upiId: banking?.upiId || null,
+        passbookPhoto: uploadedPassbookPhoto
+          ? { url: uploadedPassbookPhoto.url, publicId: uploadedPassbookPhoto.publicId }
+          : undefined,
         vehicle: {
           type: vehicle.type,
           brand: vehicle.brand,
@@ -358,32 +464,7 @@ export class DriverController {
             interior: uploadedVehicleInterior.url,
           },
         },
-        documents: [
-          {
-            type: 'DRIVING_LICENSE',
-            number: documents.drivingLicense.number,
-            expiryDate: documents.drivingLicense.expiryDate,
-            frontImage: uploadedLicenseFront.url,
-            backImage: uploadedLicenseBack.url,
-          },
-          {
-            type: 'REGISTRATION_CERTIFICATE',
-            number: documents.registrationCertificate.number,
-            frontImage: uploadedRegistrationCertificate.url,
-          },
-          {
-            type: 'INSURANCE',
-            number: documents.insurance.number,
-            expiryDate: documents.insurance.expiryDate,
-            frontImage: uploadedInsurance.url,
-          },
-          {
-            type: 'POLLUTION',
-            number: 'PUC',
-            expiryDate: documents.pollutionCertificate.expiryDate,
-            frontImage: uploadedPollutionCertificate.url,
-          },
-        ],
+        documents: documentsToCreate,
       });
 
       if (this.documentService?.syncDriverVerificationStatus && profile?.id) {
@@ -440,6 +521,73 @@ export class DriverController {
     const userId = this.getAuthenticatedUserId(req);
     const profile = await this.driverService.updateProfile(userId, req.body);
     res.status(200).json({ success: true, data: profile });
+  });
+
+  updateBankDetails = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = this.getAuthenticatedUserId(req);
+    const profile = await this.driverService.getDriverByUserId(userId);
+
+    const bodyData =
+      typeof req.body.bankDetails === 'string'
+        ? JSON.parse(req.body.bankDetails)
+        : req.body.bankDetails || req.body;
+
+    const validationResult = updateBankDetailsSchema.safeParse(bodyData);
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bank details input',
+        errors: validationResult.error.issues,
+      });
+    }
+
+    const { accountHolderName, accountNumber, ifscCode, bankName, upiId } = validationResult.data;
+    let passbookPhotoData = profile.passbookPhoto as { url: string; publicId: string } | null;
+
+    if (req.file) {
+      const uploadedPassbook = await this.cloudinaryService.uploadImage(
+        req.file,
+        CloudinaryFolders.DRIVER_PASSBOOK
+      );
+      passbookPhotoData = {
+        url: uploadedPassbook.url,
+        publicId: uploadedPassbook.publicId,
+      };
+
+      try {
+        await this.documentService.uploadDocument({
+          driverProfileId: profile.id,
+          type: 'BANK_PASSBOOK',
+          documentUrl: uploadedPassbook.url,
+          frontImage: uploadedPassbook.url,
+          number: accountNumber,
+        });
+      } catch (docErr) {
+        logger.warn('Failed to register passbook document in document table', { error: docErr });
+      }
+    }
+
+    const updated = await this.driverService.updateBankDetails(userId, {
+      accountHolderName,
+      accountNumber,
+      ifscCode,
+      bankName: bankName || undefined,
+      upiId,
+      passbookPhoto: passbookPhotoData || undefined,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Bank details updated successfully',
+      data: {
+        accountHolderName: updated.accountHolderName,
+        accountNumber: updated.accountNumber,
+        ifscCode: updated.ifscCode,
+        bankName: updated.bankName,
+        upiId: updated.upiId,
+        passbookPhoto: updated.passbookPhoto,
+      },
+    });
   });
 
   updateVehicle = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -557,10 +705,24 @@ export class DriverController {
       throw new AppError('Driver not found', 404, 'NOT_FOUND');
     }
     const callerId = req.userId;
-    const roles = req.role || [];
     const isPrivileged = Boolean(callerId && profile.userId === callerId);
 
-    const data = isPrivileged ? profile : this.driverService.sanitizePublicProfile(profile);
+    let userDetails = null;
+    try {
+      userDetails = await this.authServiceClient.getUserById(profile.userId);
+    } catch {
+      // Continue without userDetails if auth service is down or unreachable
+    }
+
+    const data = isPrivileged
+      ? {
+          ...profile,
+          firstName: userDetails?.firstName || 'Captain',
+          lastName: userDetails?.lastName || '',
+          email: userDetails?.email || '',
+          user: userDetails,
+        }
+      : this.driverService.sanitizePublicProfile(profile, userDetails);
     res.status(200).json({ success: true, data });
   });
 
@@ -570,10 +732,24 @@ export class DriverController {
       throw new AppError('Driver not found', 404, 'NOT_FOUND');
     }
     const callerId = req.userId;
-    const roles = req.role || [];
     const isPrivileged = Boolean(callerId && profile.userId === callerId);
 
-    const data = isPrivileged ? profile : this.driverService.sanitizePublicProfile(profile);
+    let userDetails = null;
+    try {
+      userDetails = await this.authServiceClient.getUserById(profile.userId);
+    } catch {
+      // Continue without userDetails if auth service is down or unreachable
+    }
+
+    const data = isPrivileged
+      ? {
+          ...profile,
+          firstName: userDetails?.firstName || 'Captain',
+          lastName: userDetails?.lastName || '',
+          email: userDetails?.email || '',
+          user: userDetails,
+        }
+      : this.driverService.sanitizePublicProfile(profile, userDetails);
     res.status(200).json({ success: true, data });
   });
 }

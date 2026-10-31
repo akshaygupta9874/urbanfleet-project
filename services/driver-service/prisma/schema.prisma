@@ -28,6 +28,16 @@ model DriverProfile {
   profilePhoto       Json?              @map("profile_photo")
   isVerified         Boolean            @default(false) @map("is_verified")
 
+  // Banking & Payout Details
+  accountHolderName     String?  @map("account_holder_name") @db.VarChar(100)
+  accountNumber         String?  @map("account_number") @db.VarChar(50)
+  ifscCode              String?  @map("ifsc_code") @db.VarChar(20)
+  bankName              String?  @map("bank_name") @db.VarChar(100)
+  upiId                 String?  @map("upi_id") @db.VarChar(100)
+  passbookPhoto         Json?    @map("passbook_photo")
+  razorpayContactId     String?  @map("razorpay_contact_id") @db.VarChar(255)
+  razorpayFundAccountId String?  @map("razorpay_fund_account_id") @db.VarChar(255)
+
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
 

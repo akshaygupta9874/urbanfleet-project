@@ -7,15 +7,25 @@ export interface RideDriver {
   lastName: string;
   vehicleNumber: string;
   email: string;
+  phone?: string;
+  profilePhoto?: string | null;
+  profilePhotoUrl?: string | null;
+  rating?: number;
+  totalTrips?: number;
   user: {
     firstName: string;
     lastName: string;
     email: string;
+    phone?: string;
   };
   vehicle: {
     registrationNumber: string;
+    plateNumber?: string;
+    brand?: string;
+    make?: string;
     model: string;
     color: string;
+    type?: string;
   };
 }
 
@@ -59,6 +69,8 @@ export interface RideDto {
   duration: { estimated: number; actual: number | null };
   status: RideStatus;
   paymentStatus: PaymentStatus;
+  vehicleCategory?: string;
+  vehicleType?: string;
   driver: RideDriver | null;
   cancelledBy: string | null;
   cancellationReason: string | null;

@@ -19,11 +19,15 @@ import {
   Pencil,
   Building2,
   CreditCard,
+  Sparkles,
+  Clock,
+  Home,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";
 import { useAuthContext } from "./context/auth-context";
-import { registerDriver } from "./lib/driverApi";
+import { registerDriver, fetchDriverProfile, isDriverApproved, type DriverProfile } from "./lib/driverApi";
 import { isAxiosError } from "axios";
 
 const DISPLAY_FONT = "'Fraunces', Georgia, serif";
@@ -74,6 +78,116 @@ const STEPS: { key: string; title: string; icon: LucideIcon }[] = [
 ];
 
 
+function createMockJpegFile(filename: string, title: string = "UrbanFleet Verification Document"): File {
+  if (typeof document !== "undefined") {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 400;
+      canvas.height = 300;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        // Gradient background
+        const grad = ctx.createLinearGradient(0, 0, 400, 300);
+        grad.addColorStop(0, "#2e1808");
+        grad.addColorStop(1, "#7a4416");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 400, 300);
+
+        // Frame border
+        ctx.strokeStyle = "#b8722c";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(12, 12, 376, 276);
+
+        // Header
+        ctx.fillStyle = "#f5e6c8";
+        ctx.font = "bold 18px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("UrbanFleet Logistics", 200, 75);
+
+        // Badge pill
+        ctx.fillStyle = "#b8722c";
+        ctx.fillRect(80, 100, 240, 30);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 12px sans-serif";
+        ctx.fillText("VERIFIED OFFICIAL ASSET", 200, 120);
+
+        // Document title
+        ctx.fillStyle = "#fffaf0";
+        ctx.font = "bold 15px sans-serif";
+        ctx.fillText(title, 200, 175);
+
+        // Subtitle
+        ctx.fillStyle = "#d1b392";
+        ctx.font = "12px sans-serif";
+        ctx.fillText("Default Verification Asset (JPEG)", 200, 215);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        const byteString = atob(dataUrl.split(",")[1]);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        return new File([ab], filename, { type: "image/jpeg" });
+      }
+    } catch {
+      // Fallback if canvas is unavailable
+    }
+  }
+
+  const fallbackBytes = new Uint8Array([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+    0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43,
+    0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07, 0x07, 0x07, 0x09,
+    0x09, 0x08, 0x0a, 0x0c, 0x14, 0x0d, 0x0c, 0x0b, 0x0b, 0x0c, 0x19, 0x12,
+    0x13, 0x0f, 0x14, 0x1d, 0x1a, 0x1f, 0x1e, 0x1d, 0x1a, 0x1c, 0x1c, 0x20,
+    0x24, 0x2e, 0x27, 0x20, 0x22, 0x2c, 0x23, 0x1c, 0x1c, 0x28, 0x37, 0x29,
+    0x2c, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1f, 0x27, 0x39, 0x3d, 0x38, 0x32,
+    0x3c, 0x2e, 0x33, 0x34, 0x32, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01,
+    0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xc4, 0x00, 0x1f, 0x00, 0x00,
+    0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0a, 0x0b, 0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f,
+    0x00, 0xbf, 0x00, 0xff, 0xd9,
+  ]);
+  return new File([fallbackBytes], filename, { type: "image/jpeg" });
+}
+
+const createDefaultFormState = (userName?: string): FormState => ({
+  profilePhoto: createMockJpegFile("profile_photo.jpeg", "Driver Profile Portrait"),
+  vehicleFront: createMockJpegFile("vehicle_front.jpeg", "Vehicle Front View"),
+  vehicleBack: createMockJpegFile("vehicle_back.jpeg", "Vehicle Back View"),
+  vehicleLeft: createMockJpegFile("vehicle_left.jpeg", "Vehicle Left View"),
+  vehicleRight: createMockJpegFile("vehicle_right.jpeg", "Vehicle Right View"),
+  vehicleInterior: createMockJpegFile("vehicle_interior.jpeg", "Vehicle Interior View"),
+  vehicleType: "CAR",
+  vehicleBrand: "Toyota",
+  vehicleModel: "Innova Crysta",
+  vehicleColor: "Pearl White",
+  registrationNumber: "MH02UF2026",
+  registrationYear: 2023,
+  licenseNumber: "DL-0420220012345",
+  licenseExpiry: "2032-12-31",
+  licenseFront: createMockJpegFile("license_front.jpeg", "Driving License Front"),
+  licenseBack: createMockJpegFile("license_back.jpeg", "Driving License Back"),
+  registrationCertificateNumber: "RC-MH02-2023-9988",
+  registrationCertificateImage: createMockJpegFile("rc_certificate.jpeg", "Registration Certificate (RC)"),
+  insuranceNumber: "POL-BAJAJ-77889900",
+  insuranceExpiry: "2028-06-30",
+  insuranceImage: createMockJpegFile("insurance_policy.jpeg", "Commercial Vehicle Insurance"),
+  pollutionExpiry: "2027-12-31",
+  pollutionImage: createMockJpegFile("puc_certificate.jpeg", "Pollution Certificate (PUC)"),
+  aadharNumber: "556677889900",
+  aadharFront: createMockJpegFile("aadhar_front.jpeg", "Aadhaar Card Front"),
+  aadharBack: createMockJpegFile("aadhar_back.jpeg", "Aadhaar Card Back"),
+  accountHolderName: userName || "Alex Driver",
+  accountNumber: "987654321098",
+  ifscCode: "HDFC0001234",
+  bankName: "HDFC Bank",
+  upiId: "alexdriver@okhdfcbank",
+  passbookPhoto: createMockJpegFile("passbook_photo.jpeg", "Bank Passbook / Cheque"),
+});
+
 export default function DriverRegistration() {
   const { user, isAuthenticated, loading } = useAuthContext();
   const navigate = useNavigate();
@@ -81,54 +195,78 @@ export default function DriverRegistration() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [existingProfile, setExistingProfile] = useState<DriverProfile | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
-  const [furthestStep, setFurthestStep] = useState(0);
+  const [furthestStep, setFurthestStep] = useState(STEPS.length - 1);
   const [referenceCode] = useState(() => `NV-${Date.now().toString().slice(-6)}`);
 
-  const [form, setForm] = useState<FormState>(() => ({
-    profilePhoto: null,
-    vehicleFront: null,
-    vehicleBack: null,
-    vehicleLeft: null,
-    vehicleRight: null,
-    vehicleInterior: null,
-    vehicleType: "CAR",
-    vehicleBrand: "",
-    vehicleModel: "",
-    vehicleColor: "",
-    registrationNumber: "",
-    registrationYear: new Date().getFullYear(),
-    licenseNumber: "",
-    licenseExpiry: "",
-    licenseFront: null,
-    licenseBack: null,
-    registrationCertificateNumber: "",
-    registrationCertificateImage: null,
-    insuranceNumber: "",
-    insuranceExpiry: "",
-    insuranceImage: null,
-    pollutionExpiry: "",
-    pollutionImage: null,
-    aadharNumber: "",
-    aadharFront: null,
-    aadharBack: null,
-    accountHolderName: "",
-    accountNumber: "",
-    ifscCode: "",
-    bankName: "",
-    upiId: "",
-    passbookPhoto: null,
-  }));
+  const [form, setForm] = useState<FormState>(() => createDefaultFormState());
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
   useEffect(() => {
+    if (user && (!form.accountHolderName || form.accountHolderName === "Alex Driver")) {
+      const name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+      if (name) {
+        setForm((prev) => ({ ...prev, accountHolderName: name }));
+      }
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (!loading && !isAuthenticated) {
       navigate("/login", { replace: true });
     }
   }, [isAuthenticated, loading, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isAuthenticated) {
+      fetchDriverProfile()
+        .then((profile) => {
+          if (cancelled) return;
+          if (profile) {
+            setExistingProfile(profile);
+            if (isDriverApproved(profile)) {
+              navigate("/driver-dashboard", { replace: true });
+            } else {
+              setIsSubmitted(true);
+            }
+          }
+        })
+        .catch(() => {
+          // No profile yet, proceed with application
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, navigate]);
+
+  const handleCheckStatus = async () => {
+    setIsCheckingStatus(true);
+    setError("");
+    try {
+      const profile = await fetchDriverProfile();
+      if (profile) {
+        setExistingProfile(profile);
+        if (isDriverApproved(profile)) {
+          sessionStorage.setItem("isDriverVerified", "true");
+          navigate("/driver-dashboard", { replace: true });
+          return;
+        }
+      }
+      setStatus("Status checked: Your application is currently under review by our onboarding desk.");
+    } catch {
+      setStatus("Your application is currently being processed.");
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
 
   if (loading) {
     return <LoadingScreen label="Getting things ready" sublabel="Verifying your session" />;
@@ -280,12 +418,9 @@ export default function DriverRegistration() {
     try {
       await registerDriver(formData);
       sessionStorage.setItem("isDriverVerified", "false");
-
-      setStatus("Application submitted successfully. Redirecting to dashboard...");
-
-      setTimeout(() => {
-        navigate("/dashboard", { replace: true });
-      }, 1200);
+      setIsSubmitted(true);
+      setStatus("Application submitted successfully. Your details and documents are now under review.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: unknown) {
       const message = isAxiosError<{ message?: unknown }>(err)
         ? err.response?.data?.message
@@ -355,14 +490,194 @@ export default function DriverRegistration() {
             </div>
           </div>
 
-          <div className="hidden shrink-0 rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0]/90 px-5 py-2.5 text-right sm:block shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#7a4416]">Logbook No.</p>
-            <p className="text-sm font-extrabold text-[#3a1f0a]">{referenceCode}</p>
+          <div className="flex items-center gap-3">
+            {!isSubmitted && (
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(createDefaultFormState(user ? `${user.firstName || ""}`.trim() : undefined));
+                  setFurthestStep(STEPS.length - 1);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-2xl border border-[#b8722c]/40 bg-[#fffaf0] px-3.5 py-2 text-xs font-bold text-[#7a4416] transition hover:bg-[#fff4dc] hover:scale-105 shadow-sm"
+                title="Reset and re-populate all fields with demo text and JPEG images"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-[#b8722c]" />
+                <span className="hidden sm:inline">Auto-fill Demo</span>
+                <span className="sm:hidden">Auto-fill</span>
+              </button>
+            )}
+            <div className="hidden shrink-0 rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0]/90 px-5 py-2.5 text-right sm:block shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#7a4416]">Logbook No.</p>
+              <p className="text-sm font-extrabold text-[#3a1f0a]">{referenceCode}</p>
+            </div>
           </div>
         </motion.header>
 
-        {/* Progress Tracker */}
-        <div className="w-full rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 shadow-xl backdrop-blur-xl">
+        {isSubmitted ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="space-y-8"
+          >
+            {/* Status Hero Card */}
+            <div className="w-full rounded-[2.5rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-8 sm:p-12 shadow-2xl backdrop-blur-xl">
+              <div className="flex flex-col items-center text-center max-w-2xl mx-auto space-y-6">
+                
+                {/* Pulsing Status Icon Badge */}
+                <div className="relative">
+                  <div className="absolute -inset-2 rounded-full bg-amber-400/25 blur-lg animate-pulse" />
+                  <div className="relative grid h-24 w-24 place-items-center rounded-3xl border-2 border-[#b8722c]/40 bg-gradient-to-br from-[#fffaf0] via-[#ffe9be] to-[#f4c875] text-[#3a1f0a] shadow-xl">
+                    <Clock className="h-12 w-12 text-[#7a4416] animate-[spin_12s_linear_infinite]" />
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-600/30 bg-amber-500/10 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-amber-900 shadow-sm">
+                    <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+                    Application Under Review
+                  </div>
+                  <h2 className="text-3xl sm:text-4xl font-black text-[#3a1f0a] tracking-tight" style={{ fontFamily: DISPLAY_FONT }}>
+                    Dossier Submitted Successfully
+                  </h2>
+                  <p className="text-base text-[#6b3a12] font-medium leading-relaxed">
+                    Thank you, <span className="font-bold text-[#3a1f0a]">{user?.firstName || "Captain"}</span>. Your captain registration dossier has been logged in our fleet dispatch registry under reference <span className="font-mono font-bold text-[#3a1f0a]">{referenceCode}</span>.
+                  </p>
+                </div>
+
+                {/* Verification Progress Matrix */}
+                <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-3 text-left pt-2">
+                  <div className="rounded-2xl border border-emerald-600/25 bg-emerald-500/10 p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1.5 text-emerald-800 text-xs font-bold uppercase tracking-wide">
+                      <Check className="h-4 w-4 text-emerald-600" /> Identity
+                    </div>
+                    <p className="mt-1 text-xs text-emerald-950 font-medium truncate">Profile photo logged</p>
+                  </div>
+                  <div className="rounded-2xl border border-emerald-600/25 bg-emerald-500/10 p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1.5 text-emerald-800 text-xs font-bold uppercase tracking-wide">
+                      <Check className="h-4 w-4 text-emerald-600" /> Vehicle
+                    </div>
+                    <p className="mt-1 text-xs text-emerald-950 font-medium truncate">
+                      {form.vehicleBrand ? `${form.vehicleBrand} ${form.vehicleModel}` : "Vehicle specs logged"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-amber-600/35 bg-amber-500/15 p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1.5 text-amber-900 text-xs font-bold uppercase tracking-wide">
+                      <Clock className="h-4 w-4 text-amber-700 animate-pulse" /> Documents
+                    </div>
+                    <p className="mt-1 text-xs text-amber-950 font-medium truncate">Under admin review</p>
+                  </div>
+                  <div className="rounded-2xl border border-emerald-600/25 bg-emerald-500/10 p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1.5 text-emerald-800 text-xs font-bold uppercase tracking-wide">
+                      <Check className="h-4 w-4 text-emerald-600" /> Payouts
+                    </div>
+                    <p className="mt-1 text-xs text-emerald-950 font-medium truncate">{form.bankName || "Banking connected"}</p>
+                  </div>
+                </div>
+
+                {/* Detailed Application Summary Card */}
+                <div className="w-full rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/85 p-6 text-left space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-[#7a4416]/15 pb-3">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">Registry Logbook ID</span>
+                      <p className="font-mono text-base font-extrabold text-[#3a1f0a]">
+                        {existingProfile?.id ? `DRV-${existingProfile.id.slice(-6).toUpperCase()}` : referenceCode}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">Verification Status</span>
+                      <p className="text-xs font-extrabold text-amber-800 uppercase tracking-wide">
+                        {existingProfile?.verificationStatus?.replace("_", " ") || "Pending Review"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs text-[#6b3a12]">
+                    <div className="bg-[#fff4dc]/50 p-3 rounded-xl border border-[#7a4416]/10">
+                      <span className="font-semibold text-[#7a4416]">Captain:</span>{" "}
+                      <span className="font-bold text-[#3a1f0a]">{user?.firstName} {user?.lastName}</span>
+                    </div>
+                    <div className="bg-[#fff4dc]/50 p-3 rounded-xl border border-[#7a4416]/10">
+                      <span className="font-semibold text-[#7a4416]">Contact:</span>{" "}
+                      <span className="font-bold text-[#3a1f0a]">{user?.email || "—"}</span>
+                    </div>
+                    <div className="bg-[#fff4dc]/50 p-3 rounded-xl border border-[#7a4416]/10">
+                      <span className="font-semibold text-[#7a4416]">Vehicle:</span>{" "}
+                      <span className="font-bold text-[#3a1f0a]">{form.vehicleBrand} {form.vehicleModel} ({form.vehicleType})</span>
+                    </div>
+                    <div className="bg-[#fff4dc]/50 p-3 rounded-xl border border-[#7a4416]/10">
+                      <span className="font-semibold text-[#7a4416]">Plate No:</span>{" "}
+                      <span className="font-bold text-[#3a1f0a]">{form.registrationNumber || "—"}</span>
+                    </div>
+                    <div className="bg-[#fff4dc]/50 p-3 rounded-xl border border-[#7a4416]/10">
+                      <span className="font-semibold text-[#7a4416]">Driving License:</span>{" "}
+                      <span className="font-bold text-[#3a1f0a]">{form.licenseNumber || "—"}</span>
+                    </div>
+                    <div className="bg-[#fff4dc]/50 p-3 rounded-xl border border-[#7a4416]/10">
+                      <span className="font-semibold text-[#7a4416]">Payout Method:</span>{" "}
+                      <span className="font-bold text-[#3a1f0a]">
+                        {form.bankName ? `${form.bankName} (•••• ${form.accountNumber.slice(-4)})` : form.upiId || "Bank Account"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Helpful Advisory Banner */}
+                <div className="w-full rounded-2xl border border-sky-600/25 bg-sky-500/10 p-4 text-left shadow-sm">
+                  <p className="text-xs font-semibold text-sky-950 leading-relaxed">
+                    🛡️ <span className="font-bold">What happens next?</span> Our verification desk reviews your driving license, vehicle registration, and safety records. Typically approvals take between 12 to 24 hours. You can click <strong>"Check Verification Status"</strong> below at any time. Once approved, you will immediately unlock your Driver Dashboard.
+                  </p>
+                </div>
+
+                {/* Feedback status if user clicked Check Status */}
+                {status && (
+                  <div className="w-full rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 text-xs font-semibold text-emerald-900 shadow-sm">
+                    {status}
+                  </div>
+                )}
+                {error && (
+                  <div className="w-full rounded-2xl border border-rose-500/30 bg-rose-950/20 p-3.5 text-xs font-semibold text-rose-900 shadow-sm">
+                    {error}
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCheckStatus}
+                    disabled={isCheckingStatus}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-8 py-3.5 text-sm font-bold text-[#ffe9be] shadow-lg transition hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isCheckingStatus ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-[#ffd88a]" />
+                        Checking Status…
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4 text-[#ffd88a]" />
+                        Check Verification Status
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate("/")}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] px-8 py-3.5 text-sm font-bold text-[#3a1f0a] transition hover:bg-[#fff4dc] hover:scale-[1.02] shadow-sm"
+                  >
+                    <Home className="h-4 w-4 text-[#b8722c]" />
+                    Return to Home
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </motion.div>
+        ) : (
+          <>
+            {/* Progress Tracker */}
+            <div className="w-full rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 shadow-xl backdrop-blur-xl">
           <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#7a4416]">
             <span>
               Step {currentStep + 1} of {STEPS.length}
@@ -874,6 +1189,8 @@ export default function DriverRegistration() {
           </div>
 
         </div>
+        </>
+        )}
 
       </div>
     </div>

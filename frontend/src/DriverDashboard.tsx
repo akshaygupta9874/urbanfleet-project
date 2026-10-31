@@ -979,6 +979,7 @@ export default function DriverDashboard() {
           ? Math.round(currentRide.fare.estimated * 0.8)
           : null)
     : null;
+  const totalTripFare = currentRide ? (currentRide.fare.final ?? currentRide.fare.estimated ?? 0) : 0;
   const breakdownData = currentRide?.fare?.breakdown ?? null;
 
   const driverStatusCopy: Record<DriverStatus, string> = {
@@ -2064,6 +2065,11 @@ export default function DriverDashboard() {
                           <p className="mt-1.5 text-base font-black text-emerald-900 console-readout">
                             {fare != null ? formatPaise(fare) : "--"}
                           </p>
+                          {totalTripFare > 0 && (
+                            <p className="text-[10px] font-semibold text-[#7a4416]/80 mt-0.5">
+                              Passenger: {formatPaise(totalTripFare)}
+                            </p>
+                          )}
                         </div>
 
                         <div className="w-full rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-3.5 shadow-2xs">

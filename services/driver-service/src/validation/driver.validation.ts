@@ -84,7 +84,30 @@ export const driverRegistrationSchema = z.object({
     pollutionCertificate: z.object({
       expiryDate: z.coerce.date().optional(),
     }),
+    aadhar: z
+      .object({
+        number: z.string().trim().min(12, 'Valid 12-digit Aadhaar number is required'),
+      })
+      .optional(),
   }),
+  banking: z
+    .object({
+      accountHolderName: z.string().trim().min(1, 'Account holder name is required'),
+      accountNumber: z.string().trim().min(5, 'Account number is required'),
+      ifscCode: z.string().trim().min(4, 'IFSC code is required').transform((val) => val.toUpperCase()),
+      bankName: z.string().trim().optional(),
+      upiId: z.string().trim().min(3, 'Valid UPI ID is required'),
+    })
+    .optional(),
+});
+
+export const updateBankDetailsSchema = z.object({
+  accountHolderName: z.string().trim().min(1, 'Account holder name is required'),
+  accountNumber: z.string().trim().min(5, 'Account number is required'),
+  ifscCode: z.string().trim().min(4, 'IFSC code is required').transform((val) => val.toUpperCase()),
+  bankName: z.string().trim().optional(),
+  upiId: z.string().trim().min(3, 'Valid UPI ID is required'),
 });
 
 export type DriverRegistrationInput = z.infer<typeof driverRegistrationSchema>;
+export type UpdateBankDetailsInput = z.infer<typeof updateBankDetailsSchema>;

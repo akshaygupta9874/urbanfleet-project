@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Mail,
+  Phone,
   Shield,
   Star,
   Car,
@@ -236,57 +237,121 @@ function DriverCard({
   lastName,
   vehicleNo,
   email,
+  phone,
+  profilePhoto,
+  rating = 4.9,
+  vehicleBrand,
+  vehicleModel,
+  vehicleColor,
+  vehicleType = "Car",
 }: {
   firstName: string;
   lastName: string;
   vehicleNo: string;
   email: string;
+  phone?: string;
+  profilePhoto?: string | null;
+  rating?: number;
+  vehicleBrand?: string;
+  vehicleModel?: string;
+  vehicleColor?: string;
+  vehicleType?: string;
 }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const fullName = `${firstName} ${lastName}`.trim() || "Captain";
+  const vehicleName = [vehicleBrand, vehicleModel].filter(Boolean).join(" ") || vehicleType || "UrbanFleet Comfort";
+  const vehicleColorDisplay = vehicleColor ? ` • ${vehicleColor}` : "";
+
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-[#c58a3a]/45 bg-gradient-to-br from-[#fffdf9] via-[#fff4dc] to-[#f7e2b8] p-4 shadow-md w-full">
-      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[#b8722c]/20 blur-2xl" />
-      <div className="relative flex items-center justify-between gap-3 w-full">
-        <div className="flex items-center gap-3.5 min-w-0">
+    <div className="relative overflow-hidden rounded-2xl border border-[#c58a3a]/45 bg-gradient-to-br from-[#fffdf9] via-[#fff4dc] to-[#f7e2b8] p-4.5 shadow-md w-full">
+      <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-[#b8722c]/20 blur-2xl" />
+      <div className="relative flex items-center justify-between gap-3.5 w-full">
+        {/* Left: Driver Avatar + Info */}
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          {/* Driver Portrait Image */}
           <div className="relative shrink-0">
-            <div
-              className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-lg font-bold text-[#ffd88a] shadow-md border border-[#c58a3a]/50"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              {firstName?.[0]?.toUpperCase() || "D"}
+            <div className="h-14 w-14 overflow-hidden rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] shadow-md border-2 border-[#c58a3a]/60">
+              {profilePhoto && !imgFailed ? (
+                <img
+                  src={profilePhoto}
+                  alt={fullName}
+                  className="h-full w-full object-cover"
+                  onError={() => setImgFailed(true)}
+                />
+              ) : (
+                <div
+                  className="grid h-full w-full place-items-center text-xl font-black text-[#ffd88a]"
+                  style={{ fontFamily: DISPLAY_FONT }}
+                >
+                  {firstName?.[0]?.toUpperCase() || "D"}
+                </div>
+              )}
             </div>
-            <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full border-2 border-[#fffaf0] bg-emerald-600 text-white shadow">
+            <span
+              className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full border-2 border-[#fffaf0] bg-emerald-600 text-white shadow"
+              title="Verified UrbanFleet Captain"
+            >
               <Shield className="h-3 w-3" />
             </span>
           </div>
+
+          {/* Driver & Car Details */}
           <div className="min-w-0 flex-1 space-y-1">
-            <p
-              className="truncate text-base font-black text-[#2e1808]"
-              style={{ fontFamily: DISPLAY_FONT }}
-            >
-              {firstName} {lastName}
-            </p>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1 rounded-lg bg-[#fffaf0] px-2 py-0.5 font-bold text-[#3a1f0a] border border-[#7a4416]/20 shadow-2xs">
-                <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
-                4.9
+            <div className="flex items-center gap-2">
+              <p
+                className="truncate text-base font-black text-[#2e1808]"
+                style={{ fontFamily: DISPLAY_FONT }}
+              >
+                {fullName}
+              </p>
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#fffaf0] px-1.5 py-0.5 text-[10px] font-black text-[#3a1f0a] border border-[#7a4416]/20 shadow-2xs">
+                <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+                {Number(rating || 4.9).toFixed(1)}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-md border border-[#3a1f0a] bg-[#ffd88a] px-2 py-0.5 text-[11px] font-extrabold tracking-wider text-[#2e1808] shadow-2xs" style={{ fontFamily: MONO_FONT }}>
-                <span className="text-[8px] font-black text-[#7a4416]">IND</span>
-                {vehicleNo}
+            </div>
+
+            {/* Vehicle make, model and color */}
+            <p className="truncate text-xs font-semibold text-[#6b3a12] flex items-center gap-1">
+              <Car className="h-3.5 w-3.5 text-[#b8722c] shrink-0" />
+              <span className="truncate">{vehicleName}{vehicleColorDisplay}</span>
+            </p>
+
+            {/* Indian High-Security Plate Badge */}
+            <div className="pt-0.5">
+              <span
+                className="inline-flex items-center gap-1.5 rounded-md border border-[#3a1f0a] bg-[#ffd88a] px-2 py-0.5 text-[11px] font-black tracking-wider text-[#2e1808] shadow-2xs"
+                style={{ fontFamily: MONO_FONT }}
+              >
+                <span className="text-[8px] font-black text-[#7a4416] tracking-normal">IND</span>
+                <span>{vehicleNo || "MH02UF2026"}</span>
               </span>
             </div>
           </div>
         </div>
-        {email && (
-          <a
-            href={`mailto:${email}`}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] shadow-lg hover:opacity-95 transition-opacity"
-            aria-label="Email driver"
-            title="Contact driver via email"
-          >
-            <Mail className="h-4 w-4" />
-          </a>
-        )}
+
+        {/* Right: Quick Action Contact Buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          {phone && (
+            <a
+              href={`tel:${phone}`}
+              className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-700 text-emerald-50 shadow-md hover:bg-emerald-800 transition-colors"
+              aria-label="Call driver"
+              title="Call driver"
+            >
+              <Phone className="h-4 w-4" />
+            </a>
+          )}
+          {email && (
+            <a
+              href={`mailto:${email}`}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] shadow-md hover:opacity-95 transition-opacity"
+              aria-label="Email driver"
+              title="Contact driver via email"
+            >
+              <Mail className="h-4 w-4" />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -670,9 +735,21 @@ export default function RideDetails() {
   const driverLastName = ride.driver?.lastName || "";
   const vehicleNo =
     ride.driver?.vehicleNumber ||
+    ride.driver?.vehicle?.plateNumber ||
     ride.driver?.vehicle?.registrationNumber ||
     "Not Assigned";
   const driverEmail = ride.driver?.user?.email || ride.driver?.email || "";
+  const driverPhone = ride.driver?.user?.phone || ride.driver?.phone || "";
+  const driverPhoto =
+    ride.driver?.profilePhoto ||
+    ride.driver?.profilePhotoUrl ||
+    (ride.driver?.user as any)?.avatarUrl ||
+    null;
+  const driverRating = ride.driver?.rating || 4.9;
+  const vehicleBrand = ride.driver?.vehicle?.brand || ride.driver?.vehicle?.make || "";
+  const vehicleModel = ride.driver?.vehicle?.model || "";
+  const vehicleColor = ride.driver?.vehicle?.color || "";
+  const vehicleType = ride.driver?.vehicle?.type || ride.vehicleCategory || "Car";
 
   const activeFareValue = ride.fare.final ?? ride.fare.estimated ?? 0;
   const activeDistance = ride.distance.actual ?? ride.distance.estimated ?? 0;
@@ -860,6 +937,13 @@ export default function RideDetails() {
                 lastName={driverLastName}
                 vehicleNo={vehicleNo}
                 email={driverEmail}
+                phone={driverPhone}
+                profilePhoto={driverPhoto}
+                rating={driverRating}
+                vehicleBrand={vehicleBrand}
+                vehicleModel={vehicleModel}
+                vehicleColor={vehicleColor}
+                vehicleType={vehicleType}
               />
             )}
 

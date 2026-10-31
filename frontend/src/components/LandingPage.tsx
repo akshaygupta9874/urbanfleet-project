@@ -101,11 +101,11 @@ function RotatingWord() {
       <AnimatePresence mode="wait">
         <motion.span
           key={taglines[i]}
-          initial={{ y: 40, opacity: 0, filter: "blur(8px)" }}
-          animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
-          exit={{ y: -40, opacity: 0, filter: "blur(8px)" }}
-          transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="inline-block bg-gradient-to-br from-[#2e1808] via-[#6b3a12] to-[#b8722c] bg-clip-text text-transparent"
+          initial={{ y: 24, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -24, opacity: 0 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          className="inline-block bg-gradient-to-br from-[#2e1808] via-[#6b3a12] to-[#b8722c] bg-clip-text text-transparent transform-gpu"
         >
           {taglines[i]}
         </motion.span>
@@ -393,7 +393,7 @@ export default function LandingPage() {
             <span className="font-semibold text-[#2e1808]">
               {isDetectingCity ? "Detecting location..." : currentLocationName}
             </span>
-            <button className="text-[#7a4416] underline underline-offset-4 transition-colors hover:text-[#3a1f0a] font-medium">
+            <button className="text-[#7a4416] underline underline-offset-4 transition-colors hover:text-[#3a1f0a] font-medium tap-tactile">
               Change city
             </button>
           </motion.div>
@@ -414,7 +414,7 @@ export default function LandingPage() {
           </motion.p>
 
           <motion.div variants={itemVariants}>
-            <button className="mt-7 flex items-center gap-3 rounded-full border border-[#7a4416]/25 bg-[#fffaf0]/90 px-6 py-3 shadow-sm transition-all hover:bg-[#fff4dc] hover:border-[#b8722c] active:scale-95 text-[#3a1f0a] font-semibold">
+            <button className="mt-7 flex items-center gap-3 rounded-full border border-[#7a4416]/25 bg-[#fffaf0]/90 px-6 py-3 shadow-sm transition-all hover:bg-[#fff4dc] hover:border-[#b8722c] active:scale-95 text-[#3a1f0a] font-semibold tap-tactile">
               <Clock3 size={20} className="text-[#b8722c]" />
               <span className="text-base font-semibold">Pickup now</span>
               <ChevronDown size={18} className="text-[#7a4416]" />
@@ -455,7 +455,7 @@ export default function LandingPage() {
                     type="button"
                     onClick={handleUseCurrentLocationForPickup}
                     title="Use current location"
-                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] transition-all hover:scale-110 shadow-md"
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] transition-all hover:scale-110 shadow-md tap-tactile active:scale-95"
                   >
                     {isLocatingPickup ? <Loader2 className="animate-spin" size={18} /> : <Locate size={18} />}
                   </button>
@@ -466,7 +466,7 @@ export default function LandingPage() {
                       type="button"
                       onClick={() => setIsPickupMapOpen(true)}
                       title="Select precise pickup on map"
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fffaf0] text-[#3a1f0a] border border-[#7a4416]/20 shadow-md transition-all hover:scale-110"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fffaf0] text-[#3a1f0a] border border-[#7a4416]/20 shadow-md transition-all hover:scale-110 tap-tactile active:scale-95"
                     >
                       <MapPin size={18} className="text-[#b8722c]" />
                     </button>
@@ -480,7 +480,7 @@ export default function LandingPage() {
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
-                      className="absolute left-0 right-0 top-full z-30 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-2xl backdrop-blur-md"
+                      className="absolute left-0 right-0 top-full z-30 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-2xl backdrop-blur-md momentum-scroll"
                     >
                       {isSearchingPickup ? (
                         <div className="flex items-center justify-center gap-2 py-4 text-xs font-medium text-[#7a4416]">
@@ -491,7 +491,7 @@ export default function LandingPage() {
                           <div
                             key={idx}
                             onClick={() => handleSelectPlace(item, "pickup")}
-                            className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-[#2e1808] transition hover:bg-[#fff4dc]"
+                            className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-[#2e1808] transition hover:bg-[#fff4dc] active:bg-[#faebd0] tap-tactile"
                           >
                             <MapPin size={14} className="shrink-0 text-[#b8722c]" />
                             <span className="truncate">{item.properties?.formatted || item.properties?.name}</span>
@@ -539,7 +539,7 @@ export default function LandingPage() {
                   type="button"
                   onClick={() => setIsDestinationMapOpen(true)}
                   title="Select precise dropoff on map"
-                  className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center justify-center rounded-xl bg-[#fffaf0] p-2.5 text-[#3a1f0a] border border-[#7a4416]/20 shadow-md transition-all hover:scale-110"
+                  className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center justify-center rounded-xl bg-[#fffaf0] p-2.5 text-[#3a1f0a] border border-[#7a4416]/20 shadow-md transition-all hover:scale-110 tap-tactile active:scale-95"
                 >
                   <MapPin size={18} className="text-[#b8722c]" />
                 </button>
@@ -552,7 +552,7 @@ export default function LandingPage() {
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    className="absolute left-0 right-0 top-full z-30 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-2xl backdrop-blur-md"
+                    className="absolute left-0 right-0 top-full z-30 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-2xl backdrop-blur-md momentum-scroll"
                   >
                     {isSearchingDestination ? (
                       <div className="flex items-center justify-center gap-2 py-4 text-xs font-medium text-[#7a4416]">
@@ -563,7 +563,7 @@ export default function LandingPage() {
                         <div
                           key={idx}
                           onClick={() => handleSelectPlace(item, "destination")}
-                          className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-[#2e1808] transition hover:bg-[#fff4dc]"
+                          className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-[#2e1808] transition hover:bg-[#fff4dc] active:bg-[#faebd0] tap-tactile"
                         >
                           <MapPin size={14} className="shrink-0 text-[#b8722c]" />
                           <span className="truncate">{item.properties?.formatted || item.properties?.name}</span>
@@ -594,16 +594,16 @@ export default function LandingPage() {
 
           <motion.div variants={itemVariants} className="mt-10 flex flex-wrap items-center gap-6">
             <Button
-              className="group relative h-14 overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-8 text-base font-semibold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] transition-all hover:shadow-[0_24px_50px_-14px_rgba(58,31,10,0.85)] active:scale-95"
+              className="group relative h-14 overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-8 text-base font-semibold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] transition-all hover:shadow-[0_24px_50px_-14px_rgba(58,31,10,0.85)] tap-tactile active:scale-[0.98]"
               onClick={handleSeePricesClick}
             >
               <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
               <span className="relative z-10">See prices</span>
-              <span className="absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/60 to-transparent transition-transform duration-1000 group-hover:translate-x-[420%]" />
+              <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/60 to-transparent transition-transform duration-1000 group-hover:translate-x-[420%] transform-gpu will-change-transform" />
             </Button>
             <button
               type="button"
-              className="group relative text-base font-semibold text-[#6b3a12] transition-colors hover:text-[#3a1f0a]"
+              className="group relative text-base font-semibold text-[#6b3a12] transition-colors hover:text-[#3a1f0a] tap-tactile"
               onClick={() => navigate("/login")}
             >
               Log in to see your recent activity
@@ -648,7 +648,7 @@ export default function LandingPage() {
                         <div
                           key={mode.id}
                           onClick={() => handleSelectRideMode(mode.id)}
-                          className="group flex cursor-pointer items-center justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/80 p-4 transition-all hover:border-[#b8722c] hover:bg-[#fffaf0] hover:shadow-md"
+                          className="group flex cursor-pointer items-center justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/80 p-4 transition-all hover:border-[#b8722c] hover:bg-[#fffaf0] hover:shadow-md tap-tactile active:scale-[0.98]"
                         >
                           <div className="flex items-center gap-3.5">
                             <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] shadow-sm border border-[#c58a3a]/40">
@@ -708,11 +708,7 @@ export default function LandingPage() {
           transition={{ duration: 0.9, delay: 0.3, ease: "easeOut" }}
           className="relative hidden flex-1 justify-center lg:flex"
         >
-          <motion.div
-            animate={{ y: [0, -12, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="relative"
-          >
+          <div className="relative animate-float-slow transform-gpu">
             <div className="absolute -inset-6 rounded-[2rem] bg-gradient-to-tr from-[#b8722c]/20 via-transparent to-[#f4b860]/30 blur-2xl" />
             <img
               src="https://cn-geo1.uber.com/image-proc/crop/resizecrop/udam/format=auto/width=1344/height=1344/srcb64=aHR0cHM6Ly90Yi1zdGF0aWMudWJlci5jb20vcHJvZC91ZGFtLWFzc2V0cy9jZTczNjUzMy1iMWE0LTQ3ZjktOTk0OS0zNWEzZGUyNTkyYzk="
@@ -748,10 +744,8 @@ export default function LandingPage() {
             </motion.div>
 
             {/* Bottom card */}
-            <motion.div
-              animate={{ y: [0, -6, 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute -bottom-6 left-1/2 flex w-[88%] -translate-x-1/2 items-center justify-between rounded-2xl bg-gradient-to-r from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 py-5 text-[#ffe9be] shadow-2xl backdrop-blur border border-[#c58a3a]/40"
+            <div
+              className="absolute -bottom-6 left-1/2 flex w-[88%] -translate-x-1/2 items-center justify-between rounded-2xl bg-gradient-to-r from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 py-5 text-[#ffe9be] shadow-2xl backdrop-blur border border-[#c58a3a]/40 animate-float-gentle transform-gpu"
             >
               <div>
                 <h2 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>Ready to travel?</h2>
@@ -759,12 +753,12 @@ export default function LandingPage() {
               </div>
               <Button 
                 onClick={() => navigate("/login")}
-                className="rounded-xl bg-[#fffaf0] px-6 font-semibold text-[#3a1f0a] transition-transform hover:scale-105 hover:bg-[#fff4dc] shadow-md"
+                className="rounded-xl bg-[#fffaf0] px-6 font-semibold text-[#3a1f0a] transition-all hover:scale-105 hover:bg-[#fff4dc] shadow-md tap-tactile active:scale-95"
               >
                 Schedule
               </Button>
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         </motion.div>
       </section>
 

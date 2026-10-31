@@ -57,7 +57,7 @@ function NavBar() {
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6">
         {/* Logo */}
         <div 
-          className="flex items-center gap-3 cursor-pointer group"
+          className="flex items-center gap-3 cursor-pointer group tap-tactile active:scale-95"
           onClick={() => navigate(dashboardPath)}
         >
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] text-[#ffd88a] shadow-[0_8px_20px_-8px_rgba(58,31,10,0.6)] transition-transform duration-300 group-hover:scale-105">
@@ -99,7 +99,7 @@ function NavBar() {
               </div>
 
               <Button 
-                className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-5 py-2.5 text-sm font-semibold text-[#ffe9be] shadow-[0_12px_28px_-10px_rgba(58,31,10,0.6)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(58,31,10,0.8)]"
+                className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-5 py-2.5 text-sm font-semibold text-[#ffe9be] shadow-[0_12px_28px_-10px_rgba(58,31,10,0.6)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(58,31,10,0.8)] tap-tactile active:scale-95"
                 onClick={() => navigate(dashboardPath)}
               >
                 <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
@@ -108,7 +108,7 @@ function NavBar() {
 
               <Button
                 variant="ghost"
-                className="rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/80 text-[#3a1f0a] font-semibold transition-all hover:bg-[#fff4dc] hover:text-[#2e1808] px-3.5"
+                className="rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/80 text-[#3a1f0a] font-semibold transition-all hover:bg-[#fff4dc] hover:text-[#2e1808] px-3.5 tap-tactile active:scale-95"
                 onClick={() => navigate("/security-devices")}
                 title="Active Devices & Sessions"
               >
@@ -120,14 +120,14 @@ function NavBar() {
             <>
               <Button
                 variant="ghost"
-                className="rounded-xl text-[#3a1f0a] font-semibold transition-all hover:bg-[#fff4dc] hover:text-[#2e1808]"
+                className="rounded-xl text-[#3a1f0a] font-semibold transition-all hover:bg-[#fff4dc] hover:text-[#2e1808] tap-tactile active:scale-95"
                 onClick={() => navigate("/login")}
               >
                 Log in
               </Button>
 
               <Button 
-                className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 py-2.5 text-sm font-semibold text-[#ffe9be] shadow-[0_12px_28px_-10px_rgba(58,31,10,0.6)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(58,31,10,0.8)]"
+                className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 py-2.5 text-sm font-semibold text-[#ffe9be] shadow-[0_12px_28px_-10px_rgba(58,31,10,0.6)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(58,31,10,0.8)] tap-tactile active:scale-95"
                 onClick={() => navigate("/signup")}
               >
                 <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
@@ -139,7 +139,7 @@ function NavBar() {
 
         {/* Mobile Menu Toggle */}
         <button
-          className="rounded-xl p-2.5 -mr-2 border border-[#7a4416]/20 bg-[#fffaf0]/80 text-[#3a1f0a] transition-colors hover:bg-[#fff4dc] md:hidden shadow-sm"
+          className="rounded-xl p-2.5 -mr-2 border border-[#7a4416]/20 bg-[#fffaf0]/80 text-[#3a1f0a] transition-all hover:bg-[#fff4dc] md:hidden shadow-sm tap-tactile active:scale-90"
           onClick={() => setIsOpen(!isOpen)}
           aria-expanded={isOpen}
           aria-label="Toggle navigation menu"
@@ -191,7 +191,7 @@ function NavBar() {
                     </div>
 
                     <Button
-                      className="w-full rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-6 text-base font-semibold text-[#ffe9be] shadow-[0_14px_30px_-10px_rgba(58,31,10,0.7)]"
+                      className="w-full rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-6 text-base font-semibold text-[#ffe9be] shadow-[0_14px_30px_-10px_rgba(58,31,10,0.7)] tap-tactile active:scale-[0.98]"
                       onClick={() => {
                         setIsOpen(false);
                         navigate(dashboardPath);
@@ -202,7 +202,7 @@ function NavBar() {
 
                     <Button
                       variant="outline"
-                      className="w-full justify-center rounded-xl py-6 text-base font-semibold text-[#3a1f0a] hover:bg-[#fff4dc] border border-[#7a4416]/20 bg-[#fffaf0]/80"
+                      className="w-full justify-center rounded-xl py-6 text-base font-semibold text-[#3a1f0a] hover:bg-[#fff4dc] border border-[#7a4416]/20 bg-[#fffaf0]/80 tap-tactile active:scale-[0.98]"
                       onClick={() => {
                         setIsOpen(false);
                         navigate("/security-devices");
@@ -216,7 +216,7 @@ function NavBar() {
                   <>
                     <Button
                       variant="ghost"
-                      className="w-full justify-center rounded-xl py-6 text-base font-semibold text-[#3a1f0a] hover:bg-[#fff4dc] border border-[#7a4416]/20"
+                      className="w-full justify-center rounded-xl py-6 text-base font-semibold text-[#3a1f0a] hover:bg-[#fff4dc] border border-[#7a4416]/20 tap-tactile active:scale-[0.98]"
                       onClick={() => {
                         setIsOpen(false);
                         navigate("/login");
@@ -226,7 +226,7 @@ function NavBar() {
                     </Button>
 
                     <Button
-                      className="w-full rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-6 text-base font-semibold text-[#ffe9be] shadow-[0_14px_30px_-10px_rgba(58,31,10,0.7)]"
+                      className="w-full rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-6 text-base font-semibold text-[#ffe9be] shadow-[0_14px_30px_-10px_rgba(58,31,10,0.7)] tap-tactile active:scale-[0.98]"
                       onClick={() => {
                         setIsOpen(false);
                         navigate("/signup");

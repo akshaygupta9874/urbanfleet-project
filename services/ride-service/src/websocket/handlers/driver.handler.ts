@@ -19,7 +19,7 @@ import type { DriverPresenceService } from '../../services/driver-presence.servi
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { Ride } from '../../db/client.js';
-import { toRideDto } from '../../utils/ride-dto.js';
+import { toRideDto, toRideDtoWithDriver } from '../../utils/ride-dto.js';
 
 export interface DriverHandlerDeps {
   geoService: GeoService;
@@ -272,7 +272,7 @@ async function handleAcceptRide(
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.acceptRide(result.data.rideId, driverId);
-      const rideDto = toRideDto(ride);
+      const rideDto = await toRideDtoWithDriver(ride);
       emitRideAccepted(ride.riderId, { ride: rideDto });
       socket.send(JSON.stringify({ event: ServerEvents.RIDE_ACCEPTED, data: { ride: rideDto } }));
       if (deps.presenceService) {
@@ -343,7 +343,7 @@ async function handleArrived(
         rideId: result.data.rideId,
         driverId,
       });
-      const rideDto = toRideDto(ride);
+      const rideDto = await toRideDtoWithDriver(ride);
       emitDriverArrived(ride.riderId, { ride: rideDto });
       socket.send(JSON.stringify({ event: ServerEvents.DRIVER_ARRIVED, data: { ride: rideDto } }));
     } catch (err: unknown) {
@@ -377,7 +377,7 @@ async function handleArrivedAtDestination(
         rideId: result.data.rideId,
         driverId,
       });
-      const rideDto = toRideDto(ride);
+      const rideDto = await toRideDtoWithDriver(ride);
       emitArrivedAtDestination(ride.riderId, { ride: rideDto });
       socket.send(JSON.stringify({ event: ServerEvents.ARRIVED_AT_DESTINATION, data: { ride: rideDto } }));
     } catch (err: unknown) {
@@ -408,7 +408,7 @@ async function handleStartRide(
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.startRide(result.data.rideId, driverId, result.data.otp);
-      const rideDto = toRideDto(ride);
+      const rideDto = await toRideDtoWithDriver(ride);
       emitRideStarted(ride.riderId, { ride: rideDto });
       socket.send(JSON.stringify({ event: ServerEvents.RIDE_STARTED, data: { ride: rideDto } }));
     } catch (err: unknown) {
@@ -439,7 +439,7 @@ async function handleCompleteRide(
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.completeRide(result.data.rideId, driverId);
-      const rideDto = toRideDto(ride);
+      const rideDto = await toRideDtoWithDriver(ride);
       emitRideCompleted(ride.riderId, { ride: rideDto });
       socket.send(JSON.stringify({ event: ServerEvents.RIDE_COMPLETED, data: { ride: rideDto } }));
       if (deps.presenceService) {

@@ -100,7 +100,8 @@ export function createAuthRouter(controller: AuthController): Router {
   }
   router.get('/me', authMiddleware, controller.getProfile);
   if (controller.getUserById) {
-    router.get('/users/:id', authMiddleware, controller.getUserById);
+    router.get('/users/:id', requireAdminOrInternalService, controller.getUserById);
+    router.get('/internal/users/:id', requireAdminOrInternalService, controller.getUserById);
   }
   if (controller.changePassword) {
     router.post('/change-password', authMiddleware, passwordChangeLimiter, verifyCsrfToken, validateRequest({ body: changePasswordSchema }), controller.changePassword);

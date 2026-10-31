@@ -65,15 +65,27 @@ export class FareService {
     pickup: LocationPoint,
     destination: LocationPoint,
     vehicleType = 'car',
-    demandFactor = 1.0
+    demandFactor = 1.0,
+    providedDistanceKm?: number,
+    providedDurationMinutes?: number
   ): FareEstimateResult {
-    const { distanceKm, durationMinutes } = this.computeDistanceAndDuration(
-      pickup.coordinates,
-      destination.coordinates
-    );
+    let distanceKm = providedDistanceKm;
+    let durationMinutes = providedDurationMinutes;
+    if (distanceKm === undefined || !Number.isFinite(distanceKm) || distanceKm <= 0) {
+      const computed = this.computeDistanceAndDuration(
+        pickup.coordinates,
+        destination.coordinates
+      );
+      distanceKm = computed.distanceKm;
+      durationMinutes = computed.durationMinutes;
+    }
+    if (durationMinutes === undefined || !Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      durationMinutes = Math.max(5, Math.round(distanceKm * 2.5));
+    }
+
     const multiplier = VEHICLE_MULTIPLIERS[vehicleType.toLowerCase()] ?? 1.2;
-    const baseFarePaise = 5000; // 50 INR base
-    const perKmPaise = Math.round(1500 * multiplier); // 15 INR/km adjusted for vehicle category
+    const baseFarePaise = 5000;
+    const perKmPaise = Math.round(1500 * multiplier);
     const surgeMultiplier = this.calculateDynamicSurge(demandFactor);
     const calculatedFare = Math.round((baseFarePaise + distanceKm * perKmPaise) * surgeMultiplier);
 

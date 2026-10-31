@@ -49,6 +49,12 @@ export class DriverRepository {
     userId: string;
     licenseNumber: string;
     profilePhoto?: Prisma.InputJsonValue;
+    accountHolderName?: string | null;
+    accountNumber?: string | null;
+    ifscCode?: string | null;
+    bankName?: string | null;
+    upiId?: string | null;
+    passbookPhoto?: Prisma.InputJsonValue;
     vehicle: {
       type: string;
       brand: string;
@@ -71,6 +77,12 @@ export class DriverRepository {
         userId: data.userId,
         licenseNumber: data.licenseNumber,
         profilePhoto: data.profilePhoto,
+        accountHolderName: data.accountHolderName || null,
+        accountNumber: data.accountNumber || null,
+        ifscCode: data.ifscCode || null,
+        bankName: data.bankName || null,
+        upiId: data.upiId || null,
+        passbookPhoto: data.passbookPhoto,
         isVerified: false,
         verificationStatus: data.documents && data.documents.length > 0 ? 'UNDER_REVIEW' : 'PENDING',
         vehicles: {

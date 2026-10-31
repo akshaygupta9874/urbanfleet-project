@@ -8,7 +8,7 @@ import { AuthenticatedRequest, AppError, createLogger } from '@urbanfleet/common
 
 const logger = createLogger('ride-controller');
 import type { EstimateFareDTO, RequestRideDTO } from '../validation/ride.validation.js';
-import { toRideDto } from '../utils/ride-dto.js';
+import { toRideDto, toRideDtoWithDriver } from '../utils/ride-dto.js';
 import { emitPaymentCaptured as emitPaymentCapturedToDriver } from '../websocket/emitters/driver.emitter.js';
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from '../websocket/emitters/rider.emitter.js';
 
@@ -65,6 +65,9 @@ export class RideController {
       pickup: body.pickup,
       destination: body.destination,
       vehicleCategory: body.vehicleCategory,
+      estimatedFare: body.estimatedFare,
+      estimatedDistance: body.estimatedDistance,
+      estimatedDuration: body.estimatedDuration,
     };
     const ride = await this.rideService.createRide(input);
     if (!ride) {
@@ -82,7 +85,7 @@ export class RideController {
       }
     }
 
-    const formatted = toRideDto(ride);
+    const formatted = await toRideDtoWithDriver(ride);
     const otp = await this.rideService.getRiderOtpForRide(ride.id, userId);
     res.status(201).json({
       success: true,
@@ -132,7 +135,7 @@ export class RideController {
     if (!ride) {
       throw new AppError('Ride not found', 404, 'NOT_FOUND');
     }
-    const formatted = toRideDto(ride);
+    const formatted = await toRideDtoWithDriver(ride);
     res.status(200).json({
       success: true,
       data: (userId && ride.riderId === userId) ? { ...formatted, otp: ride.otp } : formatted,
@@ -142,7 +145,7 @@ export class RideController {
   getRiderHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const history = await this.rideService.getRiderHistory(userId);
-    const formattedList = (history || []).map(toRideDto);
+    const formattedList = (history || []).map((r) => toRideDto(r));
     res.status(200).json({
       success: true,
       data: formattedList,
@@ -153,7 +156,7 @@ export class RideController {
   getDriverHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const history = await this.rideService.getDriverHistory(userId);
-    const formattedList = (history || []).map(toRideDto);
+    const formattedList = (history || []).map((r) => toRideDto(r));
     res.status(200).json({
       success: true,
       data: formattedList,
@@ -173,7 +176,7 @@ export class RideController {
         isDriverView = true;
       }
     }
-    const formatted = activeRide ? toRideDto(activeRide) : null;
+    const formatted = activeRide ? await toRideDtoWithDriver(activeRide) : null;
     res.status(200).json({
       success: true,
       data: formatted && !isDriverView ? { ...formatted, otp: activeRide?.otp ?? null } : formatted,
@@ -183,7 +186,7 @@ export class RideController {
   getCurrentRideOfDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const activeRide = await this.rideService.getActiveRideForUser(userId, true);
-    const formatted = activeRide ? toRideDto(activeRide) : null;
+    const formatted = activeRide ? await toRideDtoWithDriver(activeRide) : null;
     res.status(200).json({ success: true, data: formatted });
   });
 
@@ -207,7 +210,7 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to accept ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideDto(ride);
+    const formatted = await toRideDtoWithDriver(ride);
     res.status(200).json({ success: true, data: formatted });
   });
 
@@ -218,7 +221,7 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to update driver arrival', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideDto(ride);
+    const formatted = await toRideDtoWithDriver(ride);
     res.status(200).json({ success: true, data: formatted });
   });
 
@@ -229,7 +232,7 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to arrive at destination', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideDto(ride);
+    const formatted = await toRideDtoWithDriver(ride);
     res.status(200).json({ success: true, data: formatted });
   });
 
@@ -242,7 +245,7 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to start ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideDto(ride);
+    const formatted = await toRideDtoWithDriver(ride);
     res.status(200).json({ success: true, data: formatted });
   });
 
@@ -253,7 +256,7 @@ export class RideController {
     if (!ride) {
       throw new AppError('Failed to complete ride', 500, 'INTERNAL_SERVER_ERROR');
     }
-    const formatted = toRideDto(ride);
+    const formatted = await toRideDtoWithDriver(ride);
     res.status(200).json({ success: true, data: formatted });
   });
 

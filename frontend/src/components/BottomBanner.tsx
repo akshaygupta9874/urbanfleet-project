@@ -33,7 +33,7 @@ export default function BottomBanner() {
           opacity: textOpacity, 
           scale: textScale 
         }}
-        className="absolute inset-0 flex items-center justify-center"
+        className="absolute inset-0 flex items-center justify-center transform-gpu will-change-transform"
       >
         <h1
           className="

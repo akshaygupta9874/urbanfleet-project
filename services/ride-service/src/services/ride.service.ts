@@ -13,6 +13,9 @@ export interface CreateRideInput {
   pickup: LocationPoint;
   destination: LocationPoint;
   vehicleCategory?: string;
+  estimatedFare?: number;
+  estimatedDistance?: number;
+  estimatedDuration?: number;
 }
 
 export interface RideWithOtp extends Ride {
@@ -45,8 +48,30 @@ export class RideService {
   }
 
   async createRide(input: CreateRideInput): Promise<Ride> {
-    const fare = this.fareService.calculateFareEstimate(input.pickup, input.destination, input.vehicleCategory);
+    const providedDistanceKm = (input.estimatedDistance !== undefined && Number.isFinite(input.estimatedDistance) && input.estimatedDistance > 0)
+      ? Number(input.estimatedDistance)
+      : undefined;
+
+    const providedDurationMinutes = (input.estimatedDuration !== undefined && Number.isFinite(input.estimatedDuration) && input.estimatedDuration > 0)
+      ? Math.round(Number(input.estimatedDuration))
+      : undefined;
+
+    const defaultFare = this.fareService.calculateFareEstimate(
+      input.pickup,
+      input.destination,
+      input.vehicleCategory,
+      1.0,
+      providedDistanceKm,
+      providedDurationMinutes
+    );
     const otp = this.otpService.generateRideOtp();
+
+    const distanceKm = providedDistanceKm ?? defaultFare.distanceKm;
+    const durationMinutes = providedDurationMinutes ?? defaultFare.durationMinutes;
+    const totalFarePaise = (input.estimatedFare !== undefined && Number.isFinite(input.estimatedFare) && input.estimatedFare > 0)
+      ? Math.round(Number(input.estimatedFare))
+      : defaultFare.totalFarePaise;
+    const baseFarePaise = Math.round(totalFarePaise * 0.4);
 
     return this.rideRepo.executeTransaction(async (tx) => {
       const created = await this.rideRepo.create({
@@ -57,11 +82,11 @@ export class RideService {
         destinationLat: input.destination.coordinates.latitude,
         destinationLng: input.destination.coordinates.longitude,
         destinationAddress: input.destination.address,
-        distanceKm: fare.distanceKm,
-        durationMinutes: fare.durationMinutes,
-        baseFarePaise: fare.baseFarePaise,
-        surgeMultiplier: fare.surgeMultiplier,
-        totalFarePaise: fare.totalFarePaise,
+        distanceKm,
+        durationMinutes,
+        baseFarePaise,
+        surgeMultiplier: 1.0,
+        totalFarePaise,
         vehicleCategory: input.vehicleCategory || 'SEDAN',
         status: 'SEARCHING',
         rideSequence: 1

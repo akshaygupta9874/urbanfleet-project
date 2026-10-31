@@ -24,15 +24,24 @@ export interface FormattedDriver {
   lastName: string;
   vehicleNumber: string;
   email: string;
+  phone?: string;
+  profilePhoto?: string | null;
+  rating?: number;
+  totalTrips?: number;
   user: {
     firstName: string;
     lastName: string;
     email: string;
+    phone?: string;
   };
   vehicle: {
     registrationNumber: string;
+    plateNumber?: string;
+    brand?: string;
+    make?: string;
     model: string;
     color: string;
+    type?: string;
   };
 }
 
@@ -63,6 +72,8 @@ export interface RideDto {
   };
   status: string;
   paymentStatus: string;
+  vehicleCategory?: string;
+  vehicleType?: string;
   driver: FormattedDriver | null;
   ratings?: Array<{ id: string; score: number; feedback?: string | null; createdAt?: string }>;
   cancelledBy?: string | null;

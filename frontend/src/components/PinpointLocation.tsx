@@ -158,7 +158,7 @@ export default function PinpointLocation({
             </div>
             <button
               onClick={onClose}
-              className="rounded-full bg-[#7a4416]/10 px-4 py-2 text-xs font-semibold text-[#3a1f0a] transition hover:bg-[#7a4416]/20"
+              className="rounded-full bg-[#7a4416]/10 px-4 py-2 text-xs font-semibold text-[#3a1f0a] transition hover:bg-[#7a4416]/20 tap-tactile active:scale-95"
             >
               Cancel
             </button>
@@ -189,7 +189,7 @@ export default function PinpointLocation({
                   handleMapMoveEnd(initialCoords.latitude, initialCoords.longitude);
                 }
               }}
-              className="absolute right-6 top-6 z-[400] flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fffaf0] text-[#3a1f0a] shadow-xl border border-[#7a4416]/25 transition hover:scale-105"
+              className="absolute right-6 top-6 z-[400] flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fffaf0] text-[#3a1f0a] shadow-xl border border-[#7a4416]/25 transition hover:scale-105 tap-tactile active:scale-95"
               title="Re-center to GPS"
             >
               <Locate size={20} className="text-[#b8722c]" />
@@ -215,7 +215,7 @@ export default function PinpointLocation({
                       setSearchQuery("");
                       setSuggestions([]);
                     }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7a4416]/60 hover:text-[#2e1808]"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7a4416]/60 hover:text-[#2e1808] tap-tactile active:scale-90"
                   >
                     <X size={16} />
                   </button>
@@ -228,7 +228,7 @@ export default function PinpointLocation({
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 4 }}
-                      className="absolute left-0 right-0 bottom-full mb-2 z-[600] max-h-60 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-2xl backdrop-blur-md"
+                      className="absolute left-0 right-0 bottom-full mb-2 z-[600] max-h-60 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-2xl backdrop-blur-md momentum-scroll"
                     >
                       {isSearching ? (
                         <div className="flex items-center justify-center gap-2 py-4 text-xs font-medium text-[#7a4416]">
@@ -239,7 +239,7 @@ export default function PinpointLocation({
                           <div
                             key={idx}
                             onClick={() => handleSelectSuggestion(item)}
-                            className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-[#2e1808] transition hover:bg-[#fff4dc]"
+                            className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-[#2e1808] transition hover:bg-[#fff4dc] active:bg-[#faebd0] tap-tactile"
                           >
                             <MapPin size={14} className="shrink-0 text-[#b8722c]" />
                             <span className="truncate">{item.properties?.formatted || item.properties?.name}</span>
@@ -271,7 +271,7 @@ export default function PinpointLocation({
               {/* Confirm Button */}
               <Button
                 onClick={() => onConfirm(mapModalAddress, { latitude: mapModalLat, longitude: mapModalLng })}
-                className="w-full h-14 rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-base font-semibold text-[#ffe9be] shadow-lg transition hover:scale-[1.01] active:scale-95"
+                className="w-full h-14 rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-base font-semibold text-[#ffe9be] shadow-lg transition-all hover:scale-[1.01] tap-tactile active:scale-95"
               >
                 Confirm Location
               </Button>

@@ -214,6 +214,8 @@ export const requireAdminOrInternalService = (
     process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
   const providedKey = req.headers['x-internal-service-key'];
   if (providedKey && providedKey === internalKey) {
+    (req as any).userId = (req as any).userId || 'internal-service';
+    (req as any).roles = ['ADMIN'];
     return next();
   }
   return authMiddleware(req as AuthenticatedRequest, res, (err?: unknown) => {
