@@ -47,6 +47,12 @@ export class SessionRepository {
     return this.prisma.session.delete({ where: { id } });
   }
 
+  async deleteByIdAndUserId(id: string, userId: string): Promise<{ count: number }> {
+    return this.prisma.session.deleteMany({
+      where: { id, userId },
+    });
+  }
+
   async deleteByUserId(userId: string, exceptSessionId?: string): Promise<{ count: number }> {
     return this.prisma.session.deleteMany({
       where: {

@@ -4,7 +4,7 @@ import { AppError, createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('auth-middleware');
 import asyncHandler from './asyncHandler.js';
-import { prisma } from '../db/client.js';
+import { prisma, Role } from '../db/client.js';
 import { getPublicKey } from '../crypto/keys.js';
 import { validateSessionInRedis, getCachedUser, cacheUser, CachedUser } from '../redis/token-cache.js';
 
@@ -43,13 +43,12 @@ export const authMiddleware = asyncHandler(
       return next();
     }
 
-    // 1. Extract Token from Authorization header or cookie
-
-    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
+    // 1. Extract Token strictly from Authorization Bearer header (Single Source of Truth)
+    const authHeader = request.headers.authorization;
     const token =
-      request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      cookies?.accessToken ||
-      cookies?.token;
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
 
     if (!token) {
       return response.status(401).json({
@@ -177,21 +176,50 @@ export const authMiddleware = asyncHandler(
   }
 );
 
-export const requireRole = (...allowedRoles: string[]) => {
+export type AllowedRole = Role | `${Role}`;
+
+export const hasRole = (
+  req: AuthenticatedRequest | Request,
+  ...allowedRoles: AllowedRole[]
+): boolean => {
+  const roles = (req as AuthenticatedRequest).roles || [];
+  return roles.some((r) => allowedRoles.includes(r as AllowedRole));
+};
+
+export const requireRole = (...allowedRoles: AllowedRole[]) => {
   return (req: Request, _res: Response, next: NextFunction) => {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles = authReq.roles || [];
-    const hasRole = roles.some((r) => allowedRoles.includes(r));
-    if (!hasRole) {
+    if (!hasRole(authReq, ...allowedRoles)) {
       return next(
         new AppError(`Forbidden: Requires one of roles: ${allowedRoles.join(', ')}`, 403, 'FORBIDDEN')
       );
     }
     next();
   };
+};
+
+/**
+ * Route-level authorization guard for internal service endpoints.
+ * Authoritative boundary: allows either verified internal service or authenticated ADMIN.
+ */
+export const requireAdminOrInternalService = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const internalKey =
+    process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
+  const providedKey = req.headers['x-internal-service-key'];
+  if (providedKey && providedKey === internalKey) {
+    return next();
+  }
+  return authMiddleware(req as AuthenticatedRequest, res, (err?: unknown) => {
+    if (err) return next(err);
+    return requireRole(Role.ADMIN)(req, res, next);
+  });
 };
 
 export default authMiddleware;

@@ -4,7 +4,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import api, { clearAccessToken, setAccessToken } from "../apiInterceptor";
+import api, { clearAccessToken, refreshClient, setAccessToken } from "../apiInterceptor";
 import { AuthContext } from "./auth-context";
 
 type UserRole = "RIDER" | "DRIVER";
@@ -28,14 +28,23 @@ export interface AuthContextType {
 
 async function requestAuthentication(): Promise<{ accessToken: string; user: User } | null> {
   try {
-    const response = await api.post<{ data?: { accessToken?: unknown; user?: Partial<User> & Record<string, unknown> }; accessToken?: unknown; user?: Partial<User> & Record<string, unknown> }>("/refresh");
+    const response = await refreshClient.post<{
+      data?: {
+        accessToken?: unknown;
+        user?: Partial<User> & Record<string, unknown>;
+        csrfToken?: string;
+      };
+      accessToken?: unknown;
+      user?: Partial<User> & Record<string, unknown>;
+    }>("/refresh");
+
     const payload = response.data?.data ?? response.data;
     const accessToken = payload?.accessToken;
     const rawUser = payload?.user;
     if (typeof accessToken !== "string" || !rawUser || typeof rawUser !== "object") {
       return null;
     }
-    const roles: UserRole[] = Array.isArray(rawUser.roles)
+    const roles: UserRole[] = Array.isArray(rawUser.roles) && rawUser.roles.length > 0
       ? (rawUser.roles as UserRole[])
       : ["RIDER"];
     const firstName = (rawUser.firstName as string) || "";
@@ -101,7 +110,7 @@ export const AuthContextProvider = ({
   }, []);
 
   const establishSession = useCallback((accessToken: string, authenticatedUser: User) => {
-    const roles: UserRole[] = Array.isArray(authenticatedUser.roles)
+    const roles: UserRole[] = Array.isArray(authenticatedUser.roles) && authenticatedUser.roles.length > 0
       ? authenticatedUser.roles
       : ["RIDER"];
     const firstName = authenticatedUser.firstName || "";

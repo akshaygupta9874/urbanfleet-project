@@ -1,11 +1,9 @@
-
 import { createRoot } from 'react-dom/client'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import './index.css'
-import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { lazy, Suspense } from 'react'
 import LoadingScreen from './components/LoadingScreen.tsx'
-export { default as LoadingScreen } from './components/LoadingScreen.tsx'
 import { AuthContextProvider } from './context/authContext.tsx'
 import { ProtectedRoutes } from './components/ProtectedRoutes.tsx'
 
@@ -16,7 +14,6 @@ const VerifyEmail = lazy(() => import('./VerifyEmail.tsx'))
 const Dashboard = lazy(() => import('./Dashboard.tsx'))
 const ForgotPasswordPage = lazy(() => import('./ForgotPassword.tsx'))
 const ResetPasswordPage = lazy(() => import('./ResetPassword.tsx'))
-const RideHistory = lazy(() => import('./RideHistory.tsx'))
 const DriverRegistration = lazy(() => import('./DriverRegistration.tsx'))
 const DriverDashboard = lazy(() => import('./DriverDashboard.tsx'))
 const RideDetails = lazy(() => import('./RideDetails.tsx'))
@@ -43,17 +40,21 @@ createRoot(document.getElementById('root')!).render(
   <Route element={<ProtectedRoutes allowedroles={["RIDER", "DRIVER"]} />}>
     <Route path="/choose" element={<ChooseMode />} />
     <Route path="/dashboard" element={<Dashboard />} />
-    <Route path="/history" element={<RideHistory />} />
     <Route path="/ride/:rideId" element={<RideDetails />} />
     <Route path="/driver-registration" element={<DriverRegistration />} />
     <Route path="/security-devices" element={<ActiveSessions />} />
-    <Route path="/sessions" element={<ActiveSessions />} />
+    {/* Legacy route redirects */}
+    <Route path="/history" element={<Navigate to="/dashboard" replace />} />
+    <Route path="/sessions" element={<Navigate to="/security-devices" replace />} />
   </Route>
 
   {/* Driver */}
   <Route element={<ProtectedRoutes allowedroles={["DRIVER"]} />}>
     <Route path="/driver-dashboard" element={<DriverDashboard />} />
   </Route>
+
+  {/* Fallback */}
+  <Route path="*" element={<Navigate to="/" replace />} />
 </Routes>
      </Suspense>
     </AuthContextProvider>

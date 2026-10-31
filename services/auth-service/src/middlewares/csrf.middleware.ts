@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
-import { getCsrfCookieOptions } from '../utils/cookie.js';
+import { getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
 import { ForbiddenError, UnauthorizedError, AuthenticatedRequest, createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('csrf-middleware');
@@ -60,7 +60,7 @@ export const verifyCsrfToken = async (req: AuthenticatedRequest, res: Response, 
     return next(new ForbiddenError('CSRF token missing', 'CSRF_TOKEN_MISSING'));
   }
 
-  // 4. Validate token against Redis (or fallback to double-submit cookie comparison)
+  // 4. Validate token strictly against Redis (Single Source of Truth for dynamic security state)
   const redisKey = authRedisKey(`csrf:${userId}`);
   let storedCSRFToken: string | null = null;
 
@@ -68,30 +68,27 @@ export const verifyCsrfToken = async (req: AuthenticatedRequest, res: Response, 
     if (authRedisClient.isOpen) {
       storedCSRFToken = await authRedisClient.get(redisKey);
     }
-  } catch (err) {
-    // Fallback: check double submit cookie if redis error occurs
+  } catch (err: unknown) {
+    logger.error('Failed to query CSRF token from Redis', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
-  // If redis returned a token, enforce strict equality
-  if (storedCSRFToken !== null) {
-    if (clientToken !== storedCSRFToken) {
-      return next(new ForbiddenError('CSRF Token INVALID', 'CSRF_TOKEN_INVALID'));
-    }
-    return next();
-  }
-
-  // If redis is connected and key was expired/missing:
-  if (authRedisClient.isOpen) {
+  // If Redis is connected and key was expired/missing:
+  if (authRedisClient.isOpen && !storedCSRFToken) {
     return next(new ForbiddenError('CSRF Token expired', 'CSRF_TOKEN_EXPIRED'));
   }
 
-  // Offline/Dev fallback: compare with cookie if redis is not open
-  const cookieToken = req.cookies?.csrfToken;
-  if (cookieToken && clientToken === cookieToken) {
-    return next();
+  if (!storedCSRFToken) {
+    return next(new ForbiddenError('CSRF Token expired or invalid', 'CSRF_TOKEN_INVALID'));
   }
 
-  return next(new ForbiddenError('CSRF Token expired or invalid', 'CSRF_TOKEN_INVALID'));
+  if (clientToken !== storedCSRFToken) {
+    return next(new ForbiddenError('CSRF Token INVALID', 'CSRF_TOKEN_INVALID'));
+  }
+
+  return next();
 };
 
 /**
@@ -111,7 +108,7 @@ export const revokeCSRFToken = async (userId: string, response?: Response): Prom
   }
 
   if (response) {
-    response.clearCookie('csrfToken', getCsrfCookieOptions());
+    response.clearCookie('csrfToken', clearCookieOptions({ httpOnly: false }));
   }
 };
 

@@ -61,11 +61,18 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && isAuthenticated) {
-      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+    if (!loading && isAuthenticated && user) {
+      let target = "/dashboard";
+      if (selectedRole === "DRIVER" && user.roles.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      } else if (user.roles.includes("RIDER")) {
+        target = "/dashboard";
+      } else if (user.roles.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      }
       navigate(target, { replace: true });
     }
-  }, [isAuthenticated, loading, navigate, user]);
+  }, [isAuthenticated, loading, navigate, user, selectedRole]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,8 +142,14 @@ export default function LoginPage() {
       } else {
         await checkAuthentication();
       }
-      const isDriver = selectedRole === "DRIVER" || verifiedUser?.roles?.includes("DRIVER");
-      const target = isDriver ? "/driver-dashboard" : "/dashboard";
+      let target = "/dashboard";
+      if (selectedRole === "DRIVER" && verifiedUser?.roles?.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      } else if (verifiedUser?.roles?.includes("RIDER")) {
+        target = "/dashboard";
+      } else if (verifiedUser?.roles?.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      }
       navigate(target, { replace: true });
     } catch (error) {
       setStatus(error instanceof AxiosError ? (error.response?.data?.message || error.message) : "OTP verification failed");
@@ -166,9 +179,19 @@ export default function LoginPage() {
       const resolvedUser = response.data?.data?.user ?? response.data?.user;
       if (resolvedToken && resolvedUser) {
         establishSession(resolvedToken, resolvedUser);
+      } else {
+        throw new Error("Unable to establish session from Google credentials");
       }
-      const isDriver = selectedRole === "DRIVER" || resolvedUser?.roles?.includes("DRIVER");
-      const target = isDriver ? "/driver-dashboard" : "/dashboard";
+
+      // Respect explicit user choice: Drive -> driver-dashboard, Ride -> dashboard
+      let target = "/dashboard";
+      if (selectedRole === "DRIVER" && resolvedUser.roles?.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      } else if (selectedRole === "RIDER") {
+        target = "/dashboard";
+      } else if (resolvedUser.roles?.includes("DRIVER") && !resolvedUser.roles?.includes("RIDER")) {
+        target = "/driver-dashboard";
+      }
       navigate(target, { replace: true });
     } catch (error) {
       setStatus(

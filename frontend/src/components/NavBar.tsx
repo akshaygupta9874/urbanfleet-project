@@ -2,25 +2,33 @@ import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Menu, X, Car, UserCircle, ShieldCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthContext } from "../context/auth-context";
 
 // 1. Extract links to an array to keep the code DRY
 const NAV_LINKS = [
   { name: "Ride", href: "#" },
-  { name: "Drive", href: "#" },
-  { name: "Business", href: "#" },
   { name: "About", href: "#" },
+  { name: "Safety", href: "#" },
+  { name: "Support", href: "#" },
 ];
 
 function NavBar() {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuthContext();
 
   const firstName = user?.firstName ? user.firstName : "Account";
-  const dashboardPath = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+  const isDriver = user?.roles?.includes("DRIVER");
+  const isRider = user?.roles?.includes("RIDER") || !isDriver;
+  const isOnDriverPage = location.pathname.startsWith("/driver");
+  const dashboardPath = isOnDriverPage
+    ? "/driver-dashboard"
+    : isDriver && !isRider
+      ? "/driver-dashboard"
+      : "/dashboard";
 
   // 2. Detect scroll for a sleek glassmorphism parchment effect
   useEffect(() => {
@@ -91,11 +99,11 @@ function NavBar() {
               </div>
 
               <Button 
-                className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 py-2.5 text-sm font-semibold text-[#ffe9be] shadow-[0_12px_28px_-10px_rgba(58,31,10,0.6)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(58,31,10,0.8)]"
+                className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-5 py-2.5 text-sm font-semibold text-[#ffe9be] shadow-[0_12px_28px_-10px_rgba(58,31,10,0.6)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(58,31,10,0.8)]"
                 onClick={() => navigate(dashboardPath)}
               >
                 <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
-                <span className="relative z-10">Dashboard</span>
+                <span className="relative z-10">{isOnDriverPage || (isDriver && !isRider) ? "Driver Console" : "Rider Dashboard"}</span>
               </Button>
 
               <Button
@@ -189,7 +197,7 @@ function NavBar() {
                         navigate(dashboardPath);
                       }}
                     >
-                      Go to Dashboard
+                      {isOnDriverPage || (isDriver && !isRider) ? "Open Driver Console" : "Open Rider Dashboard"}
                     </Button>
 
                     <Button

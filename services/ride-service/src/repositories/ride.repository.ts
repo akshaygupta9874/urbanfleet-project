@@ -35,6 +35,7 @@ export class RideRepository {
   async findHistoryByRiderId(riderId: string): Promise<Ride[]> {
     return this.prisma.ride.findMany({
       where: { riderId },
+      include: { ratings: true },
       orderBy: { createdAt: 'desc' },
       take: 20
     });
@@ -43,6 +44,7 @@ export class RideRepository {
   async findHistoryByDriverId(driverId: string): Promise<Ride[]> {
     return this.prisma.ride.findMany({
       where: { driverId },
+      include: { ratings: true },
       orderBy: { createdAt: 'desc' },
       take: 20
     });

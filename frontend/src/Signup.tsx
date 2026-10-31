@@ -43,11 +43,18 @@ export default function SignupPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && isAuthenticated) {
-      const target = user?.roles?.includes("DRIVER") ? "/driver-dashboard" : "/dashboard";
+    if (!loading && isAuthenticated && user) {
+      let target = "/dashboard";
+      if (selectedRole === "DRIVER" && user.roles.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      } else if (user.roles.includes("RIDER")) {
+        target = "/dashboard";
+      } else if (user.roles.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      }
       navigate(target, { replace: true });
     }
-  }, [isAuthenticated, loading, navigate, user]);
+  }, [isAuthenticated, loading, navigate, user, selectedRole]);
 
   async function handleSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,8 +68,6 @@ export default function SignupPage() {
         email,
         password,
         roles: [selectedRole],
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'UrbanFleet-Web/1.0',
-        ipAddress: '127.0.0.1',
       });
       if (data.verifyUrl) {
         setStatus(`Account pending verification! Check your terminal or open: ${data.verifyUrl}`);
@@ -101,8 +106,16 @@ export default function SignupPage() {
       }
 
       establishSession(resolvedToken, resolvedUser);
-      const isDriver = selectedRole === "DRIVER" || resolvedUser.roles?.includes("DRIVER");
-      const target = isDriver ? "/driver-dashboard" : "/dashboard";
+
+      // Respect explicit user choice: Drive -> driver-dashboard, Ride -> dashboard
+      let target = "/dashboard";
+      if (selectedRole === "DRIVER" && resolvedUser.roles?.includes("DRIVER")) {
+        target = "/driver-dashboard";
+      } else if (selectedRole === "RIDER") {
+        target = "/dashboard";
+      } else if (resolvedUser.roles?.includes("DRIVER") && !resolvedUser.roles?.includes("RIDER")) {
+        target = "/driver-dashboard";
+      }
       navigate(target, { replace: true });
     } catch (error) {
       setStatus(

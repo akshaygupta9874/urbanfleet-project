@@ -26,6 +26,7 @@ enum PaymentStatus {
 enum PayoutStatus {
   PENDING
   SUBMITTED
+  PROCESSING
   PROCESSED
   FAILED
   REVERSED
@@ -117,7 +118,7 @@ model Payout {
   driverId                    String       @map("driver_id") @db.Uuid
   paymentId                   String?      @map("payment_id") @db.Uuid
   payment                     Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  rideId                      String       @map("ride_id") @db.Uuid
+  rideId                      String?      @map("ride_id") @db.Uuid
 
   amountPaise                 Int          @map("amount_paise")
   currency                    String       @default("INR") @db.VarChar(3)

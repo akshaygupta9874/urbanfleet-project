@@ -64,6 +64,7 @@ export interface RideDto {
   status: string;
   paymentStatus: string;
   driver: FormattedDriver | null;
+  ratings?: Array<{ id: string; score: number; feedback?: string | null; createdAt?: string }>;
   cancelledBy?: string | null;
   cancellationReason?: string | null;
   createdAt?: string;

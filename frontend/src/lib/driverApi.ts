@@ -81,6 +81,44 @@ export interface DriverProfile {
   };
 }
 
+export interface DriverRideItem {
+  id: string;
+  riderId: string;
+  driverId: string | null;
+  status: string;
+  paymentStatus: string;
+  pickup: {
+    address: string;
+    coordinates?: { latitude: number; longitude: number };
+  };
+  destination: {
+    address: string;
+    coordinates?: { latitude: number; longitude: number };
+  };
+  fare: {
+    estimated: number;
+    final: number | null;
+    breakdown?: {
+      driverEarningPaise?: number;
+      totalPaise?: number;
+      baseFarePaise?: number;
+      distanceFarePaise?: number;
+      timeFarePaise?: number;
+      platformCommissionPaise?: number;
+    };
+  };
+  distance: { estimated: number; actual: number };
+  duration: { estimated: number; actual: number | null };
+  ratings?: Array<{
+    id: string;
+    score: number;
+    feedback?: string | null;
+    createdAt?: string;
+  }>;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export function isDriverApproved(
   profile:
     | { verificationStatus?: DriverVerificationStatus; isVerified?: boolean }
@@ -110,4 +148,9 @@ export async function registerDriver(
 export async function fetchDriverProfile(): Promise<DriverProfile> {
   const response = await appApi.get<{ data: DriverProfile }>('/driver/profile');
   return response.data.data;
+}
+
+export async function fetchDriverRideHistory(): Promise<DriverRideItem[]> {
+  const response = await appApi.get<{ data: DriverRideItem[]; totalRides?: number }>('/ride/history/driver');
+  return response.data.data || [];
 }

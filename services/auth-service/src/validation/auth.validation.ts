@@ -10,8 +10,6 @@ export const registerSchema = z.object({
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number'),
   roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional().default(['RIDER']),
-  userAgent: z.string({ required_error: 'User agent is required' }).min(1, 'User agent is required').max(1000),
-  ipAddress: z.string({ required_error: 'IP address is required' }).ip('Invalid IP address format'),
 });
 
 export const loginSchema = z.object({
@@ -22,11 +20,19 @@ export const loginSchema = z.object({
 export const verifyOtpSchema = z.object({
   email: z.string().email('Invalid email address format'),
   otp: z.string().min(4, 'OTP must be at least 4 digits').max(8, 'OTP must be at most 8 digits'),
+  roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional(),
+  role: z.enum(['RIDER', 'DRIVER']).optional(),
 });
 
-export const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(10, 'Valid refresh token required').optional(),
+export const refreshTokenCookieSchema = z.object({
+  refreshToken: z.string().min(10, 'Valid refresh token required'),
 });
+
+/**
+ * Refresh token validation schema.
+ * Note: Refresh token transport canonical source is HttpOnly cookie.
+ */
+export const refreshTokenSchema = refreshTokenCookieSchema;
 
 export const verifyTokenParamSchema = z.object({
   token: z.string().min(5, 'Valid verification token required'),
@@ -62,6 +68,4 @@ export const googleAuthSchema = z.object({
   credential: z.string().min(10, 'A valid Google credential token is required'),
   roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional(),
   role: z.enum(['RIDER', 'DRIVER']).optional(),
-  userAgent: z.string().optional(),
-  ipAddress: z.string().optional(),
 });

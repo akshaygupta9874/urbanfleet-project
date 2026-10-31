@@ -75,6 +75,11 @@ services:
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: "0.0.0.0:8001"
       KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_DNS_RESOLVER: "127.0.0.11"
+      KONG_DNS_ORDER: "A,LAST"
+      KONG_DNS_STALE_TTL: "4"
+      KONG_DNS_NOT_FOUND_TTL: "5"
+      KONG_DNS_ERROR_TTL: "5"
     volumes:
       - ./infra/kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
     ports:
@@ -195,6 +200,7 @@ services:
       KAFKA_BROKERS: "kafka:29092"
       RIDE_SERVICE_URL: "http://ride-service:4004"
       AUTH_SERVICE_URL: "http://auth-service:4001"
+      DRIVER_SERVICE_URL: "http://driver-service:4002"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_TEErdPFF4jHU8N}

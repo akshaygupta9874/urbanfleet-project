@@ -3,11 +3,12 @@ import { AuthService } from "../services/auth.service.js";
 import { UserService } from "../services/user.service.js";
 import { verifyToken } from "../crypto/keys.js";
 import { Role } from "../db/client.js";
+import { hasRole } from "../middlewares/auth.middleware.js";
 import {
-  getCookieOptions,
-  getCsrfCookieOptions,
-  clearCookieOptions,
+  setRefreshTokenCookie,
+  clearAuthCookies,
 } from "../utils/cookie.js";
+import { extractClientMetadata } from "../utils/client-metadata.js";
 import {
   generateCSRFToken,
   refreshCSRFToken,
@@ -31,17 +32,17 @@ export class AuthController {
   }
 
   register = asyncHandler(async (req: Request, res: Response) => {
-    const userAgent = req.headers["user-agent"];
-    const ipAddress = req.ip;
-    if (!userAgent || !ipAddress) {
-      throw new BadRequestError(
-        "User agent and IP address are required in request body",
-      );
-    }
+    const { userAgent, ipAddress } = extractClientMetadata(req);
 
-    const result = await this.authService.register(req.body);
+    const result = await this.authService.register({
+      ...req.body,
+      userAgent,
+      ipAddress,
+    });
 
-    res.status(201).json({
+    const statusCode = result.isExistingUser ? 200 : 201;
+
+    res.status(statusCode).json({
       success: true,
       message: result.message,
       data: {
@@ -52,11 +53,6 @@ export class AuthController {
 
   login = asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body;
-    if (!email || !password) {
-      throw new BadRequestError(
-        "Email and password are required in request body",
-      );
-    }
 
     const result = await this.authService.login({
       email,
@@ -68,35 +64,31 @@ export class AuthController {
       message: result.message,
       data: {
         email: result.email,
+        devOtp: result.devOtp,
       },
     });
   });
 
   verifyOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { email, otp } = req.body;
-    if (!email || !otp) {
-      throw new BadRequestError("Email and OTP are required in request body");
-    }
-    const userAgent = req.headers["user-agent"];
-    const ipAddress = req.ip;
-    if (!userAgent || !ipAddress) {
-      throw new BadRequestError(
-        "User agent and IP address are required in request body",
-      );
-    }
+    const { email, otp, roles, role } = req.body;
+    const { userAgent, ipAddress } = extractClientMetadata(req);
+
+    const requestedRoles: Role[] | undefined =
+      Array.isArray(roles) && roles.length > 0
+        ? (roles as Role[])
+        : role
+          ? [role as Role]
+          : undefined;
 
     const result = await this.authService.verifyLoginOtp({
       email,
       otp,
       ipAddress,
       userAgent,
+      roles: requestedRoles,
     });
 
-    res.cookie(
-      "refreshToken",
-      result.refreshToken,
-      getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }),
-    );
+    setRefreshTokenCookie(res, result.refreshToken);
     const csrfToken = await generateCSRFToken(result.user.id, res);
 
     res.status(200).json({
@@ -112,15 +104,9 @@ export class AuthController {
 
   googleAuth = asyncHandler(async (req: Request, res: Response) => {
     const { credential, roles, role } = req.body;
-    const userAgent =
-      (req.headers["user-agent"] as string) ||
-      (req.body.userAgent as string) ||
-      "UrbanFleet-Web/1.0";
-    const ipAddress =
-      req.ip ||
-      (req.headers["x-forwarded-for"] as string) ||
-      (req.body.ipAddress as string) ||
-      "127.0.0.1";
+    const { userAgent, ipAddress } = extractClientMetadata(req, {
+      required: false,
+    });
 
     const requestedRoles: Role[] | undefined =
       Array.isArray(roles) && roles.length > 0
@@ -136,19 +122,13 @@ export class AuthController {
       requestedRoles,
     );
 
-    res.cookie(
-      "refreshToken",
-      result.refreshToken,
-      getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }),
-    );
+    setRefreshTokenCookie(res, result.refreshToken);
 
     const csrfToken = await generateCSRFToken(result.user.id, res);
 
     res.status(200).json({
       success: true,
       message: "Signed in with Google successfully.",
-      accessToken: result.accessToken,
-      user: result.user,
       data: {
         user: result.user,
         accessToken: result.accessToken,
@@ -158,7 +138,8 @@ export class AuthController {
   });
 
   refreshToken = asyncHandler(
-    async (req: AuthenticatedRequest, res: Response) => {
+    async (req: Request, res: Response) => {
+      // Single Source of Truth for Refresh Token: HttpOnly Cookie
       const token = req.cookies?.refreshToken;
       if (!token) {
         throw new UnauthorizedError("Please provide refresh token");
@@ -166,17 +147,14 @@ export class AuthController {
       const result = await this.authService.refreshAccessToken(token);
 
       if (result.refreshToken) {
-        res.cookie(
-          "refreshToken",
-          result.refreshToken,
-          getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }),
-        );
+        setRefreshTokenCookie(res, result.refreshToken);
       }
 
       const csrfToken = await refreshCSRFToken(result.user.id, res);
 
       res.status(200).json({
         success: true,
+        message: "Access token refreshed",
         data: {
           user: result.user,
           accessToken: result.accessToken,
@@ -186,66 +164,32 @@ export class AuthController {
     },
   );
 
-  logout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    let token = req.cookies?.refreshToken;
-    let sessionId = req.sessionId;
-    let userId = req.userId;
+  logout = asyncHandler(async (req: Request, res: Response) => {
+    // Single Source of Truth for Session Revocation: HttpOnly Cookie
+    const token = req.cookies?.refreshToken;
 
-    // 1. Try resolving userId and sessionId from Authorization header if missing
-    if (!sessionId || !userId) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const accessToken = authHeader.substring(7).trim();
-        try {
-          const decoded = verifyToken(accessToken);
-          if (decoded) {
-            userId = userId || decoded.userId;
-            sessionId = sessionId || decoded.sessionId;
-          }
-        } catch {
-          // Token expired or invalid - ignore
-        }
-      }
-    }
-
-    // 2. Check req.body in case client explicitly sent refreshToken or sessionId
-    if (!token && req.body?.refreshToken) {
-      token = req.body.refreshToken;
-    }
-    if (!sessionId && req.body?.sessionId) {
-      sessionId = req.body.sessionId;
-    }
-
-    // 3. If token present but sessionId/userId still unresolved, decode refresh token
-    if (token && (!sessionId || !userId)) {
+    if (token) {
+      let decoded;
       try {
-        const decoded = verifyToken(token);
-        if (decoded) {
-          userId = userId || decoded.userId;
-          sessionId = sessionId || decoded.sessionId;
-        }
+        decoded = verifyToken(token);
       } catch {
-        // Refresh token may be invalid/expired
+        throw new UnauthorizedError("Invalid or expired refresh token");
       }
+
+      if (
+        !decoded ||
+        decoded.tokenType !== "REFRESH" ||
+        !decoded.userId ||
+        !decoded.sessionId
+      ) {
+        throw new UnauthorizedError("Invalid refresh token payload");
+      }
+
+      await this.authService.logout(token, decoded.sessionId, decoded.userId);
+      await revokeCSRFToken(decoded.userId);
     }
 
-    await this.authService.logout(token, sessionId, userId);
-
-    if (userId) {
-      await revokeCSRFToken(userId, res);
-    }
-
-    const baseCookieOpts = clearCookieOptions();
-    res.clearCookie("refreshToken", baseCookieOpts);
-    res.clearCookie("refreshToken", { path: "/" });
-    res.clearCookie("csrfToken", clearCookieOptions({ httpOnly: false }));
-    res.clearCookie("csrfToken", { path: "/", httpOnly: false });
-
-    // Explicitly overwrite with Set-Cookie expired headers for cross-browser reliability
-    res.setHeader("Set-Cookie", [
-      `refreshToken=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly${baseCookieOpts.secure ? "; Secure; SameSite=None" : "; SameSite=Lax"}`,
-      `csrfToken=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT${baseCookieOpts.secure ? "; Secure; SameSite=None" : "; SameSite=Lax"}`
-    ]);
+    clearAuthCookies(res);
 
     res.status(200).json({ success: true, message: "Logged out successfully" });
   });
@@ -362,21 +306,25 @@ export class AuthController {
 
   getUserById = asyncHandler(
     async (req: AuthenticatedRequest, res: Response) => {
-      const callerId = req.userId;
       const targetId = req.params.id;
+      const callerId = req.userId;
 
       if (!callerId) {
         throw new UnauthorizedError("User unauthenticated");
       }
 
       const isSelf = callerId === targetId;
-      if (!isSelf) {
+      const isAdmin = hasRole(req, Role.ADMIN);
+      if (!isSelf && !isAdmin) {
         throw new ForbiddenError(
           "You are not authorized to view another user profile",
         );
       }
 
       const profile = await this.userService.getUserById(targetId);
+      if (!profile) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
       res.status(200).json({ success: true, data: profile });
     },
   );
@@ -393,7 +341,7 @@ export class AuthController {
   );
 
   grantDriverRole = asyncHandler(
-    async (req: AuthenticatedRequest, res: Response) => {
+    async (req: Request, res: Response) => {
       const userId = req.params.id;
       const user = await this.userService.addDriverRole(userId);
       res.status(200).json({ success: true, data: user });
@@ -404,9 +352,7 @@ export class AuthController {
     async (req: AuthenticatedRequest, res: Response) => {
       const userId = req.userId;
       if (!userId) {
-        return res
-          .status(401)
-          .json({ success: false, message: "User not authenticated" });
+        throw new UnauthorizedError("User unauthenticated");
       }
       const csrfToken = await refreshCSRFToken(userId, res);
       res.status(200).json({

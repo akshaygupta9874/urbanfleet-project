@@ -71,6 +71,7 @@ export function toRideDto(ride: Ride | null): RideDto | null {
     status: ride.status,
     paymentStatus: ride.paymentStatus,
     driver: formattedDriver,
+    ratings: (ride as any).ratings || [],
     cancelledBy: ride.cancelledBy,
     cancellationReason: ride.cancellationReason,
     createdAt: ride.createdAt.toISOString(),

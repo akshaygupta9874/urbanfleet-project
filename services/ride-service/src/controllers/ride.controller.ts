@@ -125,7 +125,7 @@ export class RideController {
 
   getRideById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const rideId = getRideId(req);
-    const userId = getUserId(req);
+    const userId = req.userId;
     const roles = req.roles ?? req.role ?? [];
     const userRole = roles[0] || 'RIDER';
     const ride = await this.rideService.getRideById(rideId, userId, userRole);
@@ -135,7 +135,7 @@ export class RideController {
     const formatted = toRideDto(ride);
     res.status(200).json({
       success: true,
-      data: ride.riderId === userId ? { ...formatted, otp: ride.otp } : formatted,
+      data: (userId && ride.riderId === userId) ? { ...formatted, otp: ride.otp } : formatted,
     });
   });
 
@@ -164,12 +164,19 @@ export class RideController {
   getActiveRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
     const roles = req.roles ?? req.role ?? [];
-    const isDriver = roles.includes('DRIVER');
-    const activeRide = await this.rideService.getActiveRideForUser(userId, isDriver);
+    let activeRide = await this.rideService.getActiveRideForUser(userId, false);
+    let isDriverView = false;
+    if (!activeRide) {
+      const roles = req.roles ?? req.role ?? [];
+      if (roles.includes('DRIVER')) {
+        activeRide = await this.rideService.getActiveRideForUser(userId, true);
+        isDriverView = true;
+      }
+    }
     const formatted = activeRide ? toRideDto(activeRide) : null;
     res.status(200).json({
       success: true,
-      data: formatted && !isDriver ? { ...formatted, otp: activeRide?.otp ?? null } : formatted,
+      data: formatted && !isDriverView ? { ...formatted, otp: activeRide?.otp ?? null } : formatted,
     });
   });
 

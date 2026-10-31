@@ -22,7 +22,6 @@ const apiBasePath = `${apiBaseUrl}/v1`;
 const authBasePath = `${apiBasePath}/auth`;
 
 // Axios Instances
-
 export const appApi = axios.create({
   baseURL: apiBasePath,
   withCredentials: true,
@@ -33,15 +32,11 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// IMPORTANT:
-// This instance has NO interceptors.
-// It is only used to refresh tokens.
+// Dedicated refresh client without interceptors
 const refreshClient = axios.create({
   baseURL: authBasePath,
   withCredentials: true,
 });
-
-
 
 let isRefreshing = false;
 
@@ -71,27 +66,69 @@ const processQueue = (
 };
 
 // ============================================================================
-// Access Token
+// Access Token with memory & sessionStorage synchronization
 // ============================================================================
 
-let accessToken: string | null = null;
+const TOKEN_STORAGE_KEY = "uf_access_token";
+
+let accessToken: string | null = (() => {
+  if (typeof window !== "undefined") {
+    try {
+      return sessionStorage.getItem(TOKEN_STORAGE_KEY) || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+})();
 
 export const setAccessToken = (token: string | null) => {
   accessToken = token;
+  if (typeof window !== "undefined") {
+    try {
+      if (token) {
+        sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+      } else {
+        sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+  }
 };
 
 export const clearAccessToken = () => {
   accessToken = null;
+  if (typeof window !== "undefined") {
+    try {
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    } catch {
+      // Ignore
+    }
+  }
 };
 
 export const getAccessToken = () => accessToken;
 
 export async function refreshAccessToken(): Promise<string> {
-  const response = await refreshClient.post<{ accessToken?: unknown }>("/refresh");
-  const token = response.data.accessToken;
-  if (typeof token !== "string") {
-    throw new Error("Authentication refresh did not return an access token.");
+  const response = await refreshClient.post<{
+    success?: boolean;
+    accessToken?: string;
+    data?: {
+      accessToken?: string;
+      user?: unknown;
+      csrfToken?: string;
+    };
+  }>("/refresh");
+
+  const token =
+    response.data?.data?.accessToken ?? response.data?.accessToken;
+
+  if (typeof token !== "string" || !token) {
+    clearAccessToken();
+    throw new Error("Authentication refresh did not return a valid access token.");
   }
+
   setAccessToken(token);
   return token;
 }
@@ -106,11 +143,18 @@ export const getCookieValue = (name: string) => {
   return match ? decodeURIComponent(match[1]) : "";
 };
 
-
 const attachAuthInterceptors = (instance: AxiosInstance) => {
   instance.interceptors.request.use((config) => {
-    if (accessToken) {
-      config.headers.set("Authorization", `Bearer ${accessToken}`);
+    const currentToken = getAccessToken();
+    if (currentToken) {
+      if (config.headers && typeof config.headers.set === "function") {
+        config.headers.set("Authorization", `Bearer ${currentToken}`);
+      } else {
+        config.headers = {
+          ...config.headers,
+          Authorization: `Bearer ${currentToken}`,
+        } as unknown as typeof config.headers;
+      }
     }
 
     const csrfToken = getCookieValue("csrfToken");
@@ -122,7 +166,14 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
         config.method.toLowerCase()
       )
     ) {
-      config.headers.set("x-csrf-token", csrfToken);
+      if (config.headers && typeof config.headers.set === "function") {
+        config.headers.set("x-csrf-token", csrfToken);
+      } else {
+        config.headers = {
+          ...config.headers,
+          "x-csrf-token": csrfToken,
+        } as unknown as typeof config.headers;
+      }
     }
 
     return config;
@@ -133,8 +184,11 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
 
     async (error: AxiosError) => {
       const originalRequest = error.config as RetryableRequestConfig;
+      if (!originalRequest) {
+        return Promise.reject(error);
+      }
 
-      const url = originalRequest?.url || "";
+      const url = originalRequest.url || "";
       const isAuthEndpoint =
         url.includes("/login") ||
         url.includes("/register") ||
@@ -156,19 +210,21 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
         return Promise.reject(error);
       }
 
-      if (
-        (error.response?.status === 401 ||
-          error.response?.status === 403) &&
-        !originalRequest._retry
-      ) {
+      // ONLY 401 is an authentication/token expiry issue.
+      // 403 Forbidden is an authorization/role issue and must NOT trigger a token refresh loop!
+      if (error.response?.status === 401 && !originalRequest._retry) {
         if (isRefreshing) {
           return new Promise((resolve, reject) => {
             failedQueue.push({ resolve, reject });
           })
             .then((token) => {
               if (typeof token === "string" && originalRequest.headers) {
-                (originalRequest.headers as Record<string, string>).Authorization =
-                  `Bearer ${token}`;
+                if (typeof originalRequest.headers.set === "function") {
+                  originalRequest.headers.set("Authorization", `Bearer ${token}`);
+                } else {
+                  (originalRequest.headers as Record<string, string>).Authorization =
+                    `Bearer ${token}`;
+                }
               }
               return instance(originalRequest);
             })
@@ -179,30 +235,23 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
         isRefreshing = true;
 
         try {
-          // Uses refreshClient (NO INTERCEPTOR)
-          const response = await refreshClient.post("/refresh");
+          const validToken = await refreshAccessToken();
 
-          const newAccessToken =
-            response.data?.data?.accessToken ?? response.data?.accessToken;
-
-          const validToken =
-            typeof newAccessToken === "string" ? newAccessToken : null;
-
-          setAccessToken(validToken);
-
-          if (validToken && originalRequest.headers) {
-            (originalRequest.headers as Record<string, string>).Authorization =
-              `Bearer ${validToken}`;
+          if (originalRequest.headers) {
+            if (typeof originalRequest.headers.set === "function") {
+              originalRequest.headers.set("Authorization", `Bearer ${validToken}`);
+            } else {
+              (originalRequest.headers as Record<string, string>).Authorization =
+                `Bearer ${validToken}`;
+            }
           }
 
           processQueue(null, validToken);
 
           return instance(originalRequest);
         } catch (err) {
-          processQueue(err);
-
+          processQueue(err, null);
           clearAccessToken();
-
           return Promise.reject(err);
         } finally {
           isRefreshing = false;
@@ -217,5 +266,5 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
 attachAuthInterceptors(api);
 attachAuthInterceptors(appApi);
 
-
+export { refreshClient };
 export default api;

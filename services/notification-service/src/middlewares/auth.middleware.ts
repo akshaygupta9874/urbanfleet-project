@@ -51,12 +51,12 @@ export const authMiddleware: RequestHandler = asyncHandler(
       return next();
     }
 
-    // 1. Extract Token from Authorization header or cookie
-    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
+    // 1. Extract Token strictly from Authorization Bearer header (Single Source of Truth)
+    const authHeader = request.headers.authorization;
     const token =
-      request.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      cookies?.accessToken ||
-      cookies?.token;
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
 
     if (!token) {
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');

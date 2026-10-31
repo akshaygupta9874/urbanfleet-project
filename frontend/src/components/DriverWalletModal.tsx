@@ -82,8 +82,9 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
 
       setBalance(balRes.data.data);
       setPayouts(payoutsRes.data.data || []);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to load wallet data. Please try again.");
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(message || "Failed to load wallet data. Please try again.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -92,8 +93,7 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
 
   useEffect(() => {
     if (isOpen) {
-      setLoading(true);
-      fetchWalletData();
+      void Promise.resolve().then(() => fetchWalletData());
     }
   }, [isOpen]);
 
@@ -131,8 +131,9 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
       setPayoutAmount("");
       // Refresh wallet & list
       fetchWalletData();
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to request payout. Please verify your details.");
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(message || "Failed to request payout. Please verify your details.");
     } finally {
       setIsSubmitting(false);
     }

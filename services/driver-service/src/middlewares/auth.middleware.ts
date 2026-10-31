@@ -50,9 +50,12 @@ export const authMiddleware = asyncHandler(
       return next();
     }
 
-    // 1. Extract Token from Authorization header
+    // 1. Extract Token strictly from Authorization Bearer header (Single Source of Truth)
+    const authHeader = request.headers.authorization;
     const token =
-      request.headers.authorization?.replace(/^Bearer\s+/i, '');
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
 
     if (!token) {
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');
@@ -120,7 +123,7 @@ export const authMiddleware = asyncHandler(
 
     if (!user) {
       try {
-        user = (await authClient.getUserById(userId)) as DriverUserRecord | null;
+        user = (await authClient.getUserById(userId, token)) as DriverUserRecord | null;
       } catch (err: unknown) {
         logger.error('Failed to query user from AuthClient:', { error: err instanceof Error ? err.message : String(err), userId });
         throw new ServiceUnavailableError(

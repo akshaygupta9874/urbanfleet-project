@@ -83,4 +83,34 @@ describe('validateRequest Zod Middleware', () => {
     expect(next).toHaveBeenCalled();
     expect(validReq.query.limit).toBe(20); // coerced number
   });
+  it('validates cookies schema and rejects invalid cookies with 422', () => {
+    const cookieSchema = z.object({
+      refreshToken: z.string().min(10, 'Valid refresh token required'),
+    });
+
+    const middleware = validateRequest({ cookies: cookieSchema });
+    const invalidReq: any = { cookies: { refreshToken: 'short' } };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    middleware(invalidReq, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: 'VALIDATION_ERROR',
+        errors: expect.objectContaining({
+          refreshToken: expect.any(Array),
+        }),
+      })
+    );
+
+    const validReq: any = { cookies: { refreshToken: 'valid-refresh-token-12345' } };
+    const validRes: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const validNext = vi.fn();
+
+    middleware(validReq, validRes, validNext);
+    expect(validNext).toHaveBeenCalled();
+  });
 });

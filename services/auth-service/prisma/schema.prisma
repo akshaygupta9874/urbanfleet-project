@@ -10,6 +10,7 @@ generator client {
 enum Role {
   RIDER
   DRIVER
+  ADMIN
 }
 
 enum OutboxStatus {

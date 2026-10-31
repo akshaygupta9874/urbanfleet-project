@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuthContext } from "../context/auth-context";
 import { ShieldAlert, Sparkles, Navigation } from "lucide-react";
 
 // ---------- Golden-brown animated city map background ----------
@@ -136,6 +137,7 @@ function CityMapBackground() {
 
 export default function UnauthorizedPage() {
   const navigate = useNavigate();
+  const { user } = useAuthContext();
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f5e6c8] font-sans text-[#2e1808] px-6 py-10">
@@ -212,9 +214,18 @@ export default function UnauthorizedPage() {
             <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
             <span className="relative z-10 inline-flex items-center justify-center gap-2">
               <Navigation size={15} className="text-[#ffd88a]" />
-              Go to Dashboard
+              Go to Rider Dashboard
             </span>
           </Link>
+
+          {!user?.roles?.includes("DRIVER") && (
+            <Link
+              to="/driver-registration"
+              className="rounded-xl border border-[#c58a3a]/40 bg-[#fffaf0] py-3.5 text-sm font-semibold text-[#3a1f0a] shadow-sm transition-all hover:bg-[#fff4dc]"
+            >
+              Register as an UrbanFleet Driver
+            </Link>
+          )}
 
           <button
             onClick={() => navigate(-1)}

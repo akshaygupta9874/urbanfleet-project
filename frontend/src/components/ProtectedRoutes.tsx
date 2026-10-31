@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import LoadingScreen from "./LoadingScreen";
 import { useAuthContext } from "../context/auth-context";
-import { Navigate, Outlet } from "react-router-dom";
 import UnauthorizedPage from "./UnauthorizedPage";
-import { fetchDriverProfile, isDriverApproved } from "../lib/driverApi";
-import { refreshAccessToken } from "../apiInterceptor";
+import { appApi } from "../lib/api";
+import type { RideDto } from "../types/ride";
 
 export type UserRole = "RIDER" | "DRIVER";
 
@@ -14,55 +14,43 @@ export const ProtectedRoutes = ({
   allowedroles: UserRole[];
 }) => {
   const { user, isAuthenticated, loading } = useAuthContext();
-  const [driverVerification, setDriverVerification] = useState<{
-    userId: string;
-    approved: boolean;
-  } | null>(null);
-  const requiresVerifiedDriver =
-    allowedroles.length === 1 && allowedroles[0] === "DRIVER";
-  const userId = user?.id;
-  const hasVerifiedDriverProfile =
-    driverVerification && driverVerification.userId === userId
-      ? driverVerification.approved
-      : null;
-
-  const rawRoles = (user?.roles ?? []) as UserRole[];
-  const userRoles: UserRole[] = rawRoles;
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    let cancelled = false;
-    if (!isAuthenticated || !requiresVerifiedDriver || !userId) {
-      return () => {
-        cancelled = true;
-      };
+    const isRiderRoute =
+      allowedroles.includes("RIDER") && location.pathname !== "/driver-dashboard";
+    if (
+      !isAuthenticated ||
+      !isRiderRoute ||
+      location.pathname.startsWith("/ride/")
+    ) {
+      return;
     }
 
-    void fetchDriverProfile()
-      .then(async (profile) => {
-        if (isDriverApproved(profile)) {
-          await refreshAccessToken();
-          if (cancelled) return;
-          setDriverVerification({
-            userId,
-            approved: true,
-          });
-          return;
+    let cancelled = false;
+    appApi
+      .get<{ success: boolean; data: RideDto }>("/ride/current")
+      .then((res) => {
+        if (cancelled) return;
+        const ride = res.data?.data;
+        if (
+          ride &&
+          ride.riderId === user?.id &&
+          ride.status !== "COMPLETED" &&
+          ride.status !== "CANCELLED"
+        ) {
+          navigate(`/ride/${ride.id}`, { replace: true });
         }
-        if (!cancelled) setDriverVerification({ userId, approved: false });
       })
-      .catch(() => {
-        if (!cancelled) setDriverVerification({ userId, approved: false });
-      });
+      .catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, requiresVerifiedDriver, userId]);
+  }, [location.pathname, isAuthenticated, user?.id, allowedroles, navigate]);
 
-  if (
-    loading ||
-    (isAuthenticated && requiresVerifiedDriver && hasVerifiedDriverProfile === null)
-  ) {
+  if (loading) {
     return <LoadingScreen />;
   }
 
@@ -70,18 +58,14 @@ export const ProtectedRoutes = ({
     return <Navigate to="/login" replace />;
   }
 
-  if (requiresVerifiedDriver && hasVerifiedDriverProfile === false) {
-    return <UnauthorizedPage />;
-  }
+  const userRoles: UserRole[] = user?.roles ?? [];
 
+  // Check if user has at least one of the allowed roles for this route
   const hasAllowedRole =
-    userRoles.some((role: UserRole) => allowedroles.includes(role)) ||
-    (requiresVerifiedDriver && hasVerifiedDriverProfile === true);
+    allowedroles.length === 0 ||
+    userRoles.some((role: UserRole) => allowedroles.includes(role));
 
-  if (
-    allowedroles.length > 0 &&
-    (!userRoles.length || !hasAllowedRole)
-  ) {
+  if (!hasAllowedRole) {
     return <UnauthorizedPage />;
   }
 

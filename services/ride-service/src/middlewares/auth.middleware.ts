@@ -31,12 +31,12 @@ export const authMiddleware: RequestHandler = asyncHandler(
       return next();
     }
 
-    // 1. Extract Token from Authorization header or cookie
-    const cookies = (req.cookies || {}) as Record<string, string | undefined>;
+    // 1. Extract Token strictly from Authorization Bearer header (Single Source of Truth)
+    const authHeader = req.headers.authorization;
     const token =
-      req.headers.authorization?.replace(/^Bearer\s+/i, '') ||
-      cookies.accessToken ||
-      cookies.token;
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
 
     if (!token) {
       throw new AppError('You are not authorized to access this resource.', 401, 'UNAUTHORIZED');
@@ -162,5 +162,25 @@ export const requireRole = (...allowedRoles: string[]): RequestHandler => {
     next();
   };
 };
+
+export const optionalAuth: RequestHandler = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (req.userId && req.user) {
+      return next();
+    }
+
+    const authHeader = req.headers.authorization;
+    const token =
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
+
+    if (!token) {
+      return next();
+    }
+
+    return authMiddleware(req, res, next);
+  }
+);
 
 export default authMiddleware;

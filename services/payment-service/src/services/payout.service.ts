@@ -44,8 +44,8 @@ export class PayoutService {
    */
   async createPayout(input: {
     driverId: string;
-    paymentId: string;
-    rideId: string;
+    paymentId?: string | null;
+    rideId?: string | null;
     amountPaise: number;
     mode?: PayoutMode;
     metadata?: Record<string, unknown>;
@@ -58,57 +58,68 @@ export class PayoutService {
       );
     }
 
-    const payment = await paymentRepository.findById(input.paymentId.toString());
 
-    if (!payment) {
-      throw new AppError("Payment not found.", 404, "PAYMENT_NOT_FOUND");
-    }
+    let paymentId: string | null = null;
+    let rideId: string | null = null;
 
-    if (!REFUNDABLE_STATUSES.includes(payment.status)) {
-      throw new AppError(
-        `Cannot pay out a payment in status ${payment.status}`,
-        409,
-        "PAYMENT_NOT_PAYABLE"
-      );
-    }
+    if (input.paymentId) {
+      const payment = await paymentRepository.findById(input.paymentId.toString());
 
-    if (
-      payment.driver.toString() !== input.driverId.toString() ||
-      payment.ride.toString() !== input.rideId.toString()
-    ) {
-      throw new AppError(
-        "Payout driver / ride does not match the payment.",
-        409,
-        "PAYOUT_PAYMENT_MISMATCH"
-      );
-    }
+      if (!payment) {
+        throw new AppError("Payment not found.", 404, "PAYMENT_NOT_FOUND");
+      }
 
-    const { driverReversedPaise } = computeRefundTotals(payment);
-    const payableShare = payment.fareBreakdown.driverEarningPaise - driverReversedPaise;
+      if (!REFUNDABLE_STATUSES.includes(payment.status)) {
+        throw new AppError(
+          `Cannot pay out a payment in status ${payment.status}`,
+          409,
+          "PAYMENT_NOT_PAYABLE"
+        );
+      }
 
-    if (input.amountPaise > payableShare) {
-      throw new AppError(
-        `Payout ${input.amountPaise} exceeds the driver's remaining share ${payableShare}.`,
-        422,
-        "PAYOUT_EXCEEDS_DRIVER_SHARE"
-      );
-    }
+      if (
+        payment.driver.toString() !== input.driverId.toString() ||
+        (input.rideId && payment.ride.toString() !== input.rideId.toString())
+      ) {
+        throw new AppError(
+          "Payout driver / ride does not match the payment.",
+          409,
+          "PAYOUT_PAYMENT_MISMATCH"
+        );
+      }
 
-    const alreadyLive = await payoutRepository.findLiveByPayment(input.paymentId.toString());
+      const { driverReversedPaise } = computeRefundTotals(payment);
+      const payableShare = payment.fareBreakdown.driverEarningPaise - driverReversedPaise;
 
-    if (alreadyLive) {
-      throw new AppError(
-        "A payout already exists for this payment.",
-        409,
-        "PAYOUT_ALREADY_EXISTS"
-      );
+      if (input.amountPaise > payableShare) {
+        throw new AppError(
+          `Payout ${input.amountPaise} exceeds the driver's remaining share ${payableShare}.`,
+          422,
+          "PAYOUT_EXCEEDS_DRIVER_SHARE"
+        );
+      }
+
+      const alreadyLive = await payoutRepository.findLiveByPayment(input.paymentId.toString());
+
+      if (alreadyLive) {
+        throw new AppError(
+          "A payout already exists for this payment.",
+          409,
+          "PAYOUT_ALREADY_EXISTS"
+        );
+      }
+
+      paymentId = payment.id.toString();
+      rideId = payment.ride.toString();
+    } else if (input.rideId) {
+      rideId = input.rideId.toString();
     }
 
     try {
       return await payoutRepository.create({
         driver: input.driverId,
-        payment: input.paymentId,
-        ride: input.rideId,
+        payment: paymentId || undefined,
+        ride: rideId || undefined,
         amountPaise: input.amountPaise,
         status: PayoutStatus.PENDING,
         mode: input.mode ?? PayoutMode.IMPS,

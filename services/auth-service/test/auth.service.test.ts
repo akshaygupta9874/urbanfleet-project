@@ -17,6 +17,7 @@ describe('Auth Service Business Logic', () => {
     create: vi.fn().mockResolvedValue({ id: 'sess-1' }),
     findByToken: vi.fn(),
     delete: vi.fn().mockResolvedValue({}),
+    deleteByIdAndUserId: vi.fn().mockResolvedValue({ count: 1 }),
     deleteByUserId: vi.fn().mockResolvedValue({ count: 1 }),
     findById: vi.fn(),
     findByUserId: vi.fn(),
@@ -34,6 +35,7 @@ describe('Auth Service Business Logic', () => {
     vi.restoreAllMocks();
     mockSessionRepo.create = vi.fn().mockResolvedValue({ id: 'sess-1' });
     mockSessionRepo.delete = vi.fn().mockResolvedValue({ id: 'sess-1' });
+    mockSessionRepo.deleteByIdAndUserId = vi.fn().mockResolvedValue({ count: 1 });
     mockSessionRepo.deleteByUserId = vi.fn().mockResolvedValue({ count: 1 });
     mockSessionRepo.updateVersion = vi.fn().mockResolvedValue({ id: 'sess-1', version: 2 });
     authService = new AuthService(mockUserRepo, mockSessionRepo, mockOutboxRepo);

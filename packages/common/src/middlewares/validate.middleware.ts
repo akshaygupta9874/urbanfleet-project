@@ -6,6 +6,7 @@ export interface RequestValidationSchemas {
   query?: ZodSchema;
   params?: ZodSchema;
   headers?: ZodSchema;
+  cookies?: ZodSchema;
 }
 
 function isZodSchema(value: unknown): value is ZodSchema {
@@ -34,7 +35,7 @@ export function formatZodError(error: ZodError): Record<string, string[]> {
 export function validateRequest(schemas: RequestValidationSchemas | ZodSchema) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const errors: Record<string, string[]> = {};
-    const locations = ['body', 'query', 'params', 'headers'] as const;
+    const locations = ['body', 'query', 'params', 'headers', 'cookies'] as const;
 
     if (isZodSchema(schemas)) {
       const result = schemas.safeParse({
@@ -42,6 +43,7 @@ export function validateRequest(schemas: RequestValidationSchemas | ZodSchema) {
         query: req.query,
         params: req.params,
         headers: req.headers,
+        cookies: (req as any).cookies || {},
       });
 
       if (!result.success) {
@@ -61,11 +63,12 @@ export function validateRequest(schemas: RequestValidationSchemas | ZodSchema) {
     const map = schemas as RequestValidationSchemas;
     for (const loc of locations) {
       if (map[loc]) {
-        const result = map[loc]!.safeParse(req[loc]);
+        const target = loc === 'cookies' ? ((req as any).cookies || {}) : req[loc];
+        const result = map[loc]!.safeParse(target);
         if (!result.success) {
           Object.assign(errors, formatZodError(result.error));
         } else {
-          req[loc] = result.data;
+          (req as any)[loc] = result.data;
         }
       }
     }

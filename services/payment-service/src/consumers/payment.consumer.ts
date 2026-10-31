@@ -91,6 +91,11 @@ export async function initPaymentConsumer(
                 }
               }
 
+              if (!rideId || !riderId) {
+                logger.warn(`[PaymentConsumer] Skipping createOrder for arrived ride ${rideId}: missing rideId or riderId (riderId=${riderId})`);
+                return;
+              }
+
               await creator.createOrder({
                 rideId,
                 riderId,
@@ -134,6 +139,11 @@ export async function initPaymentConsumer(
                     const fetchErrMessage = err instanceof Error ? err.message : String(err);
                     logger.warn(`Could not fetch ride details for ${rideId} in consumer: ${fetchErrMessage}`);
                   }
+                }
+
+                if (!rideId || !riderId) {
+                  logger.warn(`[PaymentConsumer] Skipping fallback createOrder for completed ride ${rideId}: missing rideId or riderId (riderId=${riderId})`);
+                  return;
                 }
 
                 await creator.createOrder({

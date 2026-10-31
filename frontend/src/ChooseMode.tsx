@@ -8,6 +8,7 @@ import { useAuthContext } from "./context/auth-context";
 import LoadingScreen from './components/LoadingScreen';
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from './types/geoapify';
 import CityMapBackground from './components/CityMapBackground';
+import { formatFareWithoutSymbol } from './lib/formatters';
 import type { Coordinates, LocationPoint } from "./types/location";
 
 interface PendingRide {
@@ -92,9 +93,7 @@ const DISPLAY_FONT = "'Fraunces', Georgia, serif";
 const BODY_FONT = "'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif";
 
 function formatPaiseToRupee(amount: number | null | undefined): string {
-    if (amount == null) return "0.00";
-    const rupees = amount > 1000 ? amount / 100 : amount; 
-    return rupees.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatFareWithoutSymbol(amount);
 }
 
 export default function ChooseMode() {

@@ -1,13 +1,15 @@
 import { Router, Request } from 'express';
 import { AuthController } from '../controllers/auth.controller.js';
 import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
-import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { authMiddleware, requireRole, requireAdminOrInternalService } from '../middlewares/auth.middleware.js';
+import { Role } from '../db/client.js';
 import { verifyCsrfToken } from '../middlewares/csrf.middleware.js';
 import { authRedisClient } from '../redis/client.js';
 import {
   registerSchema,
   loginSchema,
   verifyOtpSchema,
+  refreshTokenSchema,
   verifyTokenParamSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -76,8 +78,9 @@ export function createAuthRouter(controller: AuthController): Router {
   router.post('/verify-otp', otpLimiter, validateRequest({ body: verifyOtpSchema }), controller.verifyOtp);
   router.post('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
   router.get('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
-  router.post('/refresh-token', controller.refreshToken);
+  // Refresh Token & Session Revocation (Canonical transport: HttpOnly Cookie)
   router.post('/refresh', controller.refreshToken);
+  router.post('/refresh-token', controller.refreshToken);
   router.post('/logout', controller.logout);
 
   // Password & Email Recovery Endpoints
@@ -93,17 +96,11 @@ export function createAuthRouter(controller: AuthController): Router {
 
   // Authenticated Profile & User Endpoints
   if (controller.grantDriverRole) {
-    router.post('/internal/users/:id/driver-role', (req, res, next) => {
-      if (req.headers.authorization) return authMiddleware(req, res, next);
-      next();
-    }, controller.grantDriverRole);
+    router.post('/internal/users/:id/driver-role', requireAdminOrInternalService, controller.grantDriverRole);
   }
   router.get('/me', authMiddleware, controller.getProfile);
   if (controller.getUserById) {
-    router.get('/users/:id', (req, res, next) => {
-      if (req.headers.authorization) return authMiddleware(req, res, next);
-      next();
-    }, controller.getUserById);
+    router.get('/users/:id', authMiddleware, controller.getUserById);
   }
   if (controller.changePassword) {
     router.post('/change-password', authMiddleware, passwordChangeLimiter, verifyCsrfToken, validateRequest({ body: changePasswordSchema }), controller.changePassword);

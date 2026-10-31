@@ -27,15 +27,24 @@ try {
 
   // 5. Redis Driver Presence & Geo
   console.log('\n5️⃣  Seeding Redis Driver Presence & GEO Coordinates...');
+  const { createClient } = await import('redis');
+  const redis = createClient({
+    url: process.env.REDIS_URL || 'rediss://default:gQAAAAAAAbq5AAIgcDIzYTliZWY4ODExZTk0NDNjYWFlNWFhNDgwNzhlNjk2Yg@crisp-pelican-113337.upstash.io:6379'
+  });
+  await redis.connect();
+
   // Driver 1 (Alex - Mumbai): 19.0760, 72.8777
-  execSync('docker exec urbanfleet-redis redis-cli GEOADD ride:drivers:locations 72.8777 19.0760 44444444-4444-4444-4444-444444444444', { stdio: 'inherit' });
-  execSync('docker exec urbanfleet-redis redis-cli SET ride:driver:presence:44444444-4444-4444-4444-444444444444 "{\\"online\\":true,\\"available\\":true,\\"lastSeen\\":' + Date.now() + '}"', { stdio: 'inherit' });
-  execSync('docker exec urbanfleet-redis redis-cli SET driver:heartbeat:44444444-4444-4444-4444-444444444444 1 EX 3600', { stdio: 'inherit' });
+  await redis.geoAdd('ride:drivers:locations', { longitude: 72.8777, latitude: 19.0760, member: '44444444-4444-4444-4444-444444444444' });
+  await redis.set('ride:driver:presence:44444444-4444-4444-4444-444444444444', JSON.stringify({ online: true, available: true, lastSeen: Date.now() }));
+  await redis.set('driver:heartbeat:44444444-4444-4444-4444-444444444444', '1', { EX: 86400 });
 
   // Driver 2 (Rajesh - Bengaluru): 12.9716, 77.5946
-  execSync('docker exec urbanfleet-redis redis-cli GEOADD ride:drivers:locations 77.5946 12.9716 44444444-4444-4444-4444-444444444445', { stdio: 'inherit' });
-  execSync('docker exec urbanfleet-redis redis-cli SET ride:driver:presence:44444444-4444-4444-4444-444444444445 "{\\"online\\":true,\\"available\\":true,\\"lastSeen\\":' + Date.now() + '}"', { stdio: 'inherit' });
-  execSync('docker exec urbanfleet-redis redis-cli SET driver:heartbeat:44444444-4444-4444-4444-444444444445 1 EX 3600', { stdio: 'inherit' });
+  await redis.geoAdd('ride:drivers:locations', { longitude: 77.5946, latitude: 12.9716, member: '44444444-4444-4444-4444-444444444445' });
+  await redis.set('ride:driver:presence:44444444-4444-4444-4444-444444444445', JSON.stringify({ online: true, available: true, lastSeen: Date.now() }));
+  await redis.set('driver:heartbeat:44444444-4444-4444-4444-444444444445', '1', { EX: 86400 });
+
+  await redis.disconnect();
+  console.log('✅ Upstash Redis driver presence & GEO locations seeded successfully!');
 
   console.log('\n✨ ALL URBANFLEET MICROSERVICES SEEDED SUCCESSFULLY! ✨');
 } catch (error) {

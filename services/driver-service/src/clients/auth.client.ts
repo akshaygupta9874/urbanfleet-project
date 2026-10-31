@@ -15,20 +15,25 @@ export class AuthClient {
   constructor(
     baseUrl: string = process.env.AUTH_SERVICE_URL || 'http://localhost:4001'
   ) {
+    const internalKey =
+      process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
     this.client = axios.create({
       baseURL: baseUrl,
       timeout: 5000,
       headers: {
         Accept: 'application/json',
+        'x-internal-service-key': internalKey,
       },
     });
   }
 
-  async getUserById(userId: string): Promise<AuthUser | null> {
+  async getUserById(userId: string, token?: string): Promise<AuthUser | null> {
     try {
-      const res = await this.client.get<{ success: boolean; data: AuthUser }>(
-        `/api/auth/users/${userId}`
-      );
+      const res = token
+        ? await this.client.get<{ success: boolean; data: AuthUser }>(`/api/auth/users/${userId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        : await this.client.get<{ success: boolean; data: AuthUser }>(`/api/auth/users/${userId}`);
       return res.data?.data ?? null;
     } catch (err: unknown) {
       if (isAxiosError(err)) {

@@ -12,7 +12,7 @@ import {
   startRideSchema,
   paymentStatusSchema,
 } from '../validation/ride.validation.js';
-import { authMiddleware, requireRole } from '../middlewares/auth.middleware.js';
+import { authMiddleware, optionalAuth, requireRole } from '../middlewares/auth.middleware.js';
 
 export function createRideRouter(controller: RideController): Router {
   const router = Router();
@@ -57,54 +57,53 @@ export function createRideRouter(controller: RideController): Router {
   router.post('/estimate', estimateLimiter, validateRequest({ body: estimateFareSchema }), controller.estimateFare);
   router.post('/fare', estimateLimiter, validateRequest({ body: estimateFareSchema }), controller.estimateFare);
 
-  // Authenticated Ride Endpoints
-  router.use(authMiddleware);
-
   // Ride Request
-  router.post('/', requestRideLimiter, validateRequest({ body: requestRideSchema }), controller.requestRide);
-  router.post('/request', requestRideLimiter, validateRequest({ body: requestRideSchema }), controller.requestRide);
+  router.post('/', authMiddleware, requestRideLimiter, validateRequest({ body: requestRideSchema }), controller.requestRide);
+  router.post('/request', authMiddleware, requestRideLimiter, validateRequest({ body: requestRideSchema }), controller.requestRide);
 
   // Active / Current Ride
-  router.get('/current', controller.getActiveRide);
-  router.get('/active', controller.getActiveRide);
-  router.get('/driver/current', controller.getCurrentRideOfDriver);
+  router.get('/current', authMiddleware, controller.getActiveRide);
+  router.get('/active', authMiddleware, controller.getActiveRide);
+  router.get('/driver/current', authMiddleware, controller.getCurrentRideOfDriver);
 
   // Ride History
-  router.get('/history', controller.getRiderHistory);
-  router.get('/history/rider', controller.getRiderHistory);
-  router.get('/history/driver', requireRole('DRIVER'), controller.getDriverHistory);
+  router.get('/history', authMiddleware, controller.getRiderHistory);
+  router.get('/history/rider', authMiddleware, controller.getRiderHistory);
+  router.get('/history/driver', authMiddleware, requireRole('DRIVER'), controller.getDriverHistory);
 
   // Single Ride details & fare preview (must stay after specific string paths like /current, /history)
-  router.get('/:id/fare-preview', validateRequest({ params: rideIdParamSchema }), controller.getRideById);
-  router.get('/:id', validateRequest({ params: rideIdParamSchema }), controller.getRideById);
+  // Uses optionalAuth so peer microservices (e.g. payment-service) can resolve ride details without external user tokens
+  router.get('/:id/fare-preview', optionalAuth, validateRequest({ params: rideIdParamSchema }), controller.getRideById);
+  router.get('/:id', optionalAuth, validateRequest({ params: rideIdParamSchema }), controller.getRideById);
 
   // Driver Lifecycle Actions (supporting both PATCH and POST for frontend / test compatibility)
-  router.patch('/:id/accept', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: acceptRideSchema }), controller.driverAcceptRide);
-  router.post('/:id/accept', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: acceptRideSchema }), controller.driverAcceptRide);
+  router.patch('/:id/accept', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: acceptRideSchema }), controller.driverAcceptRide);
+  router.post('/:id/accept', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: acceptRideSchema }), controller.driverAcceptRide);
 
-  router.patch('/:id/arrive', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
-  router.patch('/:id/arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
-  router.post('/:id/arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
+  router.patch('/:id/arrive', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
+  router.patch('/:id/arrived', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
+  router.post('/:id/arrived', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrived);
 
-  router.patch('/:id/destination-arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
-  router.post('/:id/destination-arrived', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
+  router.patch('/:id/destination-arrived', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
+  router.post('/:id/destination-arrived', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.driverArrivedAtDestination);
 
-  router.patch('/:id/start', requireRole('DRIVER'), startRideLimiter, validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
-  router.post('/:id/start', requireRole('DRIVER'), startRideLimiter, validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
+  router.patch('/:id/start', authMiddleware, requireRole('DRIVER'), startRideLimiter, validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
+  router.post('/:id/start', authMiddleware, requireRole('DRIVER'), startRideLimiter, validateRequest({ params: rideIdParamSchema, body: startRideSchema }), controller.startRide);
 
-  router.patch('/:id/complete', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
-  router.post('/:id/complete', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
+  router.patch('/:id/complete', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
+  router.post('/:id/complete', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema }), controller.completeRide);
 
   // Cancellation (supporting both PATCH and POST)
-  router.patch('/:id/cancel', validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRide);
-  router.post('/:id/cancel', validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRide);
+  router.patch('/:id/cancel', authMiddleware, validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRide);
+  router.post('/:id/cancel', authMiddleware, validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRide);
 
-  router.patch('/:id/driver/cancel', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRideByDriver);
-  router.post('/:id/driver/cancel', requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRideByDriver);
+  router.patch('/:id/driver/cancel', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRideByDriver);
+  router.post('/:id/driver/cancel', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRideByDriver);
 
-  // Ratings & Payment status
-  router.post('/:id/rate', rateRideLimiter, validateRequest({ params: rideIdParamSchema, body: rateRideSchema }), controller.submitRating);
-  router.patch('/:id/payment-status', validateRequest({ params: rideIdParamSchema, body: paymentStatusSchema }), controller.updatePaymentStatus);
+  // Ratings & Payment status (payment-status uses optionalAuth for peer microservice updates)
+  router.post('/:id/rate', authMiddleware, rateRideLimiter, validateRequest({ params: rideIdParamSchema, body: rateRideSchema }), controller.submitRating);
+  router.patch('/:id/payment-status', optionalAuth, validateRequest({ params: rideIdParamSchema, body: paymentStatusSchema }), controller.updatePaymentStatus);
+  router.post('/:id/payment-status', optionalAuth, validateRequest({ params: rideIdParamSchema, body: paymentStatusSchema }), controller.updatePaymentStatus);
 
   return router;
 }

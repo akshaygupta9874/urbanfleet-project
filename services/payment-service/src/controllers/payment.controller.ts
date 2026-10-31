@@ -386,25 +386,21 @@ export const requestPayout =
       throw new AppError("Driver identity required", 403, "FORBIDDEN");
     }
 
-    const { amountPaise, rideId, paymentId } = req.body;
+    const { amountPaise, rideId, paymentId, mode, metadata } = req.body;
     if (!amountPaise || amountPaise <= 0) {
       throw new AppError("Valid amount in paise is required.", 400, "INVALID_AMOUNT");
     }
 
-    const balance = await payoutService.getDriverBalance(driverId);
-    if (balance.availablePaise < amountPaise) {
-      throw new AppError(
-        `Insufficient available balance (${balance.availablePaise} paise available).`,
-        400,
-        "INSUFFICIENT_FUNDS"
-      );
-    }
+    const isUuid = (val: unknown): val is string =>
+      typeof val === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
     const payout = await payoutService.createPayout({
       driverId,
-      rideId: rideId || "MANUAL_PAYOUT",
-      paymentId: paymentId || "MANUAL_PAYOUT",
-      amountPaise,
+      rideId: isUuid(rideId) ? rideId : null,
+      paymentId: isUuid(paymentId) ? paymentId : null,
+      amountPaise: Math.round(Number(amountPaise)),
+      mode,
+      metadata: typeof metadata === "object" && metadata !== null ? (metadata as Record<string, unknown>) : undefined,
     });
 
     res.status(201).json({

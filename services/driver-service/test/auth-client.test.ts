@@ -65,4 +65,11 @@ describe('AuthClient Inter-Service HTTP Communication in driver-service', () => 
       '/api/auth/internal/users/usr-driver-1/driver-role'
     );
   });
+
+  it('configures x-internal-service-key default header on client', () => {
+    const internalKey =
+      process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
+    const axiosHeaders = (client as any).client.defaults.headers;
+    expect(axiosHeaders['x-internal-service-key']).toBe(internalKey);
+  });
 });

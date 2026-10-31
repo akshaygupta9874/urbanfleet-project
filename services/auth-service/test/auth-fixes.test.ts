@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterAll, beforeAll } from 'vitest';
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import http from 'node:http';
 import axios from 'axios';
 import { AuthService } from '../src/services/auth.service.js';
@@ -7,8 +8,18 @@ import { UserService } from '../src/services/user.service.js';
 import { AuthController } from '../src/controllers/auth.controller.js';
 import { createAuthRouter } from '../src/routes/auth.routes.js';
 import { authRedisClient } from '../src/redis/client.js';
+import {
+  clearCookieOptions,
+  clearAuthCookies,
+  getRefreshTokenCookieOptions,
+  setRefreshTokenCookie,
+  REFRESH_TOKEN_COOKIE_MAX_AGE_MS,
+} from '../src/utils/cookie.js';
+import { extractClientMetadata } from '../src/utils/client-metadata.js';
 import { signAccessToken, signRefreshToken, initAsymmetricKeys } from '../src/crypto/keys.js';
-import { authMiddleware } from '../src/middlewares/auth.middleware.js';
+import { authMiddleware, hasRole, requireRole } from '../src/middlewares/auth.middleware.js';
+import { Role } from '../src/db/client.js';
+import { UnauthorizedError } from '@urbanfleet/common';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -25,6 +36,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
 
   beforeAll(async () => {
     app = express();
+    app.use(cookieParser());
     app.use(express.json());
     // Attach error handler so any unhandled errors return JSON
     app.use('/api/auth', (req, res, next) => createAuthRouter(authController)(req, res, next));
@@ -58,6 +70,13 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       create: vi.fn().mockImplementation((d) => Promise.resolve({ id: 'usr-fix-1', ...d, isEmailVerified: false })),
       update: vi.fn().mockImplementation((id, d) => Promise.resolve({ id, ...d })),
       delete: vi.fn().mockResolvedValue({ id: 'usr-fix-1' }),
+      addDriverRole: vi.fn().mockImplementation((id) => Promise.resolve({
+        id,
+        email: 'driver@urbanfleet.com',
+        roles: ['RIDER', 'DRIVER'],
+        firstName: 'Driver',
+        lastName: 'User',
+      })),
     };
 
     mockSessionRepo = {
@@ -67,6 +86,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       updateVersion: vi.fn().mockImplementation((id, version) => Promise.resolve({ id, version, lastActiveAt: new Date() })),
       findByToken: vi.fn(),
       delete: vi.fn().mockResolvedValue({}),
+      deleteByIdAndUserId: vi.fn().mockResolvedValue({ count: 1 }),
       deleteByUserId: vi.fn().mockResolvedValue({}),
     };
 
@@ -491,7 +511,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.success).toBe(true);
-      expect(body.accessToken).toBeDefined();
+      expect(body.accessToken).toBeUndefined(); // Standardized response envelope (no top-level duplication)
       expect(body.data.accessToken).toBeDefined();
       expect(body.data.user.roles).toEqual(['DRIVER']);
       expect(mockUserRepo.create).toHaveBeenCalledWith(
@@ -709,6 +729,744 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const data = await res.json() as any;
       expect(data.status).toBe('UP');
       expect(data.service).toBe('auth-service');
+    });
+  });
+
+  describe('Issue 20: Secure Logout - Never Trust Body-Supplied Session or User Identifiers', () => {
+    it('does NOT revoke another user session when arbitrary sessionId/userId is supplied in body', async () => {
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: 'victim-session-id-1234',
+          userId: 'victim-user-id-5678',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+
+      // Crucial: mockSessionRepo must NOT have been called with the victim's session
+      expect(mockSessionRepo.delete).not.toHaveBeenCalled();
+      expect(mockSessionRepo.deleteByIdAndUserId).not.toHaveBeenCalled();
+    });
+
+    it('revokes the session from the validated refresh token and ignores malicious body-supplied sessionId', async () => {
+      // Create a valid refresh token for legitimate user
+      const legitimateRefreshToken = signRefreshToken({
+        userId: 'legit-user-1',
+        sessionId: 'legit-session-1',
+      });
+
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: `refreshToken=${legitimateRefreshToken}`,
+        },
+        body: JSON.stringify({
+          sessionId: 'maliciously-injected-victim-session-id',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+
+      // Must delete legitimate user's session from the token, NEVER the injected body session
+      expect(mockSessionRepo.deleteByIdAndUserId).toHaveBeenCalledWith('legit-session-1', 'legit-user-1');
+      expect(mockSessionRepo.deleteByIdAndUserId).not.toHaveBeenCalledWith(
+        'maliciously-injected-victim-session-id',
+        expect.anything()
+      );
+    });
+
+    it('revokes the session from a validated refresh token cookie', async () => {
+      const legitRefreshToken = signRefreshToken({
+        userId: 'cookie-user-1',
+        sessionId: 'cookie-session-1',
+      });
+
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': `refreshToken=${legitRefreshToken}`,
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSessionRepo.deleteByIdAndUserId).toHaveBeenCalledWith('cookie-session-1', 'cookie-user-1');
+    });
+  });
+
+  // Issue 21: grantDriverRole Authorization Boundary & Privilege Escalation Prevention
+  describe('Issue 21: grantDriverRole Authorization Boundary & Privilege Escalation Prevention', () => {
+    it('rejects unauthenticated requests without authorization header or internal key with 401', async () => {
+      const res = await fetch(`${baseUrl}/internal/users/target-user-123/driver-role`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      expect(res.status).toBe(401);
+      expect(mockUserRepo.addDriverRole).not.toHaveBeenCalled();
+    });
+
+    it('rejects unauthenticated requests with invalid internal key with 401', async () => {
+      const res = await fetch(`${baseUrl}/internal/users/target-user-123/driver-role`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-service-key': 'wrong-or-malicious-key',
+        },
+      });
+
+      expect(res.status).toBe(401);
+      expect(mockUserRepo.addDriverRole).not.toHaveBeenCalled();
+    });
+
+    it('rejects authenticated non-admin users (e.g. RIDER) with 403 Forbidden', async () => {
+      const riderToken = signAccessToken({
+        userId: 'regular-rider-1',
+        roles: ['RIDER'],
+        email: 'rider@urbanfleet.com',
+      });
+
+      const res = await fetch(`${baseUrl}/internal/users/target-user-123/driver-role`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${riderToken}`,
+        },
+      });
+
+      expect(res.status).toBe(403);
+      expect(mockUserRepo.addDriverRole).not.toHaveBeenCalled();
+    });
+
+    it('allows requests with valid x-internal-service-key (internal driver service)', async () => {
+      const internalKey = process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
+
+      const res = await fetch(`${baseUrl}/internal/users/target-user-123/driver-role`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-service-key': internalKey,
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(mockUserRepo.addDriverRole).toHaveBeenCalledWith('target-user-123');
+    });
+
+    it('allows requests from authenticated ADMIN users', async () => {
+      const adminToken = signAccessToken({
+        userId: 'admin-user-1',
+        roles: ['ADMIN'],
+        email: 'admin@urbanfleet.com',
+      });
+
+      const res = await fetch(`${baseUrl}/internal/users/target-user-123/driver-role`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`,
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(mockUserRepo.addDriverRole).toHaveBeenCalledWith('target-user-123');
+    });
+  });
+
+  // Issue 22: Shared Cookie Clearing with COOKIE_DOMAIN Support
+  describe('Issue 22: Shared Cookie Clearing with COOKIE_DOMAIN Support', () => {
+    const originalCookieDomain = process.env.COOKIE_DOMAIN;
+
+    afterAll(() => {
+      if (originalCookieDomain !== undefined) {
+        process.env.COOKIE_DOMAIN = originalCookieDomain;
+      } else {
+        delete process.env.COOKIE_DOMAIN;
+      }
+    });
+
+    it('clearCookieOptions respects COOKIE_DOMAIN when configured', () => {
+      process.env.COOKIE_DOMAIN = '.urbanfleet.com';
+      const opts = clearCookieOptions();
+      expect(opts.domain).toBe('.urbanfleet.com');
+      expect(opts.path).toBe('/');
+      expect(opts.httpOnly).toBe(true);
+
+      delete process.env.COOKIE_DOMAIN;
+      const optsWithoutDomain = clearCookieOptions();
+      expect(optsWithoutDomain.domain).toBeUndefined();
+    });
+
+    it('clearAuthCookies calls res.clearCookie with configured domain and non-duplicated options', () => {
+      process.env.COOKIE_DOMAIN = '.urbanfleet.com';
+      const mockRes: any = {
+        clearCookie: vi.fn(),
+      };
+
+      clearAuthCookies(mockRes);
+
+      expect(mockRes.clearCookie).toHaveBeenCalledTimes(2);
+      expect(mockRes.clearCookie).toHaveBeenCalledWith(
+        'refreshToken',
+        expect.objectContaining({
+          domain: '.urbanfleet.com',
+          path: '/',
+          httpOnly: true,
+        })
+      );
+      expect(mockRes.clearCookie).toHaveBeenCalledWith(
+        'csrfToken',
+        expect.objectContaining({
+          domain: '.urbanfleet.com',
+          path: '/',
+          httpOnly: false,
+        })
+      );
+    });
+
+    it('POST /logout sets Set-Cookie headers with Domain and without duplication or manual overwrite', async () => {
+      process.env.COOKIE_DOMAIN = '.urbanfleet.com';
+
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(res.status).toBe(200);
+
+      // In Node fetch, getSetCookie() returns all Set-Cookie headers
+      const setCookies = (res.headers as any).getSetCookie
+        ? (res.headers as any).getSetCookie()
+        : [res.headers.get('set-cookie')];
+
+      // Verify domain is present in Set-Cookie headers
+      const refreshCookie = setCookies.find((c: string) => c.startsWith('refreshToken='));
+      const csrfCookie = setCookies.find((c: string) => c.startsWith('csrfToken='));
+
+      expect(refreshCookie).toBeDefined();
+      expect(refreshCookie).toContain('Domain=.urbanfleet.com');
+      expect(refreshCookie).toContain('Path=/');
+      expect(refreshCookie).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+
+      expect(csrfCookie).toBeDefined();
+      expect(csrfCookie).toContain('Domain=.urbanfleet.com');
+      expect(csrfCookie).toContain('Path=/');
+      expect(csrfCookie).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+
+      // Verify no duplicate Set-Cookie headers for the same cookie name
+      const refreshTokenCount = setCookies.filter((c: string) => c.startsWith('refreshToken=')).length;
+      const csrfTokenCount = setCookies.filter((c: string) => c.startsWith('csrfToken=')).length;
+      expect(refreshTokenCount).toBe(1);
+      expect(csrfTokenCount).toBe(1);
+    });
+  });
+
+  // Issue 23: Authoritative Server-Observed Headers/IP Registration Metadata
+  describe('Issue 23: Authoritative Server-Observed Headers/IP Registration Metadata', () => {
+    it('successfully registers when userAgent and ipAddress are omitted from the request body', async () => {
+      mockUserRepo.findByEmail.mockResolvedValue(null);
+
+      const res = await fetch(`${baseUrl}/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) UrbanFleetTestBrowser',
+        },
+        body: JSON.stringify({
+          email: 'no.meta.body@urbanfleet.com',
+          password: 'SecurePassword123!',
+          firstName: 'ServerObserved',
+          lastName: 'Tester',
+          roles: ['RIDER'],
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(mockUserRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+        email: 'no.meta.body@urbanfleet.com',
+        firstName: 'ServerObserved',
+        lastName: 'Tester',
+      }));
+    });
+
+    it('rejects registration when User-Agent header is missing with clear error message', async () => {
+      const res = await fetch(`${baseUrl}/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': '',
+        },
+        body: JSON.stringify({
+          email: 'no.ua.header@urbanfleet.com',
+          password: 'SecurePassword123!',
+          firstName: 'NoUA',
+          lastName: 'Tester',
+          roles: ['RIDER'],
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const data = await res.json() as any;
+      expect(data.error).toBe('User-Agent header and client IP address are required');
+    });
+
+    it('uses server-observed User-Agent and connection IP rather than untrusted body spoofing', async () => {
+      mockUserRepo.findByEmail.mockResolvedValue(null);
+      const registerSpy = vi.spyOn(authService, 'register');
+
+      const res = await fetch(`${baseUrl}/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'AuthoritativeServerUserAgent/2.0',
+        },
+        body: JSON.stringify({
+          email: 'spoofed.meta@urbanfleet.com',
+          password: 'SecurePassword123!',
+          firstName: 'Spoofer',
+          lastName: 'Tester',
+          userAgent: 'MaliciousClientSpoofedUA',
+          ipAddress: '198.51.100.99',
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      expect(registerSpy).toHaveBeenCalledWith(expect.objectContaining({
+        userAgent: 'AuthoritativeServerUserAgent/2.0',
+      }));
+      // Server-observed IP from localhost connection, NOT the spoofed 198.51.100.99
+      const lastCall = registerSpy.mock.calls[registerSpy.mock.calls.length - 1][0];
+      expect(lastCall.ipAddress).not.toBe('198.51.100.99');
+      registerSpy.mockRestore();
+    });
+  });
+
+  // Issue 24: Consistent Registration Response Shape (New Users vs Role-Merge Path)
+  describe('Issue 24: Consistent Registration Response Shape', () => {
+    it('returns consistent data.user shape for new user registrations (201)', async () => {
+      mockUserRepo.findByEmail.mockResolvedValue(null);
+
+      const res = await fetch(`${baseUrl}/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'UrbanFleetTest/1.0',
+        },
+        body: JSON.stringify({
+          email: 'consistent.new@urbanfleet.com',
+          password: 'SecurePassword123!',
+          firstName: 'New',
+          lastName: 'User',
+          roles: ['RIDER'],
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(data.data.user).toBeDefined();
+      expect(data.data.user.id).toBe('usr-fix-1');
+      expect(data.data.user.email).toBe('consistent.new@urbanfleet.com');
+      expect(data.data.user.firstName).toBe('New');
+      expect(data.data.user.lastName).toBe('User');
+      expect(data.data.user.roles).toEqual(['RIDER']);
+      expect(data.data.user.isEmailVerified).toBe(false);
+    });
+
+    it('returns consistent data.user shape (NOT undefined) when existing user merges new role (200)', async () => {
+      const existingUser = {
+        id: 'usr-existing-456',
+        email: 'existing.rider@urbanfleet.com',
+        passwordHash: await authService.hashPassword('ExistingPassword123!'),
+        firstName: 'Existing',
+        lastName: 'Rider',
+        roles: ['RIDER'],
+        isEmailVerified: true,
+      };
+
+      mockUserRepo.findByEmail.mockResolvedValue(existingUser);
+      mockUserRepo.update.mockResolvedValue({
+        ...existingUser,
+        roles: ['RIDER', 'DRIVER'],
+      });
+
+      const res = await fetch(`${baseUrl}/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'UrbanFleetTest/1.0',
+        },
+        body: JSON.stringify({
+          email: 'existing.rider@urbanfleet.com',
+          password: 'ExistingPassword123!',
+          firstName: 'Existing',
+          lastName: 'Rider',
+          roles: ['DRIVER'],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(data.message).toBe('Your account has been updated with the requested role. You can now log in.');
+
+      // Crucial: data.user must NOT be undefined
+      expect(data.data).toBeDefined();
+      expect(data.data.user).toBeDefined();
+      expect(data.data.user.id).toBe('usr-existing-456');
+      expect(data.data.user.email).toBe('existing.rider@urbanfleet.com');
+      expect(data.data.user.roles).toEqual(['RIDER', 'DRIVER']);
+      expect(data.data.user.isEmailVerified).toBe(true);
+    });
+  });
+
+    // Issue 25: Single Source of Truth for Refresh Token (HttpOnly Cookie)
+  describe('Issue 25: Single Source of Truth for Refresh Token Transport', () => {
+    const validRefreshToken = signRefreshToken({
+      userId: 'usr-fix-1',
+      sessionId: 'session-uuid-1',
+    });
+
+    beforeEach(() => {
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'usr-fix-1',
+        email: 'usr@urbanfleet.com',
+        firstName: 'User',
+        lastName: 'One',
+        roles: ['RIDER'],
+      });
+    });
+
+    it('rejects with 401 when refresh token cookie is missing', async () => {
+      const res = await fetch(`${baseUrl}/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(res.status).toBe(401);
+      const data = await res.json() as any;
+      expect(data.error).toBe('Please provide refresh token');
+    });
+
+    it('rejects body-only token submissions when cookie is missing to enforce canonical transport', async () => {
+      const res = await fetch(`${baseUrl}/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: validRefreshToken }),
+      });
+
+      expect(res.status).toBe(401);
+      const data = await res.json() as any;
+      expect(data.error).toBe('Please provide refresh token');
+    });
+
+    it('successfully refreshes token via canonical HttpOnly cookie on /refresh', async () => {
+      const res = await fetch(`${baseUrl}/refresh`, {
+        method: 'POST',
+        headers: {
+          Cookie: `refreshToken=${validRefreshToken}`,
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(data.data.accessToken).toBeDefined();
+      expect(data.data.refreshToken).toBeUndefined(); // Refresh token strictly in cookie, not in body
+      expect(data.data.user).toBeDefined();
+      expect(data.data.csrfToken).toBeDefined();
+
+      const setCookie = res.headers.get('set-cookie');
+      expect(setCookie).toContain('refreshToken=');
+    });
+
+    it('successfully refreshes token via HttpOnly cookie on alias /refresh-token', async () => {
+      const res = await fetch(`${baseUrl}/refresh-token`, {
+        method: 'POST',
+        headers: {
+          Cookie: `refreshToken=${validRefreshToken}`,
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(data.data.accessToken).toBeDefined();
+      expect(data.data.user).toBeDefined();
+      expect(data.data.csrfToken).toBeDefined();
+    });
+  });
+
+  // Issue 26: Consistent Authentication Failure Handling in refreshCSRF
+  describe('Issue 26: Consistent Authentication Failure Handling in refreshCSRF', () => {
+    it('throws UnauthorizedError instead of returning ad-hoc 401 when userId is missing', async () => {
+      const mockReq: any = {
+        userId: undefined,
+        cookies: {},
+        headers: {},
+      };
+      const mockRes: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+        cookie: vi.fn(),
+      };
+      const mockNext = vi.fn();
+
+      // Invoke controller handler directly via asyncHandler
+      await authController.refreshCSRF(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalledTimes(1);
+      const passedError = mockNext.mock.calls[0][0];
+      expect(passedError).toBeInstanceOf(UnauthorizedError);
+      expect(passedError.statusCode).toBe(401);
+      expect(passedError.code).toBe('UNAUTHORIZED');
+      expect(passedError.message).toBe('User unauthenticated');
+      // Must NOT directly call res.status(401)
+      expect(mockRes.status).not.toHaveBeenCalled();
+    });
+
+    it('successfully refreshes CSRF token when authenticated', async () => {
+      const mockReq: any = {
+        userId: 'usr-fix-1',
+        cookies: {},
+        headers: {},
+      };
+      const mockRes: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+        cookie: vi.fn(),
+      };
+      const mockNext = vi.fn();
+
+      await authController.refreshCSRF(mockReq, mockRes, mockNext);
+
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        message: 'CSRF Token Refreshed',
+        data: expect.objectContaining({
+          csrfToken: expect.any(String),
+        }),
+      }));
+    });
+  });
+
+  // Issue 27: Strongly Typed Authorization Logic & Middleware Unification
+  describe('Issue 27: Strongly Typed Authorization Logic & Middleware Unification', () => {
+    it('hasRole correctly checks role membership using Role enum', () => {
+      const riderReq = { roles: ['RIDER'] } as any;
+      const adminReq = { roles: ['RIDER', 'ADMIN'] } as any;
+      const emptyReq = { roles: [] } as any;
+      const noRolesReq = {} as any;
+
+      expect(hasRole(riderReq, Role.RIDER)).toBe(true);
+      expect(hasRole(riderReq, Role.ADMIN)).toBe(false);
+      expect(hasRole(adminReq, Role.ADMIN)).toBe(true);
+      expect(hasRole(adminReq, Role.DRIVER)).toBe(false);
+      expect(hasRole(emptyReq, Role.ADMIN)).toBe(false);
+      expect(hasRole(noRolesReq, Role.ADMIN)).toBe(false);
+    });
+
+    it('requireRole middleware passes for authorized role and rejects unauthorized role with 403', () => {
+      const adminReq = { userId: 'usr-admin-1', roles: ['ADMIN'] } as any;
+      const riderReq = { userId: 'usr-rider-1', roles: ['RIDER'] } as any;
+      const mockRes: any = {};
+      const nextFn = vi.fn();
+
+      const adminGuard = requireRole(Role.ADMIN);
+
+      adminGuard(adminReq, mockRes, nextFn);
+      expect(nextFn).toHaveBeenCalledWith(); // passed without error
+
+      nextFn.mockClear();
+      adminGuard(riderReq, mockRes, nextFn);
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      }));
+    });
+
+    it('allows an ADMIN user to view another user profile via GET /users/:id using hasRole', async () => {
+      const userTarget = {
+        id: 'target-user-profile-id',
+        email: 'target@urbanfleet.com',
+        firstName: 'Target',
+        lastName: 'Person',
+        roles: ['RIDER'],
+        isEmailVerified: true,
+      };
+      mockUserRepo.findById.mockResolvedValue(userTarget);
+
+      const adminToken = signAccessToken({
+        userId: 'admin-caller-id',
+        email: 'admin@urbanfleet.com',
+        firstName: 'Admin',
+        lastName: 'Boss',
+        roles: ['ADMIN'],
+      });
+
+      const res = await fetch(`${baseUrl}/users/${userTarget.id}`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(data.data.id).toBe(userTarget.id);
+      expect(data.data.email).toBe('target@urbanfleet.com');
+    });
+  });
+
+  // Issue 28: Unified Logout Identity Contract & Explicit Policy for Invalid Tokens
+  describe('Issue 28: Unified Logout Identity Contract & Explicit Policy for Invalid Tokens', () => {
+    it('rejects logout with 401 when an invalid/expired refresh token is provided in cookie', async () => {
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: {
+          Cookie: 'refreshToken=invalid.malformed.expired.jwt.token',
+        },
+      });
+
+      expect(res.status).toBe(401);
+      const data = await res.json() as any;
+      expect(data.code).toBe('UNAUTHORIZED');
+      expect(data.error).toBe('Invalid or expired refresh token');
+      expect(mockSessionRepo.deleteByIdAndUserId).not.toHaveBeenCalled();
+    });
+
+    it('guarantees local cookie clearing and returns 200 when no token is supplied', async () => {
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(data.message).toBe('Logged out successfully');
+
+      const setCookie = res.headers.get('set-cookie');
+      expect(setCookie).toContain('refreshToken=;');
+      expect(setCookie).toContain('csrfToken=;');
+      expect(mockSessionRepo.deleteByIdAndUserId).not.toHaveBeenCalled();
+    });
+
+    it('revokes server session and clears cookies when valid refresh token is supplied in cookie', async () => {
+      const legitToken = signRefreshToken({
+        userId: 'usr-logout-cookie-1',
+        sessionId: 'sess-logout-cookie-1',
+      });
+
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: {
+          Cookie: `refreshToken=${legitToken}`,
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(mockSessionRepo.deleteByIdAndUserId).toHaveBeenCalledWith('sess-logout-cookie-1', 'usr-logout-cookie-1');
+    });
+
+    it('ignores untrusted body-supplied tokens when cookie is absent and executes local cleanup', async () => {
+      const legitToken = signRefreshToken({
+        userId: 'usr-logout-body-1',
+        sessionId: 'sess-logout-body-1',
+      });
+
+      const res = await fetch(`${baseUrl}/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: legitToken }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json() as any;
+      expect(data.success).toBe(true);
+      expect(mockSessionRepo.deleteByIdAndUserId).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Issue 29: Low-Priority Redundancies & Clarity Cleanup', () => {
+    it('1. verifies getCsrfCookieOptions is not imported or used in auth.controller.ts', () => {
+      const controllerSource = fs.readFileSync(
+        path.resolve(__dirname, '../src/controllers/auth.controller.ts'),
+        'utf-8'
+      );
+      expect(controllerSource).not.toContain('getCsrfCookieOptions');
+    });
+
+    it('2. verifies setRefreshTokenCookie sets 7-day maxAge and secure HttpOnly cookie', () => {
+      expect(REFRESH_TOKEN_COOKIE_MAX_AGE_MS).toBe(7 * 24 * 60 * 60 * 1000);
+      const opts = getRefreshTokenCookieOptions();
+      expect(opts.maxAge).toBe(7 * 24 * 60 * 60 * 1000);
+      expect(opts.httpOnly).toBe(true);
+      expect(opts.path).toBe('/');
+
+      const mockRes = {
+        cookie: vi.fn(),
+      } as any;
+      setRefreshTokenCookie(mockRes, 'test-refresh-token');
+      expect(mockRes.cookie).toHaveBeenCalledWith('refreshToken', 'test-refresh-token', expect.objectContaining({
+        httpOnly: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+      }));
+    });
+
+    it('3. verifies extractClientMetadata extracts from headers and socket', () => {
+      const mockReq = {
+        headers: {
+          'user-agent': 'Mozilla/5.0 TestBrowser/1.0',
+          'x-forwarded-for': '203.0.113.195',
+        },
+      } as any;
+      const metadata = extractClientMetadata(mockReq);
+      expect(metadata.userAgent).toBe('Mozilla/5.0 TestBrowser/1.0');
+      expect(metadata.ipAddress).toBe('203.0.113.195');
+    });
+
+    it('4. verifies extractClientMetadata throws BadRequestError when required fields are missing', () => {
+      const mockReqMissing = {
+        headers: {},
+      } as any;
+      expect(() => extractClientMetadata(mockReqMissing)).toThrow(
+        'User-Agent header and client IP address are required'
+      );
+    });
+
+    it('5. verifies extractClientMetadata strictly uses server headers and defaults rather than body spoofing', () => {
+      const mockReqFallback = {
+        headers: {},
+        body: {
+          userAgent: 'SpoofedBodyUA/1.0',
+          ipAddress: '198.51.100.1',
+        },
+      } as any;
+      const metadata = extractClientMetadata(mockReqFallback, {
+        required: false,
+      });
+      expect(metadata.userAgent).toBe('UrbanFleet-Web/1.0');
+      expect(metadata.ipAddress).toBe('127.0.0.1');
     });
   });
 });

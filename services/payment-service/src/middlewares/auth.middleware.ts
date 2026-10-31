@@ -5,6 +5,7 @@ import asyncHandler from "./asyncHandler.js";
 import { redisClient } from "../redis/client.js";
 import { prisma } from "../db/client.js";
 import { authClient } from "../clients/auth.client.js";
+import { driverClient } from "../clients/driver.client.js";
 import { createLogger, ServiceUnavailableError } from "@urbanfleet/common";
 
 const logger = createLogger("payment-auth-middleware");
@@ -40,12 +41,12 @@ export const authMiddleware: RequestHandler = asyncHandler(
       return next();
     }
 
-    // 1. Extract Token
-    const cookies = (request as Request).cookies as Record<string, string | undefined> | undefined;
+    // 1. Extract Token strictly from Authorization Bearer header (Single Source of Truth)
+    const authHeader = request.headers.authorization;
     const token =
-      request.headers.authorization?.replace(/^Bearer\s+/i, "") ||
-      cookies?.accessToken ||
-      cookies?.token;
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
 
     if (!token) {
       throw new AppError("You are not authorized to access this resource.", 401, "UNAUTHORIZED");
@@ -157,7 +158,27 @@ export const authMiddleware: RequestHandler = asyncHandler(
     const userRoles = Array.isArray(user.roles) ? user.roles : ["RIDER"];
     request.userId = userId;
     request.roles = userRoles;
-    request.driverId = user.driver?.id || user.driverId;
+    let driverId = user.driver?.id || user.driverId;
+
+    if (!driverId && userRoles.includes("DRIVER")) {
+      try {
+        const driverProfile = await driverClient.getDriverByUserId(userId);
+        if (driverProfile?.id) {
+          driverId = driverProfile.id;
+          if (redisClient.isOpen) {
+            user.driverId = driverId;
+            await redisClient.setEx(`auth:user:${userId}`, 15 * 60, JSON.stringify(user)).catch(() => {});
+          }
+        }
+      } catch (err: unknown) {
+        logger.warn("Failed to resolve driverId from driver-service", {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    request.driverId = driverId;
     request.user = {
       userId,
       email: typeof user.email === "string" ? user.email : (decodedData.email || ""),

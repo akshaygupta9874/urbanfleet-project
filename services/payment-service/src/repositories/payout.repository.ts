@@ -50,7 +50,7 @@ class PayoutRepository {
             data: {
                 driverId: data.driver ? data.driver.toString() : "",
                 paymentId: data.payment ? data.payment.toString() : null,
-                rideId: data.ride ? data.ride.toString() : "",
+                rideId: data.ride ? data.ride.toString() : null,
                 amountPaise: data.amountPaise ?? 0,
                 currency: data.currency ?? "INR",
                 status: (data.status ?? "PENDING") as unknown as Prisma.EnumPayoutStatusFilter["equals"],
