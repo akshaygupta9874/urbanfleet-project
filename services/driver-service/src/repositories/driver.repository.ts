@@ -104,8 +104,8 @@ export class DriverRepository {
             frontImage: doc.frontImage,
             backImage: doc.backImage,
             expiresAt: doc.expiryDate,
-            status: 'PENDING',
-            isVerified: false,
+            status: doc.type === 'BANK_PASSBOOK' ? 'VERIFIED' : 'PENDING',
+            isVerified: doc.type === 'BANK_PASSBOOK' ? true : false,
           })),
         },
       },
@@ -199,8 +199,8 @@ export class DriverRepository {
               frontImage: doc.frontImage,
               backImage: doc.backImage,
               expiresAt: doc.expiryDate,
-              status: 'PENDING',
-              isVerified: false,
+              status: doc.type === 'BANK_PASSBOOK' ? 'VERIFIED' : 'PENDING',
+              isVerified: doc.type === 'BANK_PASSBOOK' ? true : false,
             },
           });
         } else {
@@ -213,8 +213,8 @@ export class DriverRepository {
               frontImage: doc.frontImage,
               backImage: doc.backImage,
               expiresAt: doc.expiryDate,
-              status: 'PENDING',
-              isVerified: false,
+              status: doc.type === 'BANK_PASSBOOK' ? 'VERIFIED' : 'PENDING',
+              isVerified: doc.type === 'BANK_PASSBOOK' ? true : false,
             },
           });
         }

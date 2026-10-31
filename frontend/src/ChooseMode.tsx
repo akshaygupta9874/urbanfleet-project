@@ -143,6 +143,7 @@ export default function ChooseMode() {
   );
   const [bookingError, setBookingError] = useState("");
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [baseTimestamp] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(Boolean(rideData));
   const [isCreatingRide, setIsCreatingRide] = useState(false);
   const [selectedMode, setSelectedMode] = useState<"bike" | "auto" | "car">(
@@ -161,14 +162,14 @@ export default function ChooseMode() {
 
         if (user?.roles?.includes("DRIVER")) {
           const driverRes = await appApi
-            .get<{ success: boolean; data: any }>("/ride/driver/current")
+            .get<{ success: boolean; data: { status?: string; id?: string; driverId?: string } }>("/ride/driver/current")
             .catch(() => null);
           if (cancelled) return;
           const driverRide = driverRes?.data?.data;
           if (
             driverRide &&
             ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"].includes(
-              driverRide.status
+              driverRide.status || ""
             )
           ) {
             navigate("/driver-dashboard", { replace: true });
@@ -178,7 +179,7 @@ export default function ChooseMode() {
 
         if (user?.roles?.includes("RIDER")) {
           const riderRes = await appApi
-            .get<{ success: boolean; data: any }>("/ride/current")
+            .get<{ success: boolean; data: { status?: string; id?: string; riderId?: string } }>("/ride/current")
             .catch(() => null);
           if (cancelled) return;
           const riderRide = riderRes?.data?.data;
@@ -369,7 +370,7 @@ export default function ChooseMode() {
   const activeCalculatedFare = Math.round(baseFareValue * activeModeObj.multiplier);
 
   const estimatedDropoffTime = new Date(
-    Date.now() + (activeModeObj.etaMinutes + durationMinutes) * 60_000
+    baseTimestamp + (activeModeObj.etaMinutes + durationMinutes) * 60_000
   ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -602,7 +603,7 @@ export default function ChooseMode() {
                 const isSelected = selectedMode === mode.id;
                 const calculatedFare = Math.round(baseFareValue * mode.multiplier);
                 const modeDropoff = new Date(
-                  Date.now() + (mode.etaMinutes + durationMinutes) * 60_000
+                  baseTimestamp + (mode.etaMinutes + durationMinutes) * 60_000
                 ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
                 return (

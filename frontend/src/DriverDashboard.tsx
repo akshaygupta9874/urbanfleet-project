@@ -499,7 +499,7 @@ export default function DriverDashboard() {
         window.removeEventListener("popstate", handlePopState);
       };
     }
-  }, [currentRide?.status]);
+  }, [currentRide]);
 
   useEffect(() => {
     // If user is exclusively a rider and not a driver, redirect to rider dashboard
@@ -557,7 +557,7 @@ export default function DriverDashboard() {
       }
     }
     loadProfileAndRide();
-  }, [user?.id, navigate]);
+  }, [user?.id, user?.roles, navigate]);
 
   useEffect(() => {
     const ROUTE_REFRESH_INTERVAL_MS = 10_000;

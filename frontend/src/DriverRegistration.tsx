@@ -215,7 +215,7 @@ export default function DriverRegistration() {
         setForm((prev) => ({ ...prev, accountHolderName: name }));
       }
     }
-  }, [user]);
+  }, [user, form.accountHolderName]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {

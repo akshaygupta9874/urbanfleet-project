@@ -466,8 +466,8 @@ export default function RideDetails() {
           currentUserId &&
           (currentRide.driverId === currentUserId ||
            currentRide.driver?.id === currentUserId ||
-           (currentRide.driver?.user as any)?.id === currentUserId ||
-           (currentRide.driver as any)?.userId === currentUserId)
+           (currentRide.driver?.user as { id?: string } | undefined)?.id === currentUserId ||
+           (currentRide.driver as { userId?: string } | undefined)?.userId === currentUserId)
         );
         if (isDriverOfRide) {
           navigate("/driver-dashboard", { replace: true });
@@ -509,7 +509,7 @@ export default function RideDetails() {
     return () => {
       cancelled = true;
     };
-  }, [rideId]);
+  }, [rideId, navigate, user?.id]);
 
   // Trap browser Back navigation while trip is actively underway
   useEffect(() => {
@@ -528,7 +528,7 @@ export default function RideDetails() {
         window.removeEventListener("popstate", handlePopState);
       };
     }
-  }, [ride?.status]);
+  }, [ride]);
 
   useEffect(() => {
     const s = connectRiderSocket({
@@ -785,7 +785,7 @@ export default function RideDetails() {
   const driverPhoto =
     ride.driver?.profilePhoto ||
     ride.driver?.profilePhotoUrl ||
-    (ride.driver?.user as any)?.avatarUrl ||
+    (ride.driver?.user as { avatarUrl?: string } | undefined)?.avatarUrl ||
     null;
   const driverRating = ride.driver?.rating || 4.9;
   const vehicleBrand = ride.driver?.vehicle?.brand || ride.driver?.vehicle?.make || "";

@@ -134,6 +134,10 @@ export class DocumentService {
     // Check if document already exists for this driver and type (Renewal / Re-upload)
     const existing = await this.docRepo.findByDriverAndType?.(driverProfileId, normalizedType);
 
+    const isPassbook = normalizedType === 'BANK_PASSBOOK';
+    const docStatus = isPassbook ? VerificationStatus.VERIFIED : VerificationStatus.PENDING;
+    const docVerified = isPassbook ? true : false;
+
     let doc: Document;
     if (existing && this.docRepo.update) {
       doc = await this.docRepo.update(existing.id, {
@@ -142,8 +146,8 @@ export class DocumentService {
         backImage: params.backImage || existing.backImage,
         number: number || existing.number,
         expiresAt: expiresAt !== undefined ? expiresAt : existing.expiresAt,
-        status: VerificationStatus.PENDING,
-        isVerified: false,
+        status: docStatus,
+        isVerified: docVerified,
         rejectionReason: null,
       });
     } else {
@@ -155,13 +159,13 @@ export class DocumentService {
         backImage: params.backImage,
         number,
         expiresAt,
-        status: VerificationStatus.PENDING,
-        isVerified: false,
+        status: docStatus,
+        isVerified: docVerified,
       });
     }
 
-    // Synchronize overall driver profile verification state
-    if (this.driverRepo) {
+    // Synchronize overall driver profile verification state only for statutory compliance documents (not passbooks)
+    if (this.driverRepo && !isPassbook) {
       await this.syncDriverVerificationStatus(driverProfileId);
     }
 
@@ -262,8 +266,14 @@ export class DocumentService {
    * Generates a comprehensive verification summary across all 4 required document types.
    */
   async getDocumentSummary(driverProfileId: string): Promise<DriverDocumentSummary> {
-    const docs = await this.getDocumentsByDriverId(driverProfileId);
-    const uploadedTypes = new Set(docs.map((d) => d.type.toUpperCase()));
+    const allDocs = await this.getDocumentsByDriverId(driverProfileId);
+    const uploadedTypes = new Set(allDocs.map((d) => d.type.toUpperCase()));
+
+    // Only the mandatory statutory vehicle & licensing documents require admin verification.
+    // Non-RTO items (like bank passbooks / UPI) do not gate verification status.
+    const docs = allDocs.filter((d) =>
+      REQUIRED_DOCUMENT_TYPES.includes(d.type.toUpperCase() as RequiredDocumentType)
+    );
 
     const missingTypes = REQUIRED_DOCUMENT_TYPES.filter((t) => !uploadedTypes.has(t));
     const expiredTypes = docs.filter((d) => d.isExpired).map((d) => d.type);
@@ -295,7 +305,7 @@ export class DocumentService {
       isFullyUploaded,
       isFullyVerified,
       status,
-      documents: docs,
+      documents: allDocs,
       missingTypes,
       expiredTypes,
       rejectedTypes,
@@ -309,6 +319,25 @@ export class DocumentService {
    */
   async syncDriverVerificationStatus(driverProfileId: string): Promise<VerificationStatus> {
     if (!this.driverRepo) return VerificationStatus.PENDING;
+
+    // If driver is already verified, do NOT demote verification status when banking details/passbooks change
+    const currentDriver = await this.driverRepo.findById(driverProfileId);
+    if (
+      currentDriver?.isVerified &&
+      (currentDriver.verificationStatus === VerificationStatus.VERIFIED ||
+        currentDriver.verificationStatus === 'APPROVED')
+    ) {
+      const summary = await this.getDocumentSummary(driverProfileId);
+      if (summary.rejectedTypes.length > 0 || summary.expiredTypes.length > 0) {
+        await this.driverRepo.update(driverProfileId, {
+          verificationStatus: VerificationStatus.REJECTED,
+          isVerified: false,
+          isAvailable: false,
+        });
+        return VerificationStatus.REJECTED;
+      }
+      return currentDriver.verificationStatus as VerificationStatus;
+    }
 
     const summary = await this.getDocumentSummary(driverProfileId);
 

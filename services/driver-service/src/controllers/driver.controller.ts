@@ -567,6 +567,7 @@ export class DriverController {
       }
     }
 
+    // Direct database update for banking details - DO NOT demote or change driver's verification status
     const updated = await this.driverService.updateBankDetails(userId, {
       accountHolderName,
       accountNumber,
