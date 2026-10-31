@@ -15,6 +15,15 @@ export interface DriverRegistrationResponse {
   verificationStatus: DriverVerificationStatus;
 }
 
+export interface DriverBankDetails {
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName?: string;
+  upiId: string;
+  passbookPhoto?: { url: string; publicId: string } | null;
+}
+
 export interface DriverProfile {
   id: string;
   user: {
@@ -65,7 +74,25 @@ export interface DriverProfile {
       expiryDate: string;
       image: string;
     };
+    aadhar?: {
+      number: string;
+      frontImage: string;
+      backImage?: string;
+      verified: boolean;
+    };
+    passbook?: {
+      number: string;
+      image: string;
+      verified: boolean;
+    };
   };
+  accountHolderName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  bankName?: string;
+  upiId?: string;
+  passbookPhoto?: { url: string; publicId: string } | null;
+  banking?: DriverBankDetails;
   verificationStatus: DriverVerificationStatus;
   isVerified: boolean;
   rating: {
@@ -147,6 +174,41 @@ export async function registerDriver(
 
 export async function fetchDriverProfile(): Promise<DriverProfile> {
   const response = await appApi.get<{ data: DriverProfile }>('/driver/profile');
+  return response.data.data;
+}
+
+export async function updateDriverBankDetails(data: {
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName?: string;
+  upiId: string;
+  passbookPhoto?: File | null;
+}): Promise<DriverBankDetails> {
+  const formData = new FormData();
+  formData.append(
+    "bankDetails",
+    JSON.stringify({
+      accountHolderName: data.accountHolderName,
+      accountNumber: data.accountNumber,
+      ifscCode: data.ifscCode,
+      bankName: data.bankName,
+      upiId: data.upiId,
+    })
+  );
+  if (data.passbookPhoto) {
+    formData.append("passbookPhoto", data.passbookPhoto);
+  }
+
+  const response = await appApi.patch<{ data: DriverBankDetails }>(
+    "/driver/bank-details",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
   return response.data.data;
 }
 

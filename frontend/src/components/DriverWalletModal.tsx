@@ -13,8 +13,10 @@ import {
   ShieldCheck,
   CreditCard,
   Building2,
+  Pencil,
 } from "lucide-react";
 import { appApi } from "../lib/api";
+import { fetchDriverProfile } from "../lib/driverApi";
 
 export interface DriverBalance {
   earnedPaise: number;
@@ -38,15 +40,13 @@ export interface PayoutRecord {
 interface DriverWalletModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenBankDetails?: () => void;
 }
 
 const DISPLAY_FONT = "'Fraunces', Georgia, serif";
 
-export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModalProps) {
+export default function DriverWalletModal({ isOpen, onClose, onOpenBankDetails }: DriverWalletModalProps) {
   const payoutAmountInputId = useId();
-  const upiIdInputId = useId();
-  const accountNumberInputId = useId();
-  const ifscCodeInputId = useId();
 
   const [balance, setBalance] = useState<DriverBalance | null>(null);
   const [payouts, setPayouts] = useState<PayoutRecord[]>([]);
@@ -61,6 +61,8 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
   const [upiId, setUpiId] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [ifscCode, setIfscCode] = useState("");
+  const [accountHolderName, setAccountHolderName] = useState("");
+  const [bankName, setBankName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formatPaise = (paise: number) => {
@@ -74,14 +76,22 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
   const fetchWalletData = async () => {
     try {
       setError("");
-      // Fetch balance and payouts concurrently
-      const [balRes, payoutsRes] = await Promise.all([
+      const [balRes, payoutsRes, profile] = await Promise.all([
         appApi.get<{ success: boolean; data: DriverBalance }>("/payments/payouts/balance"),
         appApi.get<{ success: boolean; data: PayoutRecord[] }>("/payments/payouts"),
+        fetchDriverProfile().catch(() => null),
       ]);
 
       setBalance(balRes.data.data);
       setPayouts(payoutsRes.data.data || []);
+
+      if (profile) {
+        setUpiId(profile.upiId || "");
+        setAccountNumber(profile.accountNumber || "");
+        setIfscCode(profile.ifscCode || "");
+        setAccountHolderName(profile.accountHolderName || "");
+        setBankName(profile.bankName || "");
+      }
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(message || "Failed to load wallet data. Please try again.");
@@ -116,6 +126,16 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
       return;
     }
 
+    if (payoutMode === "UPI" && !upiId.trim()) {
+      setError("No registered UPI ID found. Please update your bank details first.");
+      return;
+    }
+
+    if (payoutMode === "IMPS" && (!accountNumber.trim() || !ifscCode.trim())) {
+      setError("No registered Bank Account/IFSC found. Please update your bank details first.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
     setPayoutSuccessMsg("");
@@ -129,7 +149,6 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
 
       setPayoutSuccessMsg(`Payout of ${formatPaise(amountPaise)} successfully queued for settlement.`);
       setPayoutAmount("");
-      // Refresh wallet & list
       fetchWalletData();
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -148,29 +167,19 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[2.5rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0] via-[#fff4dc] to-[#f7e2b8] shadow-2xl text-[#2e1808]"
+        className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] border border-[#c58a3a]/40 bg-[#fbf6ed] shadow-2xl"
       >
-        {/* Brass Header Rail */}
-        <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-
-        {/* Modal Top Bar */}
-        <div className="flex items-center justify-between border-b border-[#7a4416]/20 px-6 py-4 sm:px-8">
+        {/* Header Bar */}
+        <div className="flex items-center justify-between border-b border-[#7a4416]/20 bg-gradient-to-r from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 py-4 text-[#ffd88a]">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] shadow-md">
-              <Wallet className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#c58a3a]/40 bg-[#2e1808] shadow-inner">
+              <Wallet className="h-5 w-5 text-[#ffd88a]" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold tracking-tight text-[#2e1808]" style={{ fontFamily: DISPLAY_FONT }}>
-                  Driver Ledger Wallet
-                </h2>
-                <span className="rounded-full bg-[#3a1f0a] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#ffd88a]">
-                  Real-time
-                </span>
-              </div>
-              <p className="text-xs text-[#7a4416]">
-                Double-entry ledger audited balances and direct bank payouts
-              </p>
+              <h2 className="text-lg font-black text-white" style={{ fontFamily: DISPLAY_FONT }}>
+                Earnings & Payout Wallet
+              </h2>
+              <p className="text-xs text-[#ffd88a]/80">Settled ride earnings & real-time bank disbursements</p>
             </div>
           </div>
 
@@ -178,23 +187,23 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
             <button
               onClick={handleRefresh}
               disabled={refreshing || loading}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] shadow-sm hover:bg-[#fff4dc] active:scale-95 transition-all disabled:opacity-50"
-              title="Refresh ledger balances"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#c58a3a]/40 bg-[#3a1f0a] text-[#ffd88a] transition hover:bg-[#6b3a12] disabled:opacity-50"
+              title="Refresh ledger"
             >
-              <RefreshCw className={`h-4 w-4 text-[#b8722c] ${refreshing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
             <button
               onClick={onClose}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] shadow-sm hover:bg-[#fff4dc] active:scale-95 transition-all"
-              aria-label="Close"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#c58a3a]/40 bg-[#3a1f0a] text-[#ffd88a] transition hover:bg-rose-900/60"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Scrollable Body */}
-        <div className="overflow-y-auto px-6 py-6 sm:px-8 space-y-6">
+        {/* Scrollable Content */}
+        <div className="flex-1 space-y-6 overflow-y-auto p-6">
+          {/* Error & Success Toasts */}
           {error && (
             <div className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-950/15 p-3.5 text-xs font-semibold text-rose-900 shadow-sm">
               <AlertCircle className="h-4 w-4 shrink-0 text-rose-700" />
@@ -354,51 +363,81 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
                 </div>
               </div>
 
-              {/* Dynamic Account / VPA fields */}
-              {payoutMode === "UPI" ? (
-                <div>
-                  <label htmlFor={upiIdInputId} className="block text-xs font-semibold text-[#7a4416] mb-1">
-                    UPI ID / VPA
-                  </label>
-                  <input
-                    id={upiIdInputId}
-                    type="text"
-                    placeholder="e.g. driver@oksbi or mobile@upi"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    className="w-full rounded-xl border border-[#7a4416]/20 bg-white/90 px-3.5 py-2 text-xs font-medium text-[#2e1808] outline-none focus:border-[#b8722c]"
-                  />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor={accountNumberInputId} className="block text-xs font-semibold text-[#7a4416] mb-1">
-                      Account Number
-                    </label>
-                    <input
-                      id={accountNumberInputId}
-                      type="text"
-                      placeholder="Bank account number"
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value)}
-                      className="w-full rounded-xl border border-[#7a4416]/20 bg-white/90 px-3.5 py-2 text-xs font-medium text-[#2e1808] outline-none focus:border-[#b8722c]"
-                    />
+              {/* Pre-filled Destination Cards (Already Filled, Not Asked) */}
+              <div>
+                <label className="block text-xs font-semibold text-[#7a4416] mb-1.5">
+                  Payout Destination (Pre-configured)
+                </label>
+                {payoutMode === "UPI" ? (
+                  <div className="flex items-center justify-between rounded-xl border border-[#c58a3a]/30 bg-[#fffdf9] p-3.5 shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a]">
+                        <CreditCard className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[#2e1808]">
+                            {upiId ? upiId : "No UPI ID registered"}
+                          </span>
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                            <CheckCircle2 className="h-3 w-3" /> Auto-filled
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-medium text-[#7a4416]">Instant transfer to your registered UPI VPA</p>
+                      </div>
+                    </div>
+                    {onOpenBankDetails && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenBankDetails();
+                        }}
+                        className="flex items-center gap-1 rounded-lg border border-[#7a4416]/20 bg-[#fffaf0] px-2.5 py-1 text-xs font-bold text-[#6b3a12] transition hover:bg-[#fff4dc]"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Edit
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <label htmlFor={ifscCodeInputId} className="block text-xs font-semibold text-[#7a4416] mb-1">
-                      IFSC Code
-                    </label>
-                    <input
-                      id={ifscCodeInputId}
-                      type="text"
-                      placeholder="e.g. SBIN0001234"
-                      value={ifscCode}
-                      onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
-                      className="w-full rounded-xl border border-[#7a4416]/20 bg-white/90 px-3.5 py-2 text-xs font-medium text-[#2e1808] outline-none focus:border-[#b8722c]"
-                    />
+                ) : (
+                  <div className="flex items-center justify-between rounded-xl border border-[#c58a3a]/30 bg-[#fffdf9] p-3.5 shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a]">
+                        <Building2 className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[#2e1808]">
+                            {accountNumber
+                              ? `${bankName ? bankName + " • " : ""}A/C: •••• ${accountNumber.slice(-4)}`
+                              : "No Bank Account registered"}
+                          </span>
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                            <CheckCircle2 className="h-3 w-3" /> Auto-filled
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-medium text-[#7a4416]">
+                          IFSC: {ifscCode || "N/A"} • Holder: {accountHolderName || "Driver"}
+                        </p>
+                      </div>
+                    </div>
+                    {onOpenBankDetails && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenBankDetails();
+                        }}
+                        className="flex items-center gap-1 rounded-lg border border-[#7a4416]/20 bg-[#fffaf0] px-2.5 py-1 text-xs font-bold text-[#6b3a12] transition hover:bg-[#fff4dc]"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Edit
+                      </button>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               <button
                 type="submit"
@@ -408,58 +447,75 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
                 {isSubmitting ? (
                   <>
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    Processing Payout…
+                    <span>Initiating Transfer...</span>
                   </>
                 ) : (
                   <>
-                    <Send className="h-3.5 w-3.5" />
-                    Initiate Payout
+                    <Send className="h-4 w-4" />
+                    <span>Disburse Payout Now</span>
                   </>
                 )}
               </button>
             </form>
           </section>
 
-          {/* Payout History Section */}
+          {/* Recent Payouts Audit Trail */}
           <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-[#2e1808]">Recent Settlements & Status</h3>
-              <span className="text-xs font-semibold text-[#7a4416]">
-                {payouts.length} {payouts.length === 1 ? "record" : "records"}
-              </span>
-            </div>
+            <h3 className="font-bold text-xs uppercase tracking-wider text-[#7a4416]">
+              Disbursement History
+            </h3>
 
             {payouts.length === 0 ? (
-              <div className="rounded-2xl border border-[#7a4416]/15 bg-[#fffaf0]/60 p-6 text-center text-xs font-medium text-[#7a4416]">
-                No payout transactions recorded yet. Your earnings accumulate in the ledger upon trip completion.
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#7a4416]/25 bg-white/40 py-8 text-center text-[#7a4416]">
+                <Clock className="h-8 w-8 text-[#b8722c]/50 mb-2" />
+                <p className="text-xs font-bold">No payouts recorded yet</p>
+                <p className="text-[11px] text-[#7a4416]/75">When you withdraw earnings, settled disbursements will appear here.</p>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {payouts.map((payout) => {
-                  const statusColors: Record<string, string> = {
-                    PROCESSED: "bg-emerald-500/15 text-emerald-900 border-emerald-500/30",
-                    PROCESSING: "bg-amber-500/15 text-amber-900 border-amber-500/30",
-                    PENDING: "bg-amber-500/15 text-amber-900 border-amber-500/30",
-                    FAILED: "bg-rose-500/15 text-rose-900 border-rose-500/30",
-                    REVERSED: "bg-rose-500/15 text-rose-900 border-rose-500/30",
-                  };
+              <div className="space-y-2">
+                {payouts.map((p) => {
+                  const isSuccess = p.status === "PROCESSED";
+                  const isPending = p.status === "PENDING" || p.status === "PROCESSING";
+                  const isReversed = p.status === "REVERSED";
 
                   return (
                     <div
-                      key={payout.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-[#7a4416]/15 bg-[#fffaf0] p-3.5 shadow-xs transition hover:border-[#b8722c]/50"
+                      key={p.id}
+                      className="flex items-center justify-between rounded-xl border border-[#7a4416]/15 bg-white/80 p-3.5 shadow-2xs transition hover:bg-white"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#3a1f0a] text-[#ffd88a]">
-                          <IndianRupee className="h-4 w-4" />
+                        <div
+                          className={`flex h-9 w-9 items-center justify-center rounded-xl font-bold text-xs ${
+                            isSuccess
+                              ? "bg-emerald-950/15 text-emerald-800"
+                              : isPending
+                              ? "bg-amber-950/15 text-amber-800"
+                              : isReversed
+                              ? "bg-blue-950/15 text-blue-800"
+                              : "bg-rose-950/15 text-rose-800"
+                          }`}
+                        >
+                          {p.mode === "UPI" ? <CreditCard className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-[#2e1808]">
-                            Payout via {payout.mode || "IMPS"}
-                          </p>
-                          <p className="text-[11px] text-[#7a4416]">
-                            Ref: UF-{payout.id.slice(-8).toUpperCase()} •{" "}
-                            {new Date(payout.createdAt).toLocaleDateString("en-IN", {
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-[#2e1808]">{formatPaise(p.amountPaise)}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                isSuccess
+                                  ? "bg-emerald-500/15 text-emerald-800"
+                                  : isPending
+                                  ? "bg-amber-500/15 text-amber-800"
+                                  : isReversed
+                                  ? "bg-blue-500/15 text-blue-800"
+                                  : "bg-rose-500/15 text-rose-800"
+                              }`}
+                            >
+                              {p.status}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#7a4416]/75">
+                            {new Date(p.createdAt).toLocaleDateString("en-IN", {
                               day: "numeric",
                               month: "short",
                               year: "numeric",
@@ -469,19 +525,9 @@ export default function DriverWalletModal({ isOpen, onClose }: DriverWalletModal
                           </p>
                         </div>
                       </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-3">
-                        <span className="text-sm font-black text-[#2e1808]">
-                          {formatPaise(payout.amountPaise)}
-                        </span>
-                        <span
-                          className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                            statusColors[payout.status] || "bg-stone-500/10 text-stone-700 border-stone-500/20"
-                          }`}
-                        >
-                          {payout.status}
-                        </span>
-                      </div>
+                      <span className="text-xs font-mono font-medium text-[#7a4416]">
+                        {p.mode}
+                      </span>
                     </div>
                   );
                 })}

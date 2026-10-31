@@ -666,12 +666,12 @@ export default function RideDetails() {
     ride.paymentStatus === "PENDING" ||
     ride.paymentStatus === "AUTHORIZED";
 
-  const driverFirstName = ride.driver?.firstName || "Assigned Captain";
+  const driverFirstName = ride.driver?.firstName || (ride.driver ? "Captain" : "Not Assigned");
   const driverLastName = ride.driver?.lastName || "";
   const vehicleNo =
     ride.driver?.vehicleNumber ||
     ride.driver?.vehicle?.registrationNumber ||
-    "KA-01-UF-1001";
+    "Not Assigned";
   const driverEmail = ride.driver?.user?.email || ride.driver?.email || "";
 
   const activeFareValue = ride.fare.final ?? ride.fare.estimated ?? 0;

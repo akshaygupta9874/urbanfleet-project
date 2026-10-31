@@ -68,7 +68,13 @@ export default function RiderHistoryPanel({
   }, []);
 
   useEffect(() => {
-    void fetchHistory();
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) void fetchHistory();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [fetchHistory]);
 
   const filteredRides = rides.filter((r) => filter === "ALL" || r.status === filter);
@@ -234,12 +240,12 @@ export default function RiderHistoryPanel({
                         #{ride.id.slice(-6)}
                       </span>
                       <span className="text-[11px] font-medium text-[#6b3a12]">
-                        {new Date(ride.createdAt || Date.now()).toLocaleDateString("en-IN", {
+                        {ride.createdAt ? new Date(ride.createdAt).toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
                           hour: "2-digit",
                           minute: "2-digit",
-                        })}
+                        }) : "—"}
                       </span>
                     </div>
 

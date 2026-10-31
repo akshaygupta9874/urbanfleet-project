@@ -17,6 +17,8 @@ import {
   Leaf,
   Upload,
   Pencil,
+  Building2,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";
@@ -51,100 +53,25 @@ type FormState = {
   insuranceImage: File | null;
   pollutionExpiry: string;
   pollutionImage: File | null;
+  aadharNumber: string;
+  aadharFront: File | null;
+  aadharBack: File | null;
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName: string;
+  upiId: string;
+  passbookPhoto: File | null;
 };
 
 const STEPS: { key: string; title: string; icon: LucideIcon }[] = [
   { key: "profile", title: "Profile", icon: User },
   { key: "vehicle", title: "Vehicle", icon: Car },
   { key: "photos", title: "Vehicle photos", icon: Camera },
-  { key: "documents", title: "Documents", icon: FileText },
+  { key: "documents", title: "Documents & KYC", icon: FileText },
+  { key: "banking", title: "Banking & Payouts", icon: Building2 },
   { key: "review", title: "Review", icon: ClipboardCheck },
 ];
-
-function createDefaultMockImage(name: string, label: string): File {
-  const cleanName = name.endsWith(".jpeg") || name.endsWith(".jpg") ? name : `${name}.jpeg`;
-  if (typeof document !== "undefined") {
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = 800;
-      canvas.height = 500;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        const bgGrad = ctx.createLinearGradient(0, 0, 800, 500);
-        bgGrad.addColorStop(0, "#1a1612");
-        bgGrad.addColorStop(0.5, "#2d1b0d");
-        bgGrad.addColorStop(1, "#120904");
-        ctx.fillStyle = bgGrad;
-        ctx.fillRect(0, 0, 800, 500);
-
-        ctx.strokeStyle = "#c58a3a";
-        ctx.lineWidth = 4;
-        ctx.strokeRect(20, 20, 760, 460);
-
-        ctx.strokeStyle = "#ffd88a";
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([8, 6]);
-        ctx.strokeRect(30, 30, 740, 440);
-        ctx.setLineDash([]);
-
-        ctx.beginPath();
-        ctx.arc(400, 160, 55, 0, Math.PI * 2);
-        ctx.fillStyle = "#3a1f0a";
-        ctx.fill();
-        ctx.strokeStyle = "#ffd88a";
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(380, 160);
-        ctx.lineTo(395, 175);
-        ctx.lineTo(425, 145);
-        ctx.strokeStyle = "#ffd88a";
-        ctx.lineWidth = 5;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.stroke();
-
-        ctx.fillStyle = "#ffe9be";
-        ctx.font = "bold 26px 'Fraunces', Georgia, serif";
-        ctx.textAlign = "center";
-        ctx.fillText("URBANFLEET OFFICIAL VERIFICATION", 400, 260);
-
-        ctx.fillStyle = "#ffd88a";
-        ctx.font = "600 18px 'Inter', sans-serif";
-        ctx.fillText(label.toUpperCase(), 400, 300);
-
-        ctx.fillStyle = "#a87132";
-        ctx.font = "bold 13px monospace";
-        ctx.fillText(`DOC-REF: UF-${Math.floor(100000 + Math.random() * 900000)} | IND-COMPLIANT`, 400, 340);
-
-        ctx.fillStyle = "#ffffff44";
-        ctx.font = "11px sans-serif";
-        ctx.fillText(`TIMESTAMP: ${new Date().toISOString()}`, 400, 430);
-
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-        const byteString = atob(dataUrl.split(",")[1]);
-        const mimeString = dataUrl.split(",")[0].split(":")[1].split(";")[0];
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-          ia[i] = byteString.charCodeAt(i);
-        }
-        const blob = new Blob([ab], { type: mimeString });
-        return new File([blob], cleanName, { type: "image/jpeg" });
-      }
-    } catch {
-      // Fallback below
-    }
-  }
-
-  const binaryJfifHeader = new Uint8Array([
-    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48,
-    0x00, 0x48, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,
-    0xff, 0xd9,
-  ]);
-  return new File([binaryJfifHeader], cleanName, { type: "image/jpeg" });
-}
 
 
 export default function DriverRegistration() {
@@ -155,33 +82,42 @@ export default function DriverRegistration() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [furthestStep, setFurthestStep] = useState(4);
+  const [furthestStep, setFurthestStep] = useState(0);
   const [referenceCode] = useState(() => `NV-${Date.now().toString().slice(-6)}`);
 
   const [form, setForm] = useState<FormState>(() => ({
-    profilePhoto: createDefaultMockImage("driver-profile.jpeg", "Official Driver Profile Photo"),
-    vehicleFront: createDefaultMockImage("vehicle-front.jpeg", "Vehicle Front Elevation View"),
-    vehicleBack: createDefaultMockImage("vehicle-back.jpeg", "Vehicle Rear & Plate View"),
-    vehicleLeft: createDefaultMockImage("vehicle-left.jpeg", "Vehicle Left Side Profile"),
-    vehicleRight: createDefaultMockImage("vehicle-right.jpeg", "Vehicle Right Side Profile"),
-    vehicleInterior: createDefaultMockImage("vehicle-interior.jpeg", "Cabin & Dashboard Interior"),
+    profilePhoto: null,
+    vehicleFront: null,
+    vehicleBack: null,
+    vehicleLeft: null,
+    vehicleRight: null,
+    vehicleInterior: null,
     vehicleType: "CAR",
-    vehicleBrand: "Toyota",
-    vehicleModel: "Innova Crysta Luxury",
-    vehicleColor: "Pearl White",
-    registrationNumber: "KA-01-MJ-5521",
-    registrationYear: 2023,
-    licenseNumber: "DL-1420110012345",
-    licenseExpiry: "2032-12-31",
-    licenseFront: createDefaultMockImage("license-front.jpeg", "Driving License Front View"),
-    licenseBack: createDefaultMockImage("license-back.jpeg", "Driving License Back View"),
-    registrationCertificateNumber: "RC-KA01MJ5521-IND",
-    registrationCertificateImage: createDefaultMockImage("rc-certificate.jpeg", "RC Smart Card Certificate"),
-    insuranceNumber: "POL-BAJAJ-8829102",
-    insuranceExpiry: "2027-06-30",
-    insuranceImage: createDefaultMockImage("insurance-doc.jpeg", "Comprehensive Commercial Cover"),
-    pollutionExpiry: "2026-12-31",
-    pollutionImage: createDefaultMockImage("puc-doc.jpeg", "Pollution Under Control (PUC)"),
+    vehicleBrand: "",
+    vehicleModel: "",
+    vehicleColor: "",
+    registrationNumber: "",
+    registrationYear: new Date().getFullYear(),
+    licenseNumber: "",
+    licenseExpiry: "",
+    licenseFront: null,
+    licenseBack: null,
+    registrationCertificateNumber: "",
+    registrationCertificateImage: null,
+    insuranceNumber: "",
+    insuranceExpiry: "",
+    insuranceImage: null,
+    pollutionExpiry: "",
+    pollutionImage: null,
+    aadharNumber: "",
+    aadharFront: null,
+    aadharBack: null,
+    accountHolderName: "",
+    accountNumber: "",
+    ifscCode: "",
+    bankName: "",
+    upiId: "",
+    passbookPhoto: null,
   }));
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -231,9 +167,20 @@ export default function DriverRegistration() {
           form.insuranceExpiry &&
           form.insuranceImage &&
           form.pollutionExpiry &&
-          form.pollutionImage
+          form.pollutionImage &&
+          form.aadharNumber.trim() &&
+          form.aadharFront &&
+          form.aadharBack
         );
       case 4:
+        return !!(
+          form.accountHolderName.trim() &&
+          form.accountNumber.trim() &&
+          form.ifscCode.trim() &&
+          form.upiId.trim() &&
+          form.passbookPhoto
+        );
+      case 5:
         return true;
       default:
         return false;
@@ -279,6 +226,17 @@ export default function DriverRegistration() {
     );
 
     formData.append(
+      "banking",
+      JSON.stringify({
+        accountHolderName: form.accountHolderName,
+        accountNumber: form.accountNumber,
+        ifscCode: form.ifscCode,
+        bankName: form.bankName,
+        upiId: form.upiId,
+      })
+    );
+
+    formData.append(
       "documents",
       JSON.stringify({
         drivingLicense: {
@@ -295,6 +253,9 @@ export default function DriverRegistration() {
         pollutionCertificate: {
           expiryDate: form.pollutionExpiry,
         },
+        aadhar: {
+          number: form.aadharNumber,
+        },
       })
     );
 
@@ -310,11 +271,15 @@ export default function DriverRegistration() {
       formData.append("registrationCertificate", form.registrationCertificateImage);
     if (form.insuranceImage) formData.append("insurance", form.insuranceImage);
     if (form.pollutionImage) formData.append("pollutionCertificate", form.pollutionImage);
+    if (form.aadharFront) formData.append("aadharFront", form.aadharFront);
+    if (form.aadharBack) formData.append("aadharBack", form.aadharBack);
+    if (form.passbookPhoto) formData.append("passbookPhoto", form.passbookPhoto);
 
     setSubmitting(true);
 
     try {
       await registerDriver(formData);
+      sessionStorage.setItem("isDriverVerified", "false");
 
       setStatus("Application submitted successfully. Redirecting to dashboard...");
 
@@ -344,6 +309,7 @@ export default function DriverRegistration() {
     Boolean(form.registrationCertificateNumber && form.registrationCertificateImage),
     Boolean(form.insuranceNumber && form.insuranceExpiry && form.insuranceImage),
     Boolean(form.pollutionExpiry && form.pollutionImage),
+    Boolean(form.aadharNumber && form.aadharFront && form.aadharBack),
   ].filter(Boolean).length;
 
   return (
@@ -714,11 +680,107 @@ export default function DriverRegistration() {
                           required
                         />
                       </DocumentCard>
+
+                      <DocumentCard
+                        icon={IdCard}
+                        title="Aadhaar card (KYC)"
+                        complete={Boolean(form.aadharNumber && form.aadharFront && form.aadharBack)}
+                      >
+                        <Field
+                          label="Aadhaar number"
+                          value={form.aadharNumber}
+                          onChange={(v) => updateField("aadharNumber", v)}
+                          placeholder="12-digit Aadhaar number"
+                          required
+                        />
+                        <FileField
+                          label="Aadhaar front image"
+                          file={form.aadharFront}
+                          onChange={(f) => updateField("aadharFront", f)}
+                          required
+                        />
+                        <FileField
+                          label="Aadhaar back image"
+                          file={form.aadharBack}
+                          onChange={(f) => updateField("aadharBack", f)}
+                          required
+                        />
+                      </DocumentCard>
                     </div>
                   </div>
                 )}
 
                 {currentStep === 4 && (
+                  <div>
+                    <StepHeader
+                      icon={Building2}
+                      title="Banking & Payouts"
+                      description="Direct deposit details and UPI ID for instant ride earnings disbursement."
+                    />
+                    <div className="space-y-6">
+                      <DocumentCard
+                        icon={Building2}
+                        title="Bank account details"
+                        complete={Boolean(
+                          form.accountHolderName &&
+                            form.accountNumber &&
+                            form.ifscCode &&
+                            form.passbookPhoto
+                        )}
+                      >
+                        <Field
+                          label="Account holder name"
+                          value={form.accountHolderName}
+                          onChange={(v) => updateField("accountHolderName", v)}
+                          placeholder="Name as per bank records"
+                          required
+                        />
+                        <Field
+                          label="Account number"
+                          value={form.accountNumber}
+                          onChange={(v) => updateField("accountNumber", v)}
+                          placeholder="Bank account number"
+                          required
+                        />
+                        <Field
+                          label="IFSC code"
+                          value={form.ifscCode}
+                          onChange={(v) => updateField("ifscCode", v.toUpperCase())}
+                          placeholder="e.g. SBIN0001234"
+                          required
+                        />
+                        <Field
+                          label="Bank name"
+                          value={form.bankName}
+                          onChange={(v) => updateField("bankName", v)}
+                          placeholder="e.g. State Bank of India, HDFC"
+                        />
+                        <FileField
+                          label="Bank passbook / cancelled cheque photo"
+                          file={form.passbookPhoto}
+                          onChange={(f) => updateField("passbookPhoto", f)}
+                          required
+                        />
+                      </DocumentCard>
+
+                      <DocumentCard
+                        icon={CreditCard}
+                        title="Instant UPI transfer"
+                        complete={Boolean(form.upiId)}
+                      >
+                        <Field
+                          label="UPI ID / VPA"
+                          value={form.upiId}
+                          onChange={(v) => updateField("upiId", v)}
+                          placeholder="e.g. driver@oksbi, mobile@upi"
+                          required
+                        />
+                      </DocumentCard>
+                    </div>
+                  </div>
+                )}
+
+                {currentStep === 5 && (
                   <div>
                     <StepHeader
                       icon={ClipboardCheck}
@@ -744,14 +806,19 @@ export default function DriverRegistration() {
                         onEdit={() => goToStep(2)}
                       />
                       <ReviewRow
-                        title="Documents"
-                        value={`${documentsComplete} of 4 documents complete`}
+                        title="Documents & KYC"
+                        value={`${documentsComplete} of 5 documents complete`}
                         onEdit={() => goToStep(3)}
+                      />
+                      <ReviewRow
+                        title="Banking & UPI"
+                        value={`${form.bankName ? form.bankName + " " : ""}A/C: •••• ${form.accountNumber.slice(-4) || "—"} · UPI: ${form.upiId || "—"}`}
+                        onEdit={() => goToStep(4)}
                       />
                     </div>
                     <p className="mt-6 text-sm font-medium text-[#6b3a12]">
-                      Once approved, you'll be able to access your driver dashboard and
-                      receive ride requests.
+                      Once approved by the admin, you'll be able to access your driver dashboard, receive ride requests,
+                      and withdraw earnings instantly to your bank or UPI.
                     </p>
                   </div>
                 )}

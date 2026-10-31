@@ -37,6 +37,7 @@ import {
   Trash2,
   RefreshCw,
   Sparkles,
+  Building2,
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";
 import MapView from "./components/MapView";
@@ -47,6 +48,7 @@ import { fetchDriverProfile, fetchDriverRideHistory, isDriverApproved, type Driv
 import { sessionApi, type DeviceSession } from "./lib/sessionApi";
 import DriverCTA from "./components/DriverCTA";
 import DriverWalletModal from "./components/DriverWalletModal";
+import DriverBankDetailsModal from "./components/DriverBankDetailsModal";
 import { useAuthContext } from "./context/auth-context";
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
@@ -93,6 +95,12 @@ interface DriverProfileData {
   averageRating?: number;
   totalEarningsPaise?: number;
   lastOnlineAt?: string;
+  accountHolderName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  bankName?: string;
+  upiId?: string;
+  passbookPhoto?: { url: string; publicId: string } | null;
 }
 
 const DriverEvents = {
@@ -349,6 +357,7 @@ export default function DriverDashboard() {
   const [currentTime] = useState(() => Date.now());
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [isBankDetailsOpen, setIsBankDetailsOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [tripOtp, setTripOtp] = useState("");
   const [isStartingRide, setIsStartingRide] = useState(false);
@@ -420,16 +429,20 @@ export default function DriverDashboard() {
   };
 
   useEffect(() => {
+    let cancelled = false;
     if (activeTab === "history") {
-      void loadDriverHistory();
+      void Promise.resolve().then(() => {
+        if (!cancelled) void loadDriverHistory();
+      });
     } else if (activeTab === "sessions") {
-      void loadDriverSessions();
+      void Promise.resolve().then(() => {
+        if (!cancelled) void loadDriverSessions();
+      });
     }
+    return () => {
+      cancelled = true;
+    };
   }, [activeTab, loadDriverHistory, loadDriverSessions]);
-
-  useEffect(() => {
-    void loadDriverHistory();
-  }, [loadDriverHistory]);
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -1202,13 +1215,13 @@ export default function DriverDashboard() {
 
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#fffaf0] border border-[#7a4416]/20 px-2.5 py-1 font-bold text-[#2e1808] shadow-2xs">
                     <VehicleIcon className="h-3.5 w-3.5 text-[#b8722c]" />
-                    {profile?.vehicle?.brand || "Toyota"} {profile?.vehicle?.model || "Innova"}
+                    {profile?.vehicle ? `${profile.vehicle.brand} ${profile.vehicle.model}` : "No Vehicle Assigned"}
                   </span>
 
                   {/* High-Contrast Number Plate Pill */}
                   <span className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#3a1f0a] bg-[#ffd88a] px-2.5 py-0.5 console-readout text-xs font-extrabold tracking-wider text-[#2e1808] shadow-xs">
                     <span className="text-[9px] font-black text-[#7a4416]">IND</span>
-                    {profile?.vehicle?.registrationNumber || "KA-01-UF-1001"}
+                    {profile?.vehicle?.registrationNumber || "NOT ASSIGNED"}
                   </span>
                 </div>
               </div>
@@ -2285,10 +2298,11 @@ export default function DriverDashboard() {
             </div>
 
             {/* Interactive Quick Shortcut Hub */}
-            <section className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <section className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               {[
                 { label: "Ride History", sub: "Past trips & audit logs", icon: History, onClick: () => setActiveTab("history") },
                 { label: "Earnings Wallet", sub: "Balance & instant payouts", icon: Wallet, onClick: () => setIsWalletOpen(true) },
+                { label: "Bank & UPI", sub: "Update payout & passbook", icon: Building2, onClick: () => setIsBankDetailsOpen(true) },
                 { label: "Vehicle Specs", sub: "Photos & RTO credentials", icon: Car, onClick: () => setActiveTab("vehicle") },
                 { label: "Account Security", sub: "Active device sessions", icon: Settings, onClick: () => setActiveTab("sessions") },
               ].map((action) => (
@@ -2348,28 +2362,28 @@ export default function DriverDashboard() {
                   },
                   {
                     label: "Make & Model",
-                    value: `${profile?.vehicle?.brand || "Toyota"} ${profile?.vehicle?.model || "Innova Crysta"}`,
+                    value: profile?.vehicle ? `${profile.vehicle.brand} ${profile.vehicle.model}` : "Not assigned",
                     icon: Car,
                     sub: "Fleet Specification",
                     mono: false,
                   },
                   {
                     label: "Registration No.",
-                    value: profile?.vehicle?.registrationNumber || "MH-02-UF-2026",
+                    value: profile?.vehicle?.registrationNumber || "Not assigned",
                     icon: FileText,
                     sub: "State RTO Registered",
                     mono: true,
                   },
                   {
                     label: "Vehicle Color",
-                    value: profile?.vehicle?.color || "Pearl White",
+                    value: profile?.vehicle?.color || "Not assigned",
                     icon: Palette,
                     sub: "Exterior Finish",
                     mono: false,
                   },
                   {
                     label: "Model Year",
-                    value: String(profile?.vehicle?.registrationYear || 2024),
+                    value: profile?.vehicle?.registrationYear ? String(profile.vehicle.registrationYear) : "Not assigned",
                     icon: Calendar,
                     sub: "Manufacturing Year",
                     mono: false,
@@ -2532,7 +2546,7 @@ export default function DriverDashboard() {
                             {(dl?.verified ?? true) ? "Verified" : "Pending"}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">{dl?.number || "DL-9876543210"}</p>
+                        <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">{dl?.number || "Not uploaded"}</p>
                         <p className={`mt-1 text-xs console-readout font-medium ${expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"}`}>
                           Expires {dlExpiry.toLocaleDateString()}
                           {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
@@ -2581,7 +2595,7 @@ export default function DriverDashboard() {
                           </span>
                         </div>
                         <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">
-                          {rc?.number || profile?.vehicle?.registrationNumber || "MH-02-UF-2026"}
+                          {rc?.number || profile?.vehicle?.registrationNumber || "Not uploaded"}
                         </p>
                         <p className="mt-1 text-xs console-readout font-medium text-[#6b3a12]">
                           State Transport Dept • Lifetime
@@ -2621,7 +2635,7 @@ export default function DriverDashboard() {
                             {(ins?.verified ?? true) ? "Active" : "Pending"}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">{ins?.number || "INS-9823410"}</p>
+                        <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">{ins?.number || "Not uploaded"}</p>
                         <p className={`mt-1 text-xs console-readout font-medium ${expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"}`}>
                           Expires {insExpiry.toLocaleDateString()}
                           {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
@@ -2661,7 +2675,7 @@ export default function DriverDashboard() {
                             Compliant
                           </span>
                         </div>
-                        <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">PUC-GREEN-EMISSION</p>
+                        <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">{puc ? "PUC Compliant" : "Not uploaded"}</p>
                         <p className={`mt-1 text-xs console-readout font-medium ${expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"}`}>
                           Valid until {pucExpiry.toLocaleDateString()}
                           {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
@@ -2735,6 +2749,27 @@ export default function DriverDashboard() {
       <DriverWalletModal
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
+        onOpenBankDetails={() => setIsBankDetailsOpen(true)}
+      />
+      <DriverBankDetailsModal
+        isOpen={isBankDetailsOpen}
+        onClose={() => setIsBankDetailsOpen(false)}
+        onUpdated={async () => {
+          try {
+            const updated = await fetchDriverProfile();
+            setProfile(updated);
+          } catch (e) {
+            console.error("Failed to refresh profile", e);
+          }
+        }}
+        initialData={{
+          accountHolderName: profile?.accountHolderName,
+          accountNumber: profile?.accountNumber,
+          ifscCode: profile?.ifscCode,
+          bankName: profile?.bankName,
+          upiId: profile?.upiId,
+          passbookPhoto: profile?.passbookPhoto,
+        }}
       />
     </div>
   );

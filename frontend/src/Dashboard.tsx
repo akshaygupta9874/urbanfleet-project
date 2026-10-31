@@ -79,11 +79,11 @@ export default function Dashboard() {
       prefillPickup?: string;
       prefillDestination?: string;
     } | null;
-    if (state?.prefillPickup) {
-      setPickup(state.prefillPickup);
-    }
-    if (state?.prefillDestination) {
-      setDestination(state.prefillDestination);
+    if (state?.prefillPickup || state?.prefillDestination) {
+      queueMicrotask(() => {
+        if (state.prefillPickup) setPickup(state.prefillPickup);
+        if (state.prefillDestination) setDestination(state.prefillDestination);
+      });
     }
   }, [location.state]);
 
