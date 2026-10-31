@@ -109,14 +109,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4001
-      DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e-pooler.c-6.us-east-2.aws.neon.tech/urbanfleet_auth?sslmode=require&connect_timeout=15}
-      DIRECT_DATABASE_URL: ${AUTH_DIRECT_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e.c-6.us-east-2.aws.neon.tech/urbanfleet_auth?sslmode=require&connect_timeout=15}
-      REDIS_URL: ${REDIS_URL:-rediss://default:gQAAAAAAAbq5AAIgcDIzYTliZWY4ODExZTk0NDNjYWFlNWFhNDgwNzhlNjk2Yg@crisp-pelican-113337.upstash.io:6379}
+      DATABASE_URL: ${AUTH_DATABASE_URL:?Set AUTH_DATABASE_URL in .env}
+      DIRECT_DATABASE_URL: ${AUTH_DIRECT_DATABASE_URL:?Set AUTH_DIRECT_DATABASE_URL in .env}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
       KAFKA_BROKERS: "kafka:29092"
       JWT_PRIVATE_KEY_BASE64: ${JWT_PRIVATE_KEY_BASE64:-}
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
       - urbanfleet_internal
@@ -137,9 +137,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4002
-      DATABASE_URL: ${DRIVER_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e-pooler.c-6.us-east-2.aws.neon.tech/urbanfleet_driver?sslmode=require&connect_timeout=15}
-      DIRECT_DATABASE_URL: ${DRIVER_DIRECT_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e.c-6.us-east-2.aws.neon.tech/urbanfleet_driver?sslmode=require&connect_timeout=15}
-      REDIS_URL: ${REDIS_URL:-rediss://default:gQAAAAAAAbq5AAIgcDIzYTliZWY4ODExZTk0NDNjYWFlNWFhNDgwNzhlNjk2Yg@crisp-pelican-113337.upstash.io:6379}
+      DATABASE_URL: ${DRIVER_DATABASE_URL:?Set DRIVER_DATABASE_URL in .env}
+      DIRECT_DATABASE_URL: ${DRIVER_DIRECT_DATABASE_URL:?Set DRIVER_DIRECT_DATABASE_URL in .env}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
       KAFKA_BROKERS: "kafka:29092"
       AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
@@ -167,9 +167,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4004
-      DATABASE_URL: ${RIDE_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e-pooler.c-6.us-east-2.aws.neon.tech/urbanfleet_ride?sslmode=require&connect_timeout=15}
-      DIRECT_DATABASE_URL: ${RIDE_DIRECT_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e.c-6.us-east-2.aws.neon.tech/urbanfleet_ride?sslmode=require&connect_timeout=15}
-      REDIS_URL: ${REDIS_URL:-rediss://default:gQAAAAAAAbq5AAIgcDIzYTliZWY4ODExZTk0NDNjYWFlNWFhNDgwNzhlNjk2Yg@crisp-pelican-113337.upstash.io:6379}
+      DATABASE_URL: ${RIDE_DATABASE_URL:?Set RIDE_DATABASE_URL in .env}
+      DIRECT_DATABASE_URL: ${RIDE_DIRECT_DATABASE_URL:?Set RIDE_DIRECT_DATABASE_URL in .env}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
       KAFKA_BROKERS: "kafka:29092"
       DRIVER_SERVICE_URL: "http://driver-service:4002"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
@@ -194,18 +194,18 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4005
-      DATABASE_URL: ${PAYMENT_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e-pooler.c-6.us-east-2.aws.neon.tech/urbanfleet_payment?sslmode=require&connect_timeout=15}
-      DIRECT_DATABASE_URL: ${PAYMENT_DIRECT_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e.c-6.us-east-2.aws.neon.tech/urbanfleet_payment?sslmode=require&connect_timeout=15}
-      REDIS_URL: ${REDIS_URL:-rediss://default:gQAAAAAAAbq5AAIgcDIzYTliZWY4ODExZTk0NDNjYWFlNWFhNDgwNzhlNjk2Yg@crisp-pelican-113337.upstash.io:6379}
+      DATABASE_URL: ${PAYMENT_DATABASE_URL:?Set PAYMENT_DATABASE_URL in .env}
+      DIRECT_DATABASE_URL: ${PAYMENT_DIRECT_DATABASE_URL:?Set PAYMENT_DIRECT_DATABASE_URL in .env}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
       KAFKA_BROKERS: "kafka:29092"
       RIDE_SERVICE_URL: "http://ride-service:4004"
       AUTH_SERVICE_URL: "http://auth-service:4001"
       DRIVER_SERVICE_URL: "http://driver-service:4002"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
-      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_TEErdPFF4jHU8N}
-      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-m90q7HlKr3kE07EgoFXZwNYh}
-      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-your-razorpay-webhook-secret}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:?Set RAZORPAY_KEY_ID in .env}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:?Set RAZORPAY_KEY_SECRET in .env}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:?Set RAZORPAY_WEBHOOK_SECRET in .env}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
       - urbanfleet_internal
@@ -226,14 +226,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4003
-      DATABASE_URL: ${NOTIFICATION_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e-pooler.c-6.us-east-2.aws.neon.tech/urbanfleet_notification?sslmode=require&connect_timeout=15}
-      DIRECT_DATABASE_URL: ${NOTIFICATION_DIRECT_DATABASE_URL:-postgresql://neondb_owner:npg_P3iUGXLOJ4jV@ep-tiny-queen-b4c25v4e.c-6.us-east-2.aws.neon.tech/urbanfleet_notification?sslmode=require&connect_timeout=15}
-      REDIS_URL: ${REDIS_URL:-rediss://default:gQAAAAAAAbq5AAIgcDIzYTliZWY4ODExZTk0NDNjYWFlNWFhNDgwNzhlNjk2Yg@crisp-pelican-113337.upstash.io:6379}
+      DATABASE_URL: ${NOTIFICATION_DATABASE_URL:?Set NOTIFICATION_DATABASE_URL in .env}
+      DIRECT_DATABASE_URL: ${NOTIFICATION_DIRECT_DATABASE_URL:?Set NOTIFICATION_DIRECT_DATABASE_URL in .env}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
       KAFKA_BROKERS: "kafka:29092"
       AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
-      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-test-sendgrid-key}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-no-reply@urbanfleet.com}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     networks:
@@ -254,8 +254,8 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
         VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3001/ws/ride}
-        VITE_GEOAPIFY_API_KEY: ${VITE_GEOAPIFY_API_KEY:-b2e5858ed2ec4ef1bc736c6411abe296}
-        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com}
+        VITE_GEOAPIFY_API_KEY: ${VITE_GEOAPIFY_API_KEY:-}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     container_name: urbanfleet-frontend
     ports:
       - "${FRONTEND_PORT:-5173}:5173"

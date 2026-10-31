@@ -129,7 +129,7 @@ export default function MapView({ center, zoom = 13, markers = [], path = [], cl
       <div className={`grid min-h-[320px] place-items-center rounded-3xl border border-[#D7CCC8] bg-[#FAF6F0] p-6 text-center text-sm text-[#5D4037] ${className}`}>
         <div>
           <p className="font-semibold text-[#3E2723]">Geoapify API key is missing.</p>
-          <p>Set <code>GEOAPIFY_API_KEY</code> in your frontend environment.</p>
+          <p>Set <code>VITE_GEOAPIFY_API_KEY</code> in your frontend environment.</p>
         </div>
       </div>
     );

@@ -28,8 +28,11 @@ try {
   // 5. Redis Driver Presence & Geo
   console.log('\n5️⃣  Seeding Redis Driver Presence & GEO Coordinates...');
   const { createClient } = await import('redis');
+  if (!process.env.REDIS_URL) {
+    throw new Error('REDIS_URL environment variable is required.');
+  }
   const redis = createClient({
-    url: process.env.REDIS_URL || 'rediss://default:gQAAAAAAAbq5AAIgcDIzYTliZWY4ODExZTk0NDNjYWFlNWFhNDgwNzhlNjk2Yg@crisp-pelican-113337.upstash.io:6379'
+    url: process.env.REDIS_URL
   });
   await redis.connect();
 
