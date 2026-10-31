@@ -459,6 +459,29 @@ export default function RideDetails() {
           if (!cancelled && !currentRide) setError("Unable to load ride details.");
           return;
         }
+
+        // 1. If current user is the driver of this ride, redirect immediately to driver dashboard
+        const currentUserId = user?.id;
+        const isDriverOfRide = Boolean(
+          currentUserId &&
+          (currentRide.driverId === currentUserId ||
+           currentRide.driver?.id === currentUserId ||
+           (currentRide.driver?.user as any)?.id === currentUserId ||
+           (currentRide.driver as any)?.userId === currentUserId)
+        );
+        if (isDriverOfRide) {
+          navigate("/driver-dashboard", { replace: true });
+          return;
+        }
+
+        // 2. If current user is not the passenger/rider of this ride, block access
+        const isRiderOfRide = Boolean(currentUserId && currentRide.riderId === currentUserId);
+        if (!isRiderOfRide) {
+          setError("You are not authorized to view this trip.");
+          navigate("/dashboard", { replace: true });
+          return;
+        }
+
         if (currentRide?.pickup && currentRide?.destination) {
           const pLat = currentRide.pickup.coordinates.latitude;
           const pLon = currentRide.pickup.coordinates.longitude;
@@ -487,6 +510,25 @@ export default function RideDetails() {
       cancelled = true;
     };
   }, [rideId]);
+
+  // Trap browser Back navigation while trip is actively underway
+  useEffect(() => {
+    if (
+      ride &&
+      ["SEARCHING", "DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"].includes(
+        ride.status
+      )
+    ) {
+      window.history.pushState(null, "", window.location.href);
+      const handlePopState = () => {
+        window.history.pushState(null, "", window.location.href);
+      };
+      window.addEventListener("popstate", handlePopState);
+      return () => {
+        window.removeEventListener("popstate", handlePopState);
+      };
+    }
+  }, [ride?.status]);
 
   useEffect(() => {
     const s = connectRiderSocket({
@@ -947,8 +989,9 @@ export default function RideDetails() {
               />
             )}
 
-            {/* Copyable OTP Security Vault */}
+            {/* Copyable OTP Security Vault - strictly for the verified rider */}
             {ride.otp &&
+              user?.id === ride.riderId &&
               ["SEARCHING", "DRIVER_ASSIGNED", "DRIVER_ARRIVING"].includes(ride.status) && (
                 <section className="flex items-center justify-between gap-4 rounded-2xl border-2 border-[#c58a3a]/50 bg-[#fffdf9] p-4 shadow-sm">
                   <div className="flex items-start gap-3.5">

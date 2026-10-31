@@ -1,7 +1,7 @@
 import { Router, Request } from 'express';
 import { AuthController } from '../controllers/auth.controller.js';
 import { validateRequest, slidingWindowRateLimit } from '@urbanfleet/common';
-import { authMiddleware, requireRole, requireAdminOrInternalService } from '../middlewares/auth.middleware.js';
+import { authMiddleware, requireRole, requireAdminOrInternalService, requireSelfOrAdminOrInternalService } from '../middlewares/auth.middleware.js';
 import { Role } from '../db/client.js';
 import { verifyCsrfToken } from '../middlewares/csrf.middleware.js';
 import { authRedisClient } from '../redis/client.js';
@@ -100,7 +100,7 @@ export function createAuthRouter(controller: AuthController): Router {
   }
   router.get('/me', authMiddleware, controller.getProfile);
   if (controller.getUserById) {
-    router.get('/users/:id', requireAdminOrInternalService, controller.getUserById);
+    router.get('/users/:id', requireSelfOrAdminOrInternalService, controller.getUserById);
     router.get('/internal/users/:id', requireAdminOrInternalService, controller.getUserById);
   }
   if (controller.changePassword) {

@@ -150,6 +150,58 @@ export default function ChooseMode() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // 0. If user is strictly a driver without RIDER role, redirect immediately to driver dashboard
+        if (user?.roles?.includes("DRIVER") && !user?.roles?.includes("RIDER")) {
+          navigate("/driver-dashboard", { replace: true });
+          return;
+        }
+
+        if (user?.roles?.includes("DRIVER")) {
+          const driverRes = await appApi
+            .get<{ success: boolean; data: any }>("/ride/driver/current")
+            .catch(() => null);
+          if (cancelled) return;
+          const driverRide = driverRes?.data?.data;
+          if (
+            driverRide &&
+            ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"].includes(
+              driverRide.status
+            )
+          ) {
+            navigate("/driver-dashboard", { replace: true });
+            return;
+          }
+        }
+
+        if (user?.roles?.includes("RIDER")) {
+          const riderRes = await appApi
+            .get<{ success: boolean; data: any }>("/ride/current")
+            .catch(() => null);
+          if (cancelled) return;
+          const riderRide = riderRes?.data?.data;
+          if (
+            riderRide &&
+            riderRide.riderId === user?.id &&
+            riderRide.status !== "COMPLETED" &&
+            riderRide.status !== "CANCELLED"
+          ) {
+            navigate(`/ride/${riderRide.id}`, { replace: true });
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, user?.id, user?.roles]);
+
+  useEffect(() => {
     if (!rideData) return;
     const parsed = rideData;
 

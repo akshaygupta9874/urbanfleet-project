@@ -9,9 +9,8 @@ services:
     routes:
       - name: auth-routes
         paths:
-          - /auth
-          - /api/auth
           - /v1/auth
+          - /api/auth
         strip_path: false
         protocols:
           - http
@@ -30,12 +29,10 @@ services:
     routes:
       - name: driver-routes
         paths:
-          - /driver
-          - /drivers
-          - /api/driver
-          - /api/drivers
           - /v1/driver
           - /v1/drivers
+          - /api/driver
+          - /api/drivers
         strip_path: false
         protocols:
           - http
@@ -49,12 +46,10 @@ services:
     routes:
       - name: ride-routes
         paths:
-          - /ride
-          - /rides
-          - /api/ride
-          - /api/rides
           - /v1/ride
           - /v1/rides
+          - /api/ride
+          - /api/rides
         strip_path: false
         protocols:
           - http
@@ -84,15 +79,12 @@ services:
     routes:
       - name: payment-routes
         paths:
-          - /payment
-          - /payments
-          - /webhooks
-          - /api/payment
-          - /api/payments
           - /v1/payment
           - /v1/payments
-          - /api/webhooks
           - /v1/webhooks
+          - /api/payment
+          - /api/payments
+          - /api/webhooks
         strip_path: false
         protocols:
           - http
@@ -106,9 +98,8 @@ services:
     routes:
       - name: notification-routes
         paths:
-          - /notifications
-          - /api/notifications
           - /v1/notifications
+          - /api/notifications
         strip_path: false
         protocols:
           - http

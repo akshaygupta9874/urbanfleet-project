@@ -4,6 +4,7 @@ import { RatingRepository } from '../repositories/rating.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
 import { FareService } from './fare.service.js';
 import { OtpService } from './otp.service.js';
+import { driverClient } from '../clients/driver.client.js';
 import { NotFoundError, ConflictError, AppError } from '@urbanfleet/common';
 import type { LocationPoint } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
@@ -48,6 +49,29 @@ export class RideService {
   }
 
   async createRide(input: CreateRideInput): Promise<Ride> {
+    // 1. Prevent booking if rider already has an active ride in progress
+    const existingActiveRider = await this.rideRepo.findActiveRideByRiderId(input.riderId);
+    if (existingActiveRider) {
+      throw new ConflictError('Rider already has an active ride in progress');
+    }
+
+    // 2. Prevent booking if user is currently driving an active trip as a driver
+    const existingActiveDriver = await this.rideRepo.findActiveRideByDriverId(input.riderId);
+    if (existingActiveDriver) {
+      throw new ConflictError('You cannot request a new ride while actively driving a trip in progress');
+    }
+    try {
+      const driverProf = await driverClient.getDriverByUserId(input.riderId);
+      if (driverProf?.id) {
+        const activeByProfId = await this.rideRepo.findActiveRideByDriverId(driverProf.id);
+        if (activeByProfId) {
+          throw new ConflictError('You cannot request a new ride while actively driving a trip in progress');
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     const providedDistanceKm = (input.estimatedDistance !== undefined && Number.isFinite(input.estimatedDistance) && input.estimatedDistance > 0)
       ? Number(input.estimatedDistance)
       : undefined;
@@ -143,9 +167,10 @@ export class RideService {
         throw new AppError('Forbidden: You are not authorized to view this ride', 403, 'FORBIDDEN');
       }
 
+      const canViewOtp = isRider && ['SEARCHING', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING'].includes(ride.status);
       return {
         ...ride,
-        otp: isRider ? await this.otpService.getRideOtp(ride.id) : null
+        otp: canViewOtp ? await this.otpService.getRideOtp(ride.id) : null
       };
     }
 
@@ -203,6 +228,19 @@ export class RideService {
       }
       if (ride.driverId && ride.driverId !== driverId) {
         throw new ConflictError('Ride has already been accepted by another driver');
+      }
+
+      // 3. Prevent self-acceptance blunder (driver cannot be the passenger/rider)
+      if (ride.riderId === driverId) {
+        throw new ConflictError('A driver cannot accept their own ride request');
+      }
+      try {
+        const driverProf = await driverClient.getDriver(driverId);
+        if (driverProf && (driverProf.userId === ride.riderId || driverProf.id === ride.riderId)) {
+          throw new ConflictError('A driver cannot accept their own ride request');
+        }
+      } catch (err) {
+        if (err instanceof ConflictError) throw err;
       }
 
       const nextSequence = ride.rideSequence + 1;

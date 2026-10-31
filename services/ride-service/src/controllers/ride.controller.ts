@@ -4,7 +4,7 @@ import { RideService, CreateRideInput } from '../services/ride.service.js';
 import { FareService } from '../services/fare.service.js';
 import type { DispatchService } from '../services/dispatch.service.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
-import { AuthenticatedRequest, AppError, createLogger } from '@urbanfleet/common';
+import { AuthenticatedRequest, AppError, ForbiddenError, createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('ride-controller');
 import type { EstimateFareDTO, RequestRideDTO } from '../validation/ride.validation.js';
@@ -59,6 +59,10 @@ export class RideController {
 
   requestRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
+    const roles: string[] = req.roles ?? req.role ?? [];
+    if (!roles.includes('RIDER')) {
+      throw new ForbiddenError('Only accounts with the RIDER role can request rides');
+    }
     const body = req.body as RequestRideDTO;
     const input: CreateRideInput = {
       riderId: userId,
@@ -136,9 +140,10 @@ export class RideController {
       throw new AppError('Ride not found', 404, 'NOT_FOUND');
     }
     const formatted = await toRideDtoWithDriver(ride);
+    const isRider = Boolean(userId && ride.riderId === userId);
     res.status(200).json({
       success: true,
-      data: (userId && ride.riderId === userId) ? { ...formatted, otp: ride.otp } : formatted,
+      data: isRider ? { ...formatted, otp: ride.otp } : { ...formatted, otp: null },
     });
   });
 
@@ -170,8 +175,10 @@ export class RideController {
     let activeRide = await this.rideService.getActiveRideForUser(userId, false);
     let isDriverView = false;
     if (!activeRide) {
-      const roles = req.roles ?? req.role ?? [];
-      if (roles.includes('DRIVER')) {
+      // Only fallback to driver ride if user is exclusively a driver (no RIDER role).
+      // For dual-role users, /ride/current must strictly reflect their passenger status.
+      const isPureDriver = !roles.includes('RIDER') && roles.includes('DRIVER');
+      if (isPureDriver) {
         activeRide = await this.rideService.getActiveRideForUser(userId, true);
         isDriverView = true;
       }

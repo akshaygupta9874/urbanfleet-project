@@ -41,11 +41,7 @@ export class UserRepository {
         throw new NotFoundError('User not found');
       }
 
-      const roles = Array.from(new Set([
-        Role.RIDER,
-        ...user.roles.filter((role) => role !== Role.RIDER && role !== Role.DRIVER),
-        Role.DRIVER,
-      ]));
+      const roles = Array.from(new Set([...user.roles, Role.DRIVER]));
       return tx.user.update({ where: { id }, data: { roles } });
     });
   }

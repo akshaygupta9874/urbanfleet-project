@@ -139,4 +139,55 @@ describe('Active Ride Resolution for Dual-Role Users and Refresh', () => {
       data: null,
     });
   });
+
+  it('does NOT fallback to driver ride for dual-role user (roles: [RIDER, DRIVER]) on rider active-ride query', async () => {
+    const mockDriverRide: any = {
+      id: 'ride-driver-789',
+      riderId: 'passenger-user-id',
+      driverId: 'dual-role-user-id',
+      pickupAddress: 'Pickup',
+      pickupLat: 12.9716,
+      pickupLng: 77.5946,
+      destinationAddress: 'Destination',
+      destinationLat: 13.0827,
+      destinationLng: 80.2707,
+      distanceKm: 10,
+      totalFarePaise: 30000,
+      baseFarePaise: 12000,
+      status: 'DRIVER_ARRIVING',
+      paymentStatus: 'PENDING',
+      otp: '999999',
+      createdAt: new Date('2026-10-30T12:00:00Z'),
+      updatedAt: new Date('2026-10-30T12:00:00Z'),
+    };
+
+    const mockRideService = {
+      getActiveRideForUser: vi.fn(async (userId: string, isDriver: boolean) => {
+        if (!isDriver) return null; // No ride as passenger
+        return mockDriverRide; // Has a ride as driver
+      }),
+    } as any;
+
+    const controller = new RideController(mockRideService, {} as any);
+
+    const req: any = {
+      userId: 'dual-role-user-id',
+      roles: ['RIDER', 'DRIVER'],
+    };
+    const res: any = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+
+    await controller.getActiveRide(req, res, () => {});
+
+    // Must NOT check driver ride for dual-role user on /ride/current
+    expect(mockRideService.getActiveRideForUser).toHaveBeenCalledTimes(1);
+    expect(mockRideService.getActiveRideForUser).toHaveBeenCalledWith('dual-role-user-id', false);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: null,
+    });
+  });
 });

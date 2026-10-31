@@ -102,12 +102,44 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const response = await appApi.get<{ success: boolean; data: Ride }>("/ride/current");
-        if (cancelled) return;
-        const ride = response.data.data;
-        if (ride && ride.status !== "COMPLETED" && ride.status !== "CANCELLED") {
-          navigate(`/ride/${ride.id}`, { replace: true });
+        // 0. If user is strictly a driver without RIDER role, redirect immediately to driver dashboard
+        if (user?.roles?.includes("DRIVER") && !user?.roles?.includes("RIDER")) {
+          navigate("/driver-dashboard", { replace: true });
           return;
+        }
+
+        // 1. If user is a driver, check if they are actively on a driving assignment
+        if (user?.roles?.includes("DRIVER")) {
+          const driverRes = await appApi
+            .get<{ success: boolean; data: Ride }>("/ride/driver/current")
+            .catch(() => null);
+          if (cancelled) return;
+          const driverRide = driverRes?.data?.data;
+          if (
+            driverRide &&
+            ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"].includes(
+              driverRide.status
+            )
+          ) {
+            navigate("/driver-dashboard", { replace: true });
+            return;
+          }
+        }
+
+        // 2. Check if user has an active ride as a passenger/rider
+        if (user?.roles?.includes("RIDER")) {
+          const response = await appApi.get<{ success: boolean; data: Ride }>("/ride/current");
+          if (cancelled) return;
+          const ride = response.data?.data;
+          if (
+            ride &&
+            ride.riderId === user?.id &&
+            ride.status !== "COMPLETED" &&
+            ride.status !== "CANCELLED"
+          ) {
+            navigate(`/ride/${ride.id}`, { replace: true });
+            return;
+          }
         }
       } catch {
         // no active ride
@@ -118,7 +150,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, user?.id, user?.roles]);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -364,6 +396,17 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Dual-role switch button (only if user has both DRIVER and RIDER roles) */}
+              {user?.roles?.includes("DRIVER") && (
+                <button
+                  onClick={() => navigate("/driver-dashboard")}
+                  className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-[#c58a3a]/40 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all text-xs font-bold shadow-xs"
+                  title="Switch to Driver Console"
+                >
+                  <Car className="h-4 w-4 text-[#b8722c]" />
+                  <span className="hidden sm:inline">Driver Console</span>
+                </button>
+              )}
               <button
                 onClick={handleLogout}
                 className="group relative flex items-center gap-2 h-10 px-3.5 rounded-xl border border-rose-500/30 bg-rose-950/15 text-rose-900 shadow-2xs hover:bg-rose-950/25 active:scale-95 transition-all text-xs font-bold"

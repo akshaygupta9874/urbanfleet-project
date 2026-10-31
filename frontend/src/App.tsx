@@ -34,19 +34,27 @@ export default function App() {
               <Route path="/reset-password/:token?" element={<ResetPasswordPage />} />
               <Route path="/token/:token" element={<VerifyEmail />} />
 
-              {/* Rider routes - accessible to both RIDER and DRIVER */}
-              <Route element={<ProtectedRoutes allowedroles={["RIDER", "DRIVER"]} />}>
+              {/* Rider routes - strictly accessible to users with RIDER role */}
+              <Route element={<ProtectedRoutes allowedroles={["RIDER"]} />}>
                 <Route path="/choose" element={<ChooseMode />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/ride/:rideId" element={<RideDetails />} />
-                <Route path="/driver-registration" element={<DriverRegistration />} />
-                <Route path="/security-devices" element={<ActiveSessions />} />
                 {/* Legacy route redirects */}
                 <Route path="/history" element={<Navigate to="/dashboard" replace />} />
+              </Route>
+
+              {/* Driver registration / application */}
+              <Route element={<ProtectedRoutes allowedroles={["RIDER", "DRIVER"]} />}>
+                <Route path="/driver-registration" element={<DriverRegistration />} />
+              </Route>
+
+              {/* Active Sessions & Security - accessible to all authenticated users */}
+              <Route element={<ProtectedRoutes allowedroles={["RIDER", "DRIVER", "ADMIN"]} />}>
+                <Route path="/security-devices" element={<ActiveSessions />} />
                 <Route path="/sessions" element={<Navigate to="/security-devices" replace />} />
               </Route>
 
-              {/* Driver */}
+              {/* Driver Dashboard - strictly accessible to users with DRIVER role */}
               <Route element={<ProtectedRoutes allowedroles={["DRIVER"]} />}>
                 <Route path="/driver-dashboard" element={<DriverDashboard />} />
               </Route>

@@ -6,7 +6,7 @@ import UnauthorizedPage from "./UnauthorizedPage";
 import { appApi } from "../lib/api";
 import type { RideDto } from "../types/ride";
 
-export type UserRole = "RIDER" | "DRIVER";
+export type UserRole = "RIDER" | "DRIVER" | "ADMIN";
 
 export const ProtectedRoutes = ({
   allowedroles,
@@ -29,26 +29,49 @@ export const ProtectedRoutes = ({
     }
 
     let cancelled = false;
-    appApi
-      .get<{ success: boolean; data: RideDto }>("/ride/current")
-      .then((res) => {
-        if (cancelled) return;
-        const ride = res.data?.data;
-        if (
-          ride &&
-          ride.riderId === user?.id &&
-          ride.status !== "COMPLETED" &&
-          ride.status !== "CANCELLED"
-        ) {
-          navigate(`/ride/${ride.id}`, { replace: true });
-        }
-      })
-      .catch(() => {});
+
+    // 1. If user is a driver navigating to rider routes, check if they are actively driving
+    if (user?.roles?.includes("DRIVER")) {
+      appApi
+        .get<{ success: boolean; data: RideDto }>("/ride/driver/current")
+        .then((res) => {
+          if (cancelled) return;
+          const driverRide = res.data?.data;
+          if (
+            driverRide &&
+            ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"].includes(
+              driverRide.status
+            )
+          ) {
+            navigate("/driver-dashboard", { replace: true });
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 2. Check if user is in an active ride as a passenger/rider
+    if (user?.roles?.includes("RIDER")) {
+      appApi
+        .get<{ success: boolean; data: RideDto }>("/ride/current")
+        .then((res) => {
+          if (cancelled) return;
+          const ride = res.data?.data;
+          if (
+            ride &&
+            ride.riderId === user?.id &&
+            ride.status !== "COMPLETED" &&
+            ride.status !== "CANCELLED"
+          ) {
+            navigate(`/ride/${ride.id}`, { replace: true });
+          }
+        })
+        .catch(() => {});
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, isAuthenticated, user?.id, allowedroles, navigate]);
+  }, [location.pathname, isAuthenticated, user?.id, user?.roles, allowedroles, navigate]);
 
   if (loading) {
     return <LoadingScreen />;
@@ -66,6 +89,12 @@ export const ProtectedRoutes = ({
     userRoles.some((role: UserRole) => allowedroles.includes(role));
 
   if (!hasAllowedRole) {
+    if (userRoles.includes("DRIVER") && !userRoles.includes("RIDER")) {
+      return <Navigate to="/driver-dashboard" replace />;
+    }
+    if (userRoles.includes("RIDER") && !userRoles.includes("DRIVER")) {
+      return <Navigate to="/dashboard" replace />;
+    }
     return <UnauthorizedPage />;
   }
 

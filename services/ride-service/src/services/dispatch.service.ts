@@ -3,6 +3,7 @@ import { createLogger } from '@urbanfleet/common';
 import { emitNewRideRequest } from '../websocket/emitters/driver.emitter.js';
 import { Ride } from '../db/client.js';
 import { toRideDto } from '../utils/ride-dto.js';
+import { driverClient } from '../clients/driver.client.js';
 
 const logger = createLogger('dispatch-service');
 
@@ -44,11 +45,20 @@ export class DispatchService {
 
   async broadcastRideRequest(ride: Ride): Promise<{ rideId: string; candidates: string[] }> {
     const rejections = Array.from(this.rejectedOffers.get(ride.id) || []);
+    // Exclude rider themselves and rider's driver profile ID from dispatch candidates
+    const excludedIds = [...rejections, ride.riderId];
+    try {
+      const riderDriver = await driverClient.getDriverByUserId(ride.riderId);
+      if (riderDriver?.id) excludedIds.push(riderDriver.id);
+    } catch {
+      // ignore
+    }
+
     const nearby = await this.findNearbyDrivers(
       Number(ride.pickupLat),
       Number(ride.pickupLng),
       5.0,
-      rejections
+      excludedIds
     );
     return this.dispatchRideOffer(ride.id, nearby, ride);
   }
@@ -63,11 +73,18 @@ export class DispatchService {
       await this.recordDriverRejection(rideId, driverId);
       if (ride !== null) {
         const rejections = Array.from(this.rejectedOffers.get(rideId) || []);
+        const excludedIds = [...rejections, ride.riderId];
+        try {
+          const riderDriver = await driverClient.getDriverByUserId(ride.riderId);
+          if (riderDriver?.id) excludedIds.push(riderDriver.id);
+        } catch {
+          // ignore
+        }
         const remainingCandidates = await this.findNearbyDrivers(
           Number(ride.pickupLat),
           Number(ride.pickupLng),
           5.0,
-          rejections
+          excludedIds
         );
         if (remainingCandidates.length > 0) {
           await this.dispatchRideOffer(rideId, remainingCandidates, ride);

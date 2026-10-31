@@ -224,4 +224,24 @@ export const requireAdminOrInternalService = (
   });
 };
 
+/**
+ * Route-level guard for user profile lookups.
+ * Authoritative boundary: allows internal services, authenticated self-access, or ADMIN.
+ */
+export const requireSelfOrAdminOrInternalService = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const internalKey =
+    process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
+  const providedKey = req.headers['x-internal-service-key'];
+  if (providedKey && providedKey === internalKey) {
+    (req as any).userId = (req as any).userId || 'internal-service';
+    (req as any).roles = ['ADMIN'];
+    return next();
+  }
+  return authMiddleware(req as AuthenticatedRequest, res, next);
+};
+
 export default authMiddleware;

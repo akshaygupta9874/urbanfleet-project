@@ -487,9 +487,47 @@ export default function DriverDashboard() {
     currentRideRef.current = currentRide;
   }, [currentRide]);
 
+  // Trap browser Back navigation while a driving assignment is active
+  useEffect(() => {
+    if (currentRide && BUSY_RIDE_STATUSES.includes(currentRide.status)) {
+      window.history.pushState(null, "", window.location.href);
+      const handlePopState = () => {
+        window.history.pushState(null, "", window.location.href);
+      };
+      window.addEventListener("popstate", handlePopState);
+      return () => {
+        window.removeEventListener("popstate", handlePopState);
+      };
+    }
+  }, [currentRide?.status]);
+
+  useEffect(() => {
+    // If user is exclusively a rider and not a driver, redirect to rider dashboard
+    if (user?.roles?.includes("RIDER") && !user?.roles?.includes("DRIVER")) {
+      navigate("/dashboard", { replace: true });
+      return;
+    }
+  }, [user?.roles, navigate]);
+
   useEffect(() => {
     async function loadProfileAndRide() {
       try {
+        // 1. If user is also a rider, check if they are actively in a ride as a passenger
+        if (user?.roles?.includes("RIDER")) {
+          const riderRes = await appApi
+            .get<{ success: boolean; data: Ride }>("/ride/current")
+            .catch(() => null);
+          const riderRide = riderRes?.data?.data;
+          if (
+            riderRide &&
+            riderRide.riderId === user?.id &&
+            !["COMPLETED", "CANCELLED"].includes(riderRide.status)
+          ) {
+            navigate(`/ride/${riderRide.id}`, { replace: true });
+            return;
+          }
+        }
+
         const [profileResponse, rideResponse] = await Promise.all([
           fetchDriverProfile(),
           appApi.get<{ success: boolean; data: Ride }>("/ride/driver/current").catch(() => null),
@@ -519,7 +557,7 @@ export default function DriverDashboard() {
       }
     }
     loadProfileAndRide();
-  }, []);
+  }, [user?.id, navigate]);
 
   useEffect(() => {
     const ROUTE_REFRESH_INTERVAL_MS = 10_000;
@@ -1123,6 +1161,18 @@ export default function DriverDashboard() {
               >
                 <ShieldCheck className={`h-4 w-4 transition-colors ${activeTab === "sessions" ? "text-[#ffd88a]" : "text-[#b8722c] group-hover:text-[#3a1f0a]"}`} />
               </button>
+
+              {/* Switch to Rider Console (for Dual-Role Users) */}
+              {user?.roles?.includes("RIDER") && (
+                <button
+                  onClick={() => navigate("/dashboard")}
+                  className="group relative flex items-center gap-1.5 h-10 px-3 rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all shadow-xs text-xs font-bold"
+                  title="Switch to Passenger / Rider Console"
+                >
+                  <Navigation className="h-3.5 w-3.5 text-[#b8722c]" />
+                  <span className="hidden md:inline">Rider Console</span>
+                </button>
+              )}
 
               {/* Secure Driver Logout */}
               <button
