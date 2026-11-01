@@ -13,10 +13,16 @@ export function toRideDto(ride: Ride | null, driverInfo?: DriverProfile | null):
   const destinationLat = Number(ride.destinationLat);
   const destinationLng = Number(ride.destinationLng);
   const totalFarePaise = ride.totalFarePaise;
-  const baseFarePaise = ride.baseFarePaise || (totalFarePaise > 0 ? Math.round(totalFarePaise * 0.4) : 0);
+  const rawBaseFarePaise =
+    ride.baseFarePaise || (totalFarePaise > 0 ? Math.round(totalFarePaise * 0.4) : 0);
+  const baseFarePaise = Math.min(Math.max(0, rawBaseFarePaise), totalFarePaise);
   const distanceKm = Number(ride.distanceKm);
-  const distanceFarePaise = Math.round(distanceKm * 500);
-  const timeFarePaise = Math.max(0, totalFarePaise - baseFarePaise - distanceFarePaise);
+  const rawDistanceFarePaise = Math.max(0, Math.round(distanceKm * 500));
+  const distanceFarePaise = Math.min(
+    rawDistanceFarePaise,
+    totalFarePaise - baseFarePaise
+  );
+  const timeFarePaise = totalFarePaise - baseFarePaise - distanceFarePaise;
   const driverEarningPaise = Math.round(totalFarePaise * 0.8);
   const platformCommissionPaise = totalFarePaise - driverEarningPaise;
 
