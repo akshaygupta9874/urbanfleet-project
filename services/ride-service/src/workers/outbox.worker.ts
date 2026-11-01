@@ -1,6 +1,6 @@
 import { PrismaClient } from '../db/client.js';
-import { Kafka, Producer } from 'kafkajs';
-import { createLogger } from '@urbanfleet/common';
+import { Producer } from 'kafkajs';
+import { createDurableProducer, createKafkaClient, createLogger } from '@urbanfleet/common';
 import crypto from 'crypto';
 import { KafkaEnvelope } from '@urbanfleet/contracts';
 
@@ -17,9 +17,8 @@ export class OutboxWorker {
   }
 
   async start() {
-    const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-    const kafka = new Kafka({ clientId: 'ride-outbox-publisher', brokers });
-    this.producer = kafka.producer();
+    const kafka = createKafkaClient('ride-outbox-publisher');
+    this.producer = createDurableProducer(kafka);
     try {
       await this.producer.connect();
     } catch (err) {
@@ -107,6 +106,7 @@ export class OutboxWorker {
         };
 
         await this.producer.send({
+          acks: -1,
           topic: event.topic,
           messages: [{ key: event.partition_key, value: JSON.stringify(envelope) }]
         });
@@ -119,9 +119,23 @@ export class OutboxWorker {
         logger.info(`Outbox published event ${event.id} [${event.event_type}] to ${event.topic}`);
       } catch (publishErr: unknown) {
         logger.error(`Failed to publish event ${event.id}:`, publishErr);
+        let deadLettered = false;
         if (((event.retry_count || 0) + 1) >= 5 && this.producer) {
           try {
             const dlqTopic = `${event.topic}.DLQ`;
+            const eventPayload = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+            const replayableEnvelope: KafkaEnvelope<unknown> = {
+              id: event.id,
+              version: 1,
+              eventType: event.event_type,
+              producer: 'ride-service',
+              timestamp: event.created_at ? new Date(event.created_at).toISOString() : new Date().toISOString(),
+              partitionKey: event.partition_key,
+              aggregateType: event.aggregate_type,
+              aggregateId: event.aggregate_id,
+              aggregateSequence: Number(event.aggregate_sequence),
+              payload: eventPayload,
+            };
             const dlqEnvelope = {
               id: crypto.randomUUID(),
               originalEventId: event.id,
@@ -137,25 +151,30 @@ export class OutboxWorker {
                 name: 'OutboxPublishExhaustionError',
                 message: publishErr instanceof Error ? publishErr.message : String(publishErr),
               },
-              payload: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload,
+              payload: eventPayload,
+              originalValue: JSON.stringify(replayableEnvelope),
+              originalEnvelope: replayableEnvelope,
             };
-            this.producer.send({
+            await this.producer.send({
+              acks: -1,
               topic: dlqTopic,
               messages: [{ key: event.partition_key, value: JSON.stringify(dlqEnvelope) }],
-            }).catch((e: unknown) => logger.error('Async error dispatching outbox DLQ:', e));
+            });
+            deadLettered = true;
             logger.error(`[OUTBOX_DLQ] Event ${event.id} exhausted retries and was sent to DLQ topic ${dlqTopic}`);
           } catch (dlqErr) {
             logger.error(`Failed to dispatch exhausted outbox event ${event.id} to DLQ:`, dlqErr);
           }
         }
         const nextRetry = (event.retry_count || 0) + 1;
+        const persistedRetryCount = nextRetry;
         const newStatus = nextRetry >= 5 ? 'FAILED' : 'PENDING';
         const errorMessage = publishErr instanceof Error ? publishErr.message : typeof publishErr === 'string' ? publishErr : 'Unknown publication failure';
 
         await this.prisma.$executeRaw`
           UPDATE outbox_events
           SET status = ${newStatus}::"OutboxStatus",
-              retry_count = ${nextRetry},
+              retry_count = ${persistedRetryCount},
               last_error = ${errorMessage}
           WHERE id = ${event.id}::uuid;
         `;

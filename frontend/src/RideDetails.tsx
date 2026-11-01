@@ -411,7 +411,7 @@ export default function RideDetails() {
     try {
       const combinedFeedback =
         [selectedTags.join(", "), ratingFeedback.trim()].filter(Boolean).join(" - ") || undefined;
-      await appApi.post(`/ride/${ride.id}/rate`, {
+      await appApi.post(`/rides/${ride.id}/rate`, {
         score: ratingScore,
         feedback: combinedFeedback,
       });
@@ -437,7 +437,7 @@ export default function RideDetails() {
 
   const fetchRideDetails = async (id?: string) => {
     try {
-      const endpoint = id ? `/ride/${id}` : "/ride/current";
+      const endpoint = id ? `/rides/${id}` : "/rides/current";
       const response = await appApi.get<{ success: boolean; data: Ride }>(endpoint);
       const currentRide = response.data.data;
       if (currentRide) {
@@ -611,7 +611,7 @@ export default function RideDetails() {
     if (!ride) return;
     setIsCancelling(true);
     try {
-      await appApi.patch(`/ride/${ride.id}/cancel`, {
+      await appApi.patch(`/rides/${ride.id}/cancel`, {
         cancellationReason: "Rider cancelled from ride details",
       });
       setRide((p) => (p ? { ...p, status: "CANCELLED" } : p));
@@ -640,7 +640,7 @@ export default function RideDetails() {
     let currentRide = ride;
     try {
       const response = await appApi.get<{ success: boolean; data: Ride }>(
-        `/ride/${currentRide.id}/fare-preview`
+        `/rides/${currentRide.id}/fare-preview`
       );
       currentRide = response.data.data;
       setRide(currentRide);
@@ -907,7 +907,7 @@ export default function RideDetails() {
                   </span>
                   {driverLocation && (
                     <span className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-sky-400 animate-ping" /> Live Captain GPS
+                      <span className="h-2 w-2 rounded-full bg-sky-400 animate-ping" /> Live driver location
                     </span>
                   )}
                 </div>
@@ -1280,7 +1280,7 @@ export default function RideDetails() {
                   className="w-full h-13 text-sm uppercase tracking-wider"
                   onClick={() => navigate("/dashboard")}
                 >
-                  Back to Passenger Console
+                  Back to Passenger Dashboard
                 </TicketButton>
               ) : (
                 <TicketButton

@@ -39,10 +39,8 @@ app.use((req, _res, next) => {
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 
-// Raw Webhook Endpoints (BEFORE express.json for cryptographic HMAC verification)
-app.use('/webhooks', webhookRouter);
+// Raw Webhook Endpoint (Single Canonical Endpoint BEFORE express.json for cryptographic HMAC verification)
 app.use('/v1/webhooks', webhookRouter);
-app.use('/api/webhooks', webhookRouter);
 
 app.use(express.json());
 
@@ -79,21 +77,10 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
 };
 
 app.get('/health', healthHandler);
-app.get('/healthz', (_req, res) => res.status(200).json({ status: 'ok', service: 'payment-service' }));
-app.get('/payment/health', healthHandler);
-app.get('/payments/health', healthHandler);
-app.get('/v1/payment/health', healthHandler);
 app.get('/v1/payments/health', healthHandler);
-app.get('/api/payment/health', healthHandler);
-app.get('/api/payments/health', healthHandler);
 
-// Routes (Real Payment Subsystem & Legacy compatibility)
-app.use('/payments', paymentRouter);
-app.use('/payment', paymentRouter);
+// Routes (Single Canonical Endpoint)
 app.use('/v1/payments', paymentRouter);
-app.use('/v1/payment', paymentRouter);
-app.use('/api/payment', paymentRouter);
-app.use('/api/payments', paymentRouter);
 
 // 404 Route Handler & Centralized Global Error Handler
 app.use(notFoundHandler);

@@ -28,21 +28,9 @@ export class DriverClient {
 
   async getDriverByUserId(userId: string): Promise<DriverProfile | null> {
     try {
-      let res;
-      try {
-        res = await this.client.get<{ success: boolean; data: DriverProfile }>(
-          `/api/drivers/by-user/${userId}`
-        );
-      } catch (err: unknown) {
-        if (isAxiosError(err) && err.response?.status === 404) {
-          res = await this.client.get<{ success: boolean; data: DriverProfile }>(
-            `/v1/drivers/by-user/${userId}`
-          );
-        } else {
-          throw err;
-        }
-      }
-
+      const res = await this.client.get<{ success: boolean; data: DriverProfile }>(
+        `/v1/drivers/by-user/${userId}`
+      );
       return res?.data?.data ?? null;
     } catch (err: unknown) {
       if (isAxiosError(err) && err.response?.status === 404) {

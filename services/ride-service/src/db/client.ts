@@ -22,7 +22,7 @@ const connectionString =
 const poolConfig: PoolConfig = {
   connectionString,
   max: parseInt(process.env.DB_POOL_MAX || '20', 10),
-  min: parseInt(process.env.DB_POOL_MIN || '2', 10),
+  min: parseInt(process.env.DB_POOL_MIN || '0', 10),
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || '15000', 10),
   keepAlive: true,

@@ -111,6 +111,76 @@ urbanfleet-project/
 
 ---
 
+### Production SPA routing
+
+The frontend is a single-page application (SPA) using React Router with browser
+history URLs such as `/driver-dashboard`.
+
+#### Why navigation works but refresh fails
+
+When a user clicks a link inside the application, React Router changes the URL
+in the browser and renders `DriverDashboard` without sending a new page request
+to the server. On a refresh, however, the browser sends a normal HTTP request
+for `/driver-dashboard`. That URL is a frontend route, not a physical file or
+an API endpoint. If the production server does not know this, it returns
+`Cannot GET /driver-dashboard` before React can start.
+
+The Vite development server handles this fallback automatically, which is why
+the same refresh works on localhost. A production static server must be
+configured explicitly to return `index.html` for unknown frontend paths. The
+browser then loads the application and React Router selects the correct route.
+
+The Docker deployment includes this configuration in
+[`frontend/nginx.conf`](frontend/nginx.conf):
+
+```nginx
+location / {
+    root /usr/share/nginx/html;
+    try_files $uri $uri/ /index.html;
+}
+```
+
+If AWS uses a separate Nginx or reverse proxy in front of the frontend,
+configure the same fallback in that server as well, then reload it after
+deployment. API paths must continue to be routed to Kong/services rather than
+the frontend fallback.
+
+### DLQ operations
+
+Consumers retry transient handler failures with bounded exponential backoff.
+Malformed messages and terminal failures are written to the service DLQ with
+the original Kafka value preserved for redrive. Use:
+
+```bash
+npm run dlq:replay -- --topic urbanfleet.payment.events.DLQ --limit 10
+```
+
+Replay validates the DLQ envelope, refuses non-DLQ targets, restores the exact
+original event value, and skips legacy records that do not contain a replayable
+original value. Bundled DLQ topics retain messages for seven days. A
+production multi-broker Kafka cluster should use replication factor three and
+`min.insync.replicas` two; the local Compose cluster intentionally uses
+replication factor one.
+
+### Kafka reliability model
+
+All service Kafka clients use shared defaults from
+`packages/common/src/kafka/client.ts`:
+
+- producers are idempotent and use `acks=-1`;
+- topic auto-creation is disabled;
+- broker connection and request retries are bounded and explicit;
+- consumers commit offsets only after successful handler completion or
+  confirmed DLQ publication;
+- event-producing business operations stage one authoritative record in the
+  database outbox. Direct fire-and-forget Kafka publication is not used.
+
+The bundled Compose deployment is a single-broker development/small-deployment
+profile. For production, set `KAFKA_TOPIC_REPLICATION_FACTOR=3` and
+`KAFKA_TOPIC_MIN_ISR=2` while running at least three Kafka brokers. Existing
+topics must be recreated or reassigned when changing their replication factor;
+changing environment variables alone does not redistribute existing replicas.
+
 ## ⚡ Quick Start
 
 ### 1. Prerequisites
@@ -164,3 +234,30 @@ docker compose up -d
 ## 📜 Full Master Specification
 
 For complete in-depth architectural details, refer to [`URBANFLEET_MICROSERVICES_ARCHITECTURE_SPEC.md`](./URBANFLEET_MICROSERVICES_ARCHITECTURE_SPEC.md).
+
+## Administrator Operations
+
+The Stage 1 administrator dashboard is available at `/admin` after signing in with a
+user whose roles include `ADMIN`. The browser is protected by `ProtectedRoutes`, but
+authorization is also enforced by the `admin-service` and by every downstream domain
+service.
+
+The admin API is routed through Kong at `/v1/admin` and aggregates bounded endpoints
+from auth, driver, ride, and payment services. Domain mutations remain owned by their
+service:
+
+- Driver review: approve, reject, restore, or suspend with a required reason.
+- User operations: view users, suspend/restore accounts, and revoke sessions.
+- Payments: review payment records and request refunds through payment-service.
+- Operations: review rides, service health, and the immutable admin audit log.
+
+To provision an administrator, first create and verify a normal account, then run the
+explicit bootstrap command from the auth-service with environment variables:
+
+```bash
+ADMIN_EMAIL=admin@example.com ADMIN_BOOTSTRAP_SECRET=<24+ character secret> \
+  npm run admin:grant --workspace=@urbanfleet/auth-service
+```
+
+Public registration cannot grant the `ADMIN` role. Apply the auth-service migration
+before starting the stack; Compose runs `prisma migrate deploy` for the service.

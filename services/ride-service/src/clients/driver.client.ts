@@ -66,7 +66,7 @@ export class DriverClient {
 
     try {
       const res = await this.client.get<{ success: boolean; data: DriverProfile }>(
-        `/api/drivers/${driverIdOrUserId}`
+        `/v1/drivers/${driverIdOrUserId}`
       );
       if (res.data?.data) {
         this.cache.set(driverIdOrUserId, { data: res.data.data, timestamp: Date.now() });
@@ -76,7 +76,7 @@ export class DriverClient {
       if (isAxiosError(err) && err.response?.status === 404) {
         try {
           const res = await this.client.get<{ success: boolean; data: DriverProfile }>(
-            `/api/drivers/by-user/${driverIdOrUserId}`
+            `/v1/drivers/by-user/${driverIdOrUserId}`
           );
           if (res.data?.data) {
             this.cache.set(driverIdOrUserId, { data: res.data.data, timestamp: Date.now() });
@@ -103,7 +103,7 @@ export class DriverClient {
 
     try {
       const res = await this.client.get<{ success: boolean; data: DriverProfile }>(
-        `/api/drivers/by-user/${userId}`
+        `/v1/drivers/by-user/${userId}`
       );
       if (res.data?.data) {
         this.cache.set(`user:${userId}`, { data: res.data.data, timestamp: Date.now() });

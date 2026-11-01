@@ -32,6 +32,7 @@ import { DriverController } from './controllers/driver.controller.js';
 import { cloudinaryService } from './services/cloudinary.service.js';
 import { createDriverRouter } from './routes/driver.routes.js';
 import { initDriverConsumer } from './consumers/driver.consumer.js';
+import { driverRedisClient, initDriverRedis, disconnectDriverRedis } from './redis/client.js';
 
 const logger = createLogger('driver-service');
 import { Consumer } from 'kafkajs';
@@ -42,7 +43,9 @@ configureBigIntSerialization(app);
 
 const port = process.env.DRIVER_PORT || process.env.PORT || 4002;
 
-// Initialize Consumer
+// Initialize Redis & Kafka Consumer
+initDriverRedis().catch(err => logger.error('Driver Redis startup error:', err));
+
 let driverConsumer: Consumer | null = null;
 initDriverConsumer(prisma).then(c => {
   driverConsumer = c;
@@ -70,32 +73,36 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
     dbStatus = 'DOWN';
   }
 
-  const isHealthy = dbStatus === 'UP';
+  let redisStatus = 'DOWN';
+  try {
+    if (driverRedisClient.isOpen) {
+      await driverRedisClient.ping();
+      redisStatus = 'UP';
+    } else {
+      await driverRedisClient.connect();
+      redisStatus = driverRedisClient.isOpen ? 'UP' : 'DOWN';
+    }
+  } catch {
+    redisStatus = 'DOWN';
+  }
+
+  const isHealthy = dbStatus === 'UP' && redisStatus === 'UP';
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'UP' : 'DOWN',
     service: 'driver-service',
     dependencies: {
       database: dbStatus,
+      redis: redisStatus,
       consumer: driverConsumer ? 'UP' : 'INITIALIZING'
     }
   });
 };
 
 app.get('/health', healthHandler);
-app.get('/driver/health', healthHandler);
-app.get('/drivers/health', healthHandler);
-app.get('/v1/driver/health', healthHandler);
 app.get('/v1/drivers/health', healthHandler);
-app.get('/api/driver/health', healthHandler);
-app.get('/api/drivers/health', healthHandler);
 
-// Routes
+// Routes (Single Canonical Endpoint)
 const driverRouter = createDriverRouter(driverController);
-app.use('/driver', driverRouter);
-app.use('/drivers', driverRouter);
-app.use('/api/driver', driverRouter);
-app.use('/api/drivers', driverRouter);
-app.use('/v1/driver', driverRouter);
 app.use('/v1/drivers', driverRouter);
 
 // Global Error Handler
@@ -130,6 +137,7 @@ const gracefulShutdown = async (signal: string) => {
       if (driverConsumer && typeof driverConsumer.disconnect === 'function') {
         await driverConsumer.disconnect();
       }
+      await disconnectDriverRedis();
       await prisma.$disconnect();
       logger.info('Driver Service shut down cleanly.');
       process.exit(0);

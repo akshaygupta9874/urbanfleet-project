@@ -5,17 +5,36 @@ cub kafka-ready -b kafka:29092 1 30
 
 echo "Creating UrbanFleet Event Topics..."
 
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.auth.events --partitions 3 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.driver.events --partitions 3 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.ride.events --partitions 3 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.payment.events --partitions 3 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.notification.events --partitions 3 --replication-factor 1
+TOPIC_REPLICATION_FACTOR="${KAFKA_TOPIC_REPLICATION_FACTOR:-1}"
+TOPIC_MIN_ISR="${KAFKA_TOPIC_MIN_ISR:-1}"
 
-# Dead Letter Queues
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.auth.events.DLQ --partitions 1 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.driver.events.DLQ --partitions 1 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.ride.events.DLQ --partitions 1 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.payment.events.DLQ --partitions 1 --replication-factor 1
-kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic urbanfleet.notification.events.DLQ --partitions 1 --replication-factor 1
+for topic in \
+  urbanfleet.auth.events \
+  urbanfleet.driver.events \
+  urbanfleet.ride.events \
+  urbanfleet.payment.events \
+  urbanfleet.notification.events
+do
+  kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+    --topic "$topic" --partitions 3 --replication-factor "$TOPIC_REPLICATION_FACTOR" \
+    --config min.insync.replicas="$TOPIC_MIN_ISR"
+done
+
+# Dead Letter Queues. Keep failed events for seven days while preventing
+# unbounded disk growth. Increase replication when running multiple brokers.
+for topic in \
+  urbanfleet.auth.events.DLQ \
+  urbanfleet.driver.events.DLQ \
+  urbanfleet.ride.events.DLQ \
+  urbanfleet.payment.events.DLQ \
+  urbanfleet.notification.events.DLQ
+do
+  kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+    --topic "$topic" --partitions 1 --replication-factor "$TOPIC_REPLICATION_FACTOR" \
+    --config cleanup.policy=delete \
+    --config retention.ms=604800000 \
+    --config segment.ms=86400000 \
+    --config min.insync.replicas="$TOPIC_MIN_ISR"
+done
 
 echo "Kafka topics created successfully!"

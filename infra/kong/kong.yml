@@ -10,7 +10,6 @@ services:
       - name: auth-routes
         paths:
           - /v1/auth
-          - /api/auth
         strip_path: false
         protocols:
           - http
@@ -29,10 +28,7 @@ services:
     routes:
       - name: driver-routes
         paths:
-          - /v1/driver
           - /v1/drivers
-          - /api/driver
-          - /api/drivers
         strip_path: false
         protocols:
           - http
@@ -46,10 +42,7 @@ services:
     routes:
       - name: ride-routes
         paths:
-          - /v1/ride
           - /v1/rides
-          - /api/ride
-          - /api/rides
         strip_path: false
         protocols:
           - http
@@ -64,8 +57,6 @@ services:
       - name: ride-websocket-route
         paths:
           - /ws/ride
-          - /ws
-          - /socket
         strip_path: false
         protocols:
           - http
@@ -79,12 +70,8 @@ services:
     routes:
       - name: payment-routes
         paths:
-          - /v1/payment
           - /v1/payments
           - /v1/webhooks
-          - /api/payment
-          - /api/payments
-          - /api/webhooks
         strip_path: false
         protocols:
           - http
@@ -99,7 +86,17 @@ services:
       - name: notification-routes
         paths:
           - /v1/notifications
-          - /api/notifications
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+  - name: admin-service
+    url: http://admin-service:4006
+    routes:
+      - name: admin-routes
+        paths:
+          - /v1/admin
         strip_path: false
         protocols:
           - http
@@ -150,6 +147,7 @@ plugins:
         - x-xsrf-token
         - csrf-token
         - x-internal-service-key
+        - Idempotency-Key
       credentials: true
       max_age: 3600
 

@@ -141,7 +141,7 @@ export default function LoadingScreen({
           {/* Top Brand Pill */}
           <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-3.5 py-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffd88a] shadow-sm ring-1 ring-[#c58a3a]/40">
             <Sparkles className="h-3 w-3 text-[#ffd88a]" />
-            UrbanFleet Telemetry
+            UrbanFleet
           </div>
 
           {/* Central Geospatial Radar & Orbiting Beacon */}

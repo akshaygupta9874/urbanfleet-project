@@ -6,7 +6,7 @@ import { driverRedisClient } from '../src/redis/client.js';
 import { prisma } from '../src/db/client.js';
 import { AppError, ServiceUnavailableError } from '@urbanfleet/common';
 
-describe('Driver Service Auth Middleware Strict DB Verification', () => {
+describe('Driver Service Auth Middleware Strict DB Verification & Fail-Closed Session Validation', () => {
   const privateKey = Buffer.from(process.env.JWT_PRIVATE_KEY_BASE64!, 'base64').toString('utf-8');
 
   function createValidToken(payload: Record<string, unknown> = {}) {
@@ -28,9 +28,24 @@ describe('Driver Service Auth Middleware Strict DB Verification', () => {
     );
   }
 
+  function mockValidRedisSession(userId = 'usr-driver-test-1', sessionId = 'sess-test-1') {
+    vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(driverRedisClient, 'get').mockImplementation(async (key: string) => {
+      if (key === `auth:session:${sessionId}` || key === `session:${sessionId}`) {
+        return JSON.stringify({ userId, sessionId, createdAt: new Date().toISOString() });
+      }
+      return null;
+    });
+    vi.spyOn(driverRedisClient, 'sMembers').mockImplementation(async (key: string) => {
+      if (key === `auth:user-sessions:${userId}` || key === `user-sessions:${userId}`) {
+        return [sessionId];
+      }
+      return [];
+    });
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -63,7 +78,100 @@ describe('Driver Service Auth Middleware Strict DB Verification', () => {
     expect(err.code).toBe('TOKEN_EXPIRED');
   });
 
+  it('fails with 503 ServiceUnavailableError when Redis is unavailable during session validation (fail-closed)', async () => {
+    vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(false);
+
+    const token = createValidToken();
+    const req: any = { headers: { authorization: `Bearer ${token}` } };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    await authMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceUnavailableError));
+    const err = next.mock.calls[0][0];
+    expect(err.statusCode).toBe(503);
+    expect(err.code).toBe('SESSION_VALIDATION_UNAVAILABLE');
+    expect(req.user).toBeUndefined();
+  });
+
+  it('fails with 503 ServiceUnavailableError when Redis throws an infrastructure error (fail-closed)', async () => {
+    vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(driverRedisClient, 'get').mockRejectedValue(new Error('ECONNRESET'));
+
+    const token = createValidToken();
+    const req: any = { headers: { authorization: `Bearer ${token}` } };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    await authMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceUnavailableError));
+    const err = next.mock.calls[0][0];
+    expect(err.statusCode).toBe(503);
+    expect(err.code).toBe('SESSION_VALIDATION_UNAVAILABLE');
+    expect(req.user).toBeUndefined();
+  });
+
+  it('rejects with 401 SESSION_EXPIRED when session does not exist in Redis (revoked session)', async () => {
+    vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(driverRedisClient, 'get').mockResolvedValue(null);
+    vi.spyOn(driverRedisClient, 'sMembers').mockResolvedValue(['sess-test-1']);
+
+    const token = createValidToken();
+    const req: any = { headers: { authorization: `Bearer ${token}` } };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    await authMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(AppError));
+    const err = next.mock.calls[0][0];
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe('SESSION_EXPIRED');
+    expect(req.user).toBeUndefined();
+  });
+
+  it('rejects with 401 SESSION_EXPIRED when sessionId is not in active user-sessions set', async () => {
+    vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(driverRedisClient, 'get').mockResolvedValue(JSON.stringify({ userId: 'usr-driver-test-1', sessionId: 'sess-test-1' }));
+    vi.spyOn(driverRedisClient, 'sMembers').mockResolvedValue(['other-session-id']);
+
+    const token = createValidToken();
+    const req: any = { headers: { authorization: `Bearer ${token}` } };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    await authMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(AppError));
+    const err = next.mock.calls[0][0];
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe('SESSION_EXPIRED');
+    expect(req.user).toBeUndefined();
+  });
+
+  it('rejects with 401 SESSION_MISMATCH when session userId does not match token', async () => {
+    vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(driverRedisClient, 'get').mockResolvedValue(JSON.stringify({ userId: 'mismatched-user', sessionId: 'sess-test-1' }));
+    vi.spyOn(driverRedisClient, 'sMembers').mockResolvedValue(['sess-test-1']);
+
+    const token = createValidToken();
+    const req: any = { headers: { authorization: `Bearer ${token}` } };
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+
+    await authMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(AppError));
+    const err = next.mock.calls[0][0];
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe('SESSION_MISMATCH');
+    expect(req.user).toBeUndefined();
+  });
+
   it('HALTS AND REJECTS with 401 USER_NOT_FOUND when user is not found in database / AuthClient', async () => {
+    mockValidRedisSession();
     const token = createValidToken();
     const req: any = { headers: { authorization: `Bearer ${token}` } };
     const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
@@ -83,6 +191,7 @@ describe('Driver Service Auth Middleware Strict DB Verification', () => {
   });
 
   it('fails with 503 ServiceUnavailableError when AuthClient encounters a connection/infrastructure error', async () => {
+    mockValidRedisSession();
     const token = createValidToken();
     const req: any = { headers: { authorization: `Bearer ${token}` } };
     const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
@@ -100,6 +209,7 @@ describe('Driver Service Auth Middleware Strict DB Verification', () => {
   });
 
   it('authenticates and attaches user when user exists in database / AuthClient', async () => {
+    mockValidRedisSession();
     const token = createValidToken();
     const req: any = { headers: { authorization: `Bearer ${token}` } };
     const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
@@ -150,10 +260,13 @@ describe('Driver Service Auth Middleware Strict DB Verification', () => {
 
     vi.spyOn(driverRedisClient, 'isOpen', 'get').mockReturnValue(true);
     vi.spyOn(driverRedisClient, 'get').mockImplementation(async (key: string) => {
+      if (key === 'auth:session:sess-test-1' || key === 'session:sess-test-1') {
+        return JSON.stringify({ userId: 'usr-driver-test-1', sessionId: 'sess-test-1' });
+      }
       if (key === 'auth:user:usr-driver-test-1') return JSON.stringify(cachedUser);
       return null;
     });
-    vi.spyOn(driverRedisClient, 'sMembers').mockResolvedValue([]);
+    vi.spyOn(driverRedisClient, 'sMembers').mockResolvedValue(['sess-test-1']);
     vi.spyOn(driverRedisClient, 'setEx').mockResolvedValue('OK');
 
     const authClientSpy = vi.spyOn(authClient, 'getUserById');

@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
+import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics, UserRegisteredPayload, PaymentCapturedPayload } from '@urbanfleet/contracts';
 import { NotificationService } from '../services/notification.service.js';
 import { authClient } from '../clients/auth.client.js';
@@ -15,13 +15,13 @@ export async function initNotificationConsumer(
   const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
   const kafka = new Kafka({ clientId: 'notification-service', brokers });
   const consumer = kafka.consumer({ groupId: consumerGroup });
-
   try {
     await consumer.connect();
     await consumer.subscribe({ topic: EventTopics.AUTH_EVENTS, fromBeginning: false });
     await consumer.subscribe({ topic: EventTopics.PAYMENT_EVENTS, fromBeginning: false });
 
     await consumer.run({
+      autoCommit: false,
       eachMessage: createResilientConsumerRunner(
         {
           kafka,

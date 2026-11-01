@@ -1,7 +1,12 @@
 import { Kafka, Consumer, Producer, EachMessagePayload } from 'kafkajs';
 import crypto from 'crypto';
 import { createLogger } from '../logger/logger.js';
-import { DeadLetterEnvelope, KafkaEnvelope } from '@urbanfleet/contracts';
+import { createDurableProducer } from './client.js';
+import {
+  DeadLetterEnvelope,
+  KafkaEnvelope,
+  KafkaEnvelopeSchema,
+} from '@urbanfleet/contracts';
 
 const logger = createLogger('resilient-consumer');
 
@@ -28,6 +33,8 @@ export interface RouteToDlqParams {
   payload?: unknown;
   rawPayload?: string;
   originalEventId?: string;
+  originalValue?: string;
+  originalEnvelope?: KafkaEnvelope<unknown>;
 }
 
 export function isNonRetryableError(err: unknown): boolean {
@@ -66,7 +73,7 @@ export function createResilientConsumerRunner(
 
   const getDlqProducer = async (): Promise<Producer> => {
     if (!dlqProducer) {
-      dlqProducer = config.kafka.producer();
+      dlqProducer = createDurableProducer(config.kafka);
     }
     if (!dlqProducerConnected) {
       await dlqProducer.connect();
@@ -104,10 +111,13 @@ export function createResilientConsumerRunner(
       },
       payload: params.payload ?? null,
       rawPayload: params.rawPayload,
+      originalValue: params.originalValue,
+      originalEnvelope: params.originalEnvelope,
     };
 
     try {
       await producer.send({
+        acks: -1,
         topic: targetTopic,
         messages: [
           {
@@ -137,6 +147,17 @@ export function createResilientConsumerRunner(
     }
   };
 
+  const commitProcessedOffset = async (
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> => {
+    if (typeof config.consumer.commitOffsets === 'function') {
+      const nextOffset = (BigInt(offset) + 1n).toString();
+      await config.consumer.commitOffsets([{ topic, partition, offset: nextOffset }]);
+    }
+  };
+
   return async ({ topic, partition, message }: EachMessagePayload): Promise<void> => {
     if (!message.value) return;
 
@@ -147,7 +168,11 @@ export function createResilientConsumerRunner(
     // 1. Safe JSON Deserialization Guard (Poison Pill Protection)
     let rawParsed: Record<string, unknown>;
     try {
-      rawParsed = JSON.parse(rawString);
+      const parsed: unknown = JSON.parse(rawString);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Invalid Kafka event: message root must be an object');
+      }
+      rawParsed = parsed as Record<string, unknown>;
     } catch (parseErr) {
       await routeToDlq({
         originalTopic: topic,
@@ -158,38 +183,44 @@ export function createResilientConsumerRunner(
         retryCount: 0,
         rawPayload: rawString,
         payload: null,
+        originalValue: rawString,
       });
-      return; // Safe return commits offset, unblocking partition!
-    }
-
-    if (!rawParsed || typeof rawParsed !== 'object') {
-      await routeToDlq({
-        originalTopic: topic,
-        partition,
-        offset,
-        key,
-        error: new Error('Invalid JSON payload: message root is not an object'),
-        retryCount: 0,
-        rawPayload: rawString,
-        payload: rawParsed,
-      });
+      await commitProcessedOffset(topic, partition, offset);
       return;
     }
-
-    const envelope: KafkaEnvelope<unknown> = {
-      id: String(rawParsed.id || key || crypto.randomUUID()),
-      version: Number(rawParsed.version || 1),
-      eventType: String(rawParsed.eventType || 'UNKNOWN'),
-      producer: String(rawParsed.producer || 'unknown'),
-      timestamp: String(rawParsed.timestamp || new Date().toISOString()),
-      partitionKey: String(rawParsed.partitionKey || key || ''),
-      aggregateType: String(rawParsed.aggregateType || ''),
-      aggregateId: String(rawParsed.aggregateId || ''),
-      aggregateSequence: Number(rawParsed.aggregateSequence || 1),
-      payload: (typeof rawParsed.payload === 'object' && rawParsed.payload !== null
-        ? rawParsed.payload
-        : rawParsed) as unknown,
-    };
+    let envelope: KafkaEnvelope<unknown>;
+    if (rawParsed.payload !== undefined) {
+      const parsedEnvelope = KafkaEnvelopeSchema.safeParse(rawParsed);
+      if (!parsedEnvelope.success) {
+        await routeToDlq({
+          originalTopic: topic,
+          partition,
+          offset,
+          key,
+          error: new Error(`Invalid Kafka envelope: ${parsedEnvelope.error.message}`),
+          retryCount: 0,
+          rawPayload: rawString,
+          payload: rawParsed,
+          originalValue: rawString,
+        });
+        await commitProcessedOffset(topic, partition, offset);
+        return;
+      }
+      envelope = parsedEnvelope.data as KafkaEnvelope<unknown>;
+    } else {
+      envelope = {
+        id: String(rawParsed.id || key || crypto.randomUUID()),
+        version: Number(rawParsed.version || 1),
+        eventType: String(rawParsed.eventType || 'UNKNOWN'),
+        producer: String(rawParsed.producer || 'unknown'),
+        timestamp: String(rawParsed.timestamp || new Date().toISOString()),
+        partitionKey: String(rawParsed.partitionKey || key || ''),
+        aggregateType: String(rawParsed.aggregateType || ''),
+        aggregateId: String(rawParsed.aggregateId || ''),
+        aggregateSequence: Number(rawParsed.aggregateSequence || 1),
+        payload: rawParsed as unknown,
+      };
+    }
 
     // 2. Retry Loop with Exponential Backoff + Jitter
     let attempt = 0;
@@ -201,7 +232,8 @@ export function createResilientConsumerRunner(
     while (attempt <= maxRetries) {
       try {
         await handler(envelope, rawParsed);
-        return; // Success! Offset commits automatically.
+        await commitProcessedOffset(topic, partition, offset);
+        return;
       } catch (err: unknown) {
         const error = err instanceof Error ? err : new Error(String(err));
         const nonRetryable = isNonRetryableError(err);
@@ -217,8 +249,11 @@ export function createResilientConsumerRunner(
             retryCount: attempt,
             payload: envelope.payload,
             originalEventId: envelope.id,
+            originalValue: rawString,
+            originalEnvelope: envelope,
           });
-          return; // Offset commits, partition unblocked!
+          await commitProcessedOffset(topic, partition, offset);
+          return;
         }
 
         attempt++;

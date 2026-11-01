@@ -56,7 +56,7 @@ describe('RideClient Inter-Service HTTP Communication', () => {
 
     const result = await client.getRideById('ride-uuid-123');
     expect(result).toEqual(mockRide);
-    expect(getSpy).toHaveBeenCalledWith('/api/rides/ride-uuid-123');
+    expect(getSpy).toHaveBeenCalledWith('/v1/rides/ride-uuid-123');
   });
 
   it('returns null when ride is not found (404)', async () => {
@@ -78,7 +78,7 @@ describe('RideClient Inter-Service HTTP Communication', () => {
     const result = await client.updatePaymentStatus('ride-123', 'PAID', 'PENDING');
     expect(result).toEqual({ ...makeRideDto('PAID'), id: 'ride-123' });
     expect(patchSpy).toHaveBeenCalledWith(
-      '/api/rides/ride-123/payment-status',
+      '/v1/rides/ride-123/payment-status',
       { paymentStatus: 'PAID', currentStatus: 'PENDING' }
     );
   });

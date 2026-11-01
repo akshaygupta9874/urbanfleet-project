@@ -59,6 +59,7 @@ const { mockKafkaConsumer, getCapturedHandler } = vi.hoisted(() => {
 vi.mock('kafkajs', () => ({
   Kafka: vi.fn().mockImplementation(() => ({
     consumer: () => mockKafkaConsumer,
+    producer: () => ({ connect: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }),
   })),
 }));
 

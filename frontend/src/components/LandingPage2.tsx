@@ -186,10 +186,10 @@ const CATEGORIES: { id: ServiceCategory; label: string }[] = [
 ];
 
 const PLATFORM_METRICS = [
-  { label: "Dispatch Match Speed", value: "< 180ms", sub: "H3 Spatial Indexing", icon: Zap },
-  { label: "Verified Fleet Rating", value: "4.94 ★", sub: "Background-checked captains", icon: Star },
-  { label: "Session Security", value: "RFC 6819", sub: "Token rotation & OTP lock", icon: Lock },
-  { label: "Transparent Ledger", value: "0% Hidden", sub: "Upfront fare breakdown", icon: Wallet },
+  { label: "Driver matching", value: "Real-time", sub: "Location-based availability", icon: Zap },
+  { label: "Ride feedback", value: "5-star", sub: "Rate your completed rides", icon: Star },
+  { label: "Account security", value: "Protected", sub: "JWT and OTP verification", icon: Lock },
+  { label: "Fare details", value: "Clear pricing", sub: "Review the fare before booking", icon: Wallet },
 ];
 
 // --- Animation Variants ---
@@ -540,7 +540,7 @@ export default function LandingPage2() {
               }`}
             >
               <Navigation className="h-3.5 w-3.5 text-[#ffd88a]" />
-              Passenger Console
+              Passenger Dashboard
             </button>
             <button
               type="button"

@@ -31,7 +31,7 @@ describe('AuthClient Inter-Service HTTP Communication in notification-service', 
 
     const user = await client.getUserById('rider-123');
     expect(user).toEqual(mockUser);
-    expect(getSpy).toHaveBeenCalledWith('/api/auth/users/rider-123');
+    expect(getSpy).toHaveBeenCalledWith('/v1/auth/users/rider-123');
   });
 
   it('handles 404 gracefully by returning null', async () => {

@@ -32,7 +32,7 @@ describe('DriverClient Inter-Service HTTP Communication in ride-service', () => 
 
     const result = await client.getDriverById('drv-uuid-1');
     expect(result).toEqual(mockDriver);
-    expect(getSpy).toHaveBeenCalledWith('/api/drivers/drv-uuid-1');
+    expect(getSpy).toHaveBeenCalledWith('/v1/drivers/drv-uuid-1');
   });
 
   it('fetches driver profile by userId over HTTP GET API', async () => {
@@ -53,7 +53,7 @@ describe('DriverClient Inter-Service HTTP Communication in ride-service', () => 
 
     const result = await client.getDriverByUserId('usr-uuid-2');
     expect(result).toEqual(mockDriver);
-    expect(getSpy).toHaveBeenCalledWith('/api/drivers/by-user/usr-uuid-2');
+    expect(getSpy).toHaveBeenCalledWith('/v1/drivers/by-user/usr-uuid-2');
   });
 
   it('returns null when driver is not found (404)', async () => {

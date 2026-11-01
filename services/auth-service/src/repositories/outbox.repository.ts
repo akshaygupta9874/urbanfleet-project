@@ -142,4 +142,17 @@ export class OutboxRepository {
       },
     });
   }
+
+  async markRetryable(id: string, error: string): Promise<void> {
+    const existing = await this.prisma.outboxEvent.findUnique({ where: { id } });
+    await this.prisma.outboxEvent.update({
+      where: { id },
+      data: {
+        retryCount: Math.min((existing?.retryCount || 0) + 1, 4),
+        lastError: error,
+        status: 'PENDING',
+        leaseExpiresAt: null,
+      },
+    });
+  }
 }

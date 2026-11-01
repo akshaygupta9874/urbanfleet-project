@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { KafkaEnvelope } from './kafka-envelope.js';
 
 export interface DeadLetterEnvelope<T = unknown> {
   id: string;                      // Unique DLQ event UUID
@@ -20,6 +21,8 @@ export interface DeadLetterEnvelope<T = unknown> {
   };
   payload: T;                      // The original parsed payload
   rawPayload?: string;             // Raw buffer/string if JSON deserialization failed
+  originalValue?: string;          // Exact original Kafka message value for safe redrive
+  originalEnvelope?: KafkaEnvelope<unknown>;
 }
 
 export const DeadLetterEnvelopeSchema = z.object({
@@ -42,4 +45,6 @@ export const DeadLetterEnvelopeSchema = z.object({
   }),
   payload: z.any().optional(),
   rawPayload: z.string().optional(),
+  originalValue: z.string().optional(),
+  originalEnvelope: z.record(z.any()).optional(),
 });

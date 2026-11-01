@@ -115,6 +115,27 @@ async function main() {
   });
   console.log(`✅ Upserted Demo Driver User 2: ${driver2.email} (${driver2.id})`);
 
+  // 5. Demo Admin User
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@urbanfleet.com' },
+    update: {
+      passwordHash,
+      firstName: 'Sarah',
+      lastName: 'Chen',
+      roles: [Role.ADMIN],
+      isEmailVerified: true
+    },
+    create: {
+      email: 'admin@urbanfleet.com',
+      passwordHash,
+      firstName: 'Sarah',
+      lastName: 'Chen',
+      roles: [Role.ADMIN],
+      isEmailVerified: true
+    }
+  });
+  console.log(`✅ Upserted Admin User: ${admin.email} (${admin.id})`);
+
 }
 
 main()

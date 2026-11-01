@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { AppError, createLogger } from '@urbanfleet/common';
+import { AppError, ServiceUnavailableError, createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('auth-middleware');
 import asyncHandler from './asyncHandler.js';
@@ -99,10 +99,16 @@ export const authMiddleware = asyncHandler(
       throw new AppError('Your session is invalid. Please sign in again.', 401, 'INVALID_SESSION');
     }
 
-    // 3. Validate Session (Concurrent Redis checks)
+    // 3. Validate Session (Fail-closed Redis check)
     if (sessionId) {
       const sessionCheck = await validateSessionInRedis(userId, sessionId);
       if (!sessionCheck.valid) {
+        if (sessionCheck.reason === 'REDIS_UNAVAILABLE') {
+          throw new ServiceUnavailableError(
+            'Session validation service is temporarily unavailable',
+            'SESSION_VALIDATION_UNAVAILABLE'
+          );
+        }
         if (sessionCheck.reason === 'SESSION_MISMATCH') {
           throw new AppError('Session mismatch. Please sign in again.', 401, 'SESSION_MISMATCH');
         }
@@ -119,12 +125,16 @@ export const authMiddleware = asyncHandler(
           where: { id: userId },
         });
         if (dbUser) {
+          if (dbUser.isSuspended) {
+            throw new AppError('This account is suspended.', 403, 'ACCOUNT_SUSPENDED');
+          }
           user = {
             id: dbUser.id,
             email: dbUser.email,
             roles: dbUser.roles,
             firstName: dbUser.firstName,
             lastName: dbUser.lastName,
+            isSuspended: dbUser.isSuspended,
           };
         }
       } catch (err: unknown) {
@@ -145,6 +155,9 @@ export const authMiddleware = asyncHandler(
           lastName: '',
         };
       } else {
+        if (user?.isSuspended) {
+          throw new AppError('This account is suspended.', 403, 'ACCOUNT_SUSPENDED');
+        }
         await cacheUser(user);
       }
     }

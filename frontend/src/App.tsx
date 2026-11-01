@@ -4,6 +4,7 @@ import { lazy, Suspense } from 'react'
 import LoadingScreen from './components/LoadingScreen.tsx'
 import { AuthContextProvider } from './context/authContext.tsx'
 import { ProtectedRoutes } from './components/ProtectedRoutes.tsx'
+import UnauthorizedPage from './components/UnauthorizedPage.tsx'
 
 const LoginPage = lazy(() => import('./Login.tsx'))
 const FinalLandingPage = lazy(() => import('./FinalLandingPage.tsx'))
@@ -17,6 +18,7 @@ const DriverDashboard = lazy(() => import('./DriverDashboard.tsx'))
 const RideDetails = lazy(() => import('./RideDetails.tsx'))
 const ChooseMode = lazy(() => import('./ChooseMode.tsx'))
 const ActiveSessions = lazy(() => import('./ActiveSessions.tsx'))
+const AdminDashboard = lazy(() => import('./AdminDashboard.tsx'))
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
@@ -35,29 +37,33 @@ export default function App() {
               <Route path="/token/:token" element={<VerifyEmail />} />
 
               {/* Rider routes - strictly accessible to users with RIDER role */}
-              <Route element={<ProtectedRoutes allowedroles={["RIDER"]} />}>
+              <Route element={<ProtectedRoutes allowedRoles={["RIDER"]} />}>
                 <Route path="/choose" element={<ChooseMode />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/ride/:rideId" element={<RideDetails />} />
-                {/* Legacy route redirects */}
-                <Route path="/history" element={<Navigate to="/dashboard" replace />} />
               </Route>
 
               {/* Driver registration / application */}
-              <Route element={<ProtectedRoutes allowedroles={["RIDER", "DRIVER"]} />}>
+              <Route element={<ProtectedRoutes allowedRoles={["RIDER", "DRIVER"]} />}>
                 <Route path="/driver-registration" element={<DriverRegistration />} />
               </Route>
 
               {/* Active Sessions & Security - accessible to all authenticated users */}
-              <Route element={<ProtectedRoutes allowedroles={["RIDER", "DRIVER", "ADMIN"]} />}>
+              <Route element={<ProtectedRoutes allowedRoles={["RIDER", "DRIVER", "ADMIN"]} />}>
                 <Route path="/security-devices" element={<ActiveSessions />} />
-                <Route path="/sessions" element={<Navigate to="/security-devices" replace />} />
+              </Route>
+
+              <Route element={<ProtectedRoutes allowedRoles={["ADMIN"]} />}>
+                <Route path="/admin" element={<AdminDashboard />} />
               </Route>
 
               {/* Driver Dashboard - strictly accessible to users with DRIVER role */}
-              <Route element={<ProtectedRoutes allowedroles={["DRIVER"]} />}>
+              <Route element={<ProtectedRoutes allowedRoles={["DRIVER"]} />}>
                 <Route path="/driver-dashboard" element={<DriverDashboard />} />
               </Route>
+
+              {/* Explicit Unauthorized Page route */}
+              <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />

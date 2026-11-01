@@ -78,25 +78,48 @@ export const authMiddleware: RequestHandler = asyncHandler(
       throw new AppError("Your session is invalid. Please sign in again.", 401, "INVALID_SESSION");
     }
 
-    // 3. Validate Session
-    if (sessionId && redisClient.isOpen) {
-      try {
-        const [storedSession] = await Promise.all([
-          redisClient.get(`auth:session:${sessionId}`) || redisClient.get(`session:${sessionId}`),
-        ]);
+    // 3. Validate Session (Fail-closed Redis check)
+    if (sessionId) {
+      if (!redisClient || !redisClient.isOpen) {
+        logger.error("Session validation rejected: Redis is unavailable", { userId, sessionId });
+        throw new ServiceUnavailableError(
+          "Session validation service is temporarily unavailable",
+          "SESSION_VALIDATION_UNAVAILABLE"
+        );
+      }
 
-        if (storedSession) {
-          const parsed = JSON.parse(storedSession) as { userId?: string };
-          if (parsed.userId && parsed.userId !== userId) {
-            throw new AppError("Session mismatch. Please sign in again.", 401, "SESSION_MISMATCH");
-          }
-        }
+      let storedSession: string | null = null;
+      let activeSessionIds: string[] = [];
+      try {
+        [storedSession, activeSessionIds] = await Promise.all([
+          redisClient.get(`auth:session:${sessionId}`).then((res) => res || redisClient.get(`session:${sessionId}`)),
+          redisClient.sMembers(`auth:user-sessions:${userId}`).then((res) => (res && res.length > 0 ? res : redisClient.sMembers(`user-sessions:${userId}`))),
+        ]);
       } catch (e: unknown) {
         if (e instanceof AppError) throw e;
-        logger.warn("Redis session validation warning", {
+        logger.error("Failed to validate session in Redis due to infrastructure error:", {
           error: e instanceof Error ? e.message : String(e),
           sessionId,
+          userId,
         });
+        throw new ServiceUnavailableError(
+          "Session validation service is temporarily unavailable",
+          "SESSION_VALIDATION_UNAVAILABLE",
+          e instanceof Error ? e : undefined
+        );
+      }
+
+      if (!storedSession) {
+        throw new AppError("Your session is no longer valid. Please sign in again.", 401, "SESSION_EXPIRED");
+      }
+
+      if (activeSessionIds && activeSessionIds.length > 0 && !activeSessionIds.includes(sessionId)) {
+        throw new AppError("Your session is no longer valid. Please sign in again.", 401, "SESSION_EXPIRED");
+      }
+
+      const parsed = JSON.parse(storedSession) as { userId?: string };
+      if (parsed.userId && parsed.userId !== userId) {
+        throw new AppError("Session mismatch. Please sign in again.", 401, "SESSION_MISMATCH");
       }
     }
 

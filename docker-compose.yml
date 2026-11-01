@@ -5,9 +5,8 @@ networks:
 
 services:
   # ========================================================
-  # 1. DATA INFRASTRUCTURE (Self-Hosted Lightweight KRaft Kafka)
-  # Database hosted on Neon Serverless PostgreSQL
-  # Redis hosted on Upstash Cloud
+  # 1. DATA INFRASTRUCTURE
+  # Self-Hosted Lightweight KRaft Kafka
   # ========================================================
   kafka:
     image: confluentinc/cp-kafka:7.4.0
@@ -56,6 +55,9 @@ services:
     entrypoint: ["/bin/bash", "/tmp/kafka-init.sh"]
     networks:
       - urbanfleet_internal
+    environment:
+      KAFKA_TOPIC_REPLICATION_FACTOR: ${KAFKA_TOPIC_REPLICATION_FACTOR:-1}
+      KAFKA_TOPIC_MIN_ISR: ${KAFKA_TOPIC_MIN_ISR:-1}
 
   # ========================================================
   # 2. INGRESS: KONG API GATEWAY
@@ -63,6 +65,7 @@ services:
   kong:
     image: kong:3.9
     container_name: urbanfleet-kong
+    restart: always
     user: "root"
     environment:
       KONG_DATABASE: "off"
@@ -93,12 +96,20 @@ services:
     networks:
       - urbanfleet_internal
     depends_on:
-      - auth-service
-      - driver-service
-      - ride-service
-      - payment-service
-      - notification-service
-      - frontend
+      auth-service:
+        condition: service_healthy
+      driver-service:
+        condition: service_healthy
+      ride-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      admin-service:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
 
   # ========================================================
   # 3. CORE MICROSERVICES
@@ -108,7 +119,8 @@ services:
       context: .
       dockerfile: services/auth-service/Dockerfile
     container_name: urbanfleet-auth-service
-    command: sh -c "(npx prisma migrate deploy || true) && (npx tsx prisma/seed.ts || true) && node dist/index.js"
+    restart: always
+    command: sh -c "node scripts/wait-for-dependencies.cjs && npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4001"
     environment:
@@ -123,8 +135,16 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-https://urbanfleet.duckdns.org}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
+    volumes:
+      - ./scripts/wait-for-dependencies.cjs:/app/scripts/wait-for-dependencies.cjs:ro
     networks:
       - urbanfleet_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4001/v1/auth/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       kafka:
         condition: service_healthy
@@ -136,7 +156,8 @@ services:
       context: .
       dockerfile: services/driver-service/Dockerfile
     container_name: urbanfleet-driver-service
-    command: sh -c "(npx prisma migrate deploy || true) && (npx tsx prisma/seed.ts || true) && node dist/index.js"
+    restart: always
+    command: sh -c "node scripts/wait-for-dependencies.cjs && npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4002"
     environment:
@@ -153,8 +174,16 @@ services:
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
+    volumes:
+      - ./scripts/wait-for-dependencies.cjs:/app/scripts/wait-for-dependencies.cjs:ro
     networks:
       - urbanfleet_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4002/v1/drivers/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       kafka:
         condition: service_healthy
@@ -166,7 +195,8 @@ services:
       context: .
       dockerfile: services/ride-service/Dockerfile
     container_name: urbanfleet-ride-service
-    command: sh -c "(npx prisma migrate deploy || true) && (npx tsx prisma/seed.ts || true) && node dist/index.js"
+    restart: always
+    command: sh -c "node scripts/wait-for-dependencies.cjs && npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4004"
     environment:
@@ -180,8 +210,16 @@ services:
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-https://urbanfleet.duckdns.org}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
+    volumes:
+      - ./scripts/wait-for-dependencies.cjs:/app/scripts/wait-for-dependencies.cjs:ro
     networks:
       - urbanfleet_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4004/v1/rides/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       kafka:
         condition: service_healthy
@@ -193,7 +231,8 @@ services:
       context: .
       dockerfile: services/payment-service/Dockerfile
     container_name: urbanfleet-payment-service
-    command: sh -c "(npx prisma migrate deploy || true) && (npx tsx prisma/seed.ts || true) && node dist/index.js"
+    restart: always
+    command: sh -c "node scripts/wait-for-dependencies.cjs && npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && node dist/index.js"
     expose:
       - "4005"
     environment:
@@ -212,8 +251,16 @@ services:
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:?Set RAZORPAY_KEY_SECRET in .env}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:?Set RAZORPAY_WEBHOOK_SECRET in .env}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
+    volumes:
+      - ./scripts/wait-for-dependencies.cjs:/app/scripts/wait-for-dependencies.cjs:ro
     networks:
       - urbanfleet_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4005/v1/payments/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       kafka:
         condition: service_healthy
@@ -225,7 +272,8 @@ services:
       context: .
       dockerfile: services/notification-service/Dockerfile
     container_name: urbanfleet-notification-service
-    command: sh -c "(npx prisma migrate deploy || true) && node dist/index.js"
+    restart: always
+    command: sh -c "node scripts/wait-for-dependencies.cjs && npx prisma migrate deploy && node dist/index.js"
     expose:
       - "4003"
     environment:
@@ -241,13 +289,52 @@ services:
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-no-reply@urbanfleet.com}
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
+    volumes:
+      - ./scripts/wait-for-dependencies.cjs:/app/scripts/wait-for-dependencies.cjs:ro
     networks:
       - urbanfleet_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4003/v1/notifications/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       kafka:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+
+  admin-service:
+    build:
+      context: .
+      dockerfile: services/admin-service/Dockerfile
+    container_name: urbanfleet-admin-service
+    restart: always
+    expose:
+      - "4006"
+    environment:
+      NODE_ENV: production
+      PORT: 4006
+      AUTH_SERVICE_URL: "http://auth-service:4001"
+      DRIVER_SERVICE_URL: "http://driver-service:4002"
+      RIDE_SERVICE_URL: "http://ride-service:4004"
+      PAYMENT_SERVICE_URL: "http://payment-service:4005"
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-urbanfleet-internal-service-secret}
+      JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:?Set JWT_PUBLIC_KEY_BASE64 in .env}
+      FRONTEND_URL: ${FRONTEND_URL:-https://urbanfleet.duckdns.org}
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    networks:
+      - urbanfleet_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4006/v1/admin/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ========================================================
   # 4. FRONTEND
@@ -262,10 +349,17 @@ services:
         VITE_GEOAPIFY_API_KEY: ${VITE_GEOAPIFY_API_KEY:-b2e5858ed2ec4ef1bc736c6411abe296}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     container_name: urbanfleet-frontend
+    restart: always
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     networks:
       - urbanfleet_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   kafka_data:

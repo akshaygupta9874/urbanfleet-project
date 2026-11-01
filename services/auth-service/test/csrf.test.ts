@@ -38,6 +38,7 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
   describe('CSRF Token Generation & Redis Storage', () => {
     it('generates a 64-character hex CSRF token and sets cookie with httpOnly: false', async () => {
       const setExSpy = vi.spyOn(authRedisClient, 'setEx').mockResolvedValue('OK' as any);
+      vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
       const mockRes: any = {
         cookie: vi.fn(),
       };
@@ -55,6 +56,18 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
         })
       );
       setExSpy.mockRestore();
+    });
+
+    it('does not issue a CSRF cookie when Redis is unavailable', async () => {
+      vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(false);
+      const mockRes: any = {
+        cookie: vi.fn(),
+      };
+
+      await expect(generateCSRFToken('user-123', mockRes)).rejects.toThrow(
+        'CSRF token storage unavailable'
+      );
+      expect(mockRes.cookie).not.toHaveBeenCalled();
     });
   });
 
@@ -145,6 +158,26 @@ describe('CSRF Protection & Secure Cookie Utilities', () => {
         })
       );
       getSpy.mockRestore();
+    });
+
+    it('fails closed when Redis is unavailable', async () => {
+      vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(false);
+
+      const req: any = {
+        method: 'POST',
+        userId: 'user-123',
+        headers: { 'x-csrf-token': 'some-token' },
+      };
+      const res: any = {};
+      const next = vi.fn();
+
+      await verifyCsrfToken(req, res, next);
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'CSRF_VALIDATION_UNAVAILABLE',
+          statusCode: 403,
+        })
+      );
     });
 
     it('passes state-changing request when x-csrf-token matches Redis token', async () => {

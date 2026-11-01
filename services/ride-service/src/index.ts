@@ -103,20 +103,10 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
 };
 
 app.get('/health', healthHandler);
-app.get('/ride/health', healthHandler);
-app.get('/rides/health', healthHandler);
-app.get('/v1/ride/health', healthHandler);
 app.get('/v1/rides/health', healthHandler);
-app.get('/api/ride/health', healthHandler);
-app.get('/api/rides/health', healthHandler);
 
-// HTTP Routes
+// HTTP Routes (Single Canonical Endpoint)
 const rideRouter = createRideRouter(rideController);
-app.use('/ride', rideRouter);
-app.use('/rides', rideRouter);
-app.use('/api/ride', rideRouter);
-app.use('/api/rides', rideRouter);
-app.use('/v1/ride', rideRouter);
 app.use('/v1/rides', rideRouter);
 
 // Global Error Handler

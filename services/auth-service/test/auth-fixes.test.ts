@@ -103,8 +103,12 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
 
     vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
     vi.spyOn(authRedisClient, 'set').mockResolvedValue('OK' as any);
+    vi.spyOn(authRedisClient, 'setEx').mockResolvedValue('OK' as any);
     vi.spyOn(authRedisClient, 'get').mockResolvedValue(null as any);
     vi.spyOn(authRedisClient, 'del').mockResolvedValue(1 as any);
+    vi.spyOn(authRedisClient, 'sAdd').mockResolvedValue(1 as any);
+    vi.spyOn(authRedisClient, 'sMembers').mockResolvedValue(['sess-fix-1'] as any);
+    vi.spyOn(authRedisClient, 'sRem').mockResolvedValue(1 as any);
   });
 
   // Issue 1: Registration parameter normalization
@@ -1195,7 +1199,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(setCookie).toContain('refreshToken=');
     });
 
-    it('successfully refreshes token via HttpOnly cookie on alias /refresh-token', async () => {
+    it('rejects unused legacy alias /refresh-token with 404', async () => {
       const res = await fetch(`${baseUrl}/refresh-token`, {
         method: 'POST',
         headers: {
@@ -1203,12 +1207,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         },
       });
 
-      expect(res.status).toBe(200);
-      const data = await res.json() as any;
-      expect(data.success).toBe(true);
-      expect(data.data.accessToken).toBeDefined();
-      expect(data.data.user).toBeDefined();
-      expect(data.data.csrfToken).toBeDefined();
+      expect(res.status).toBe(404);
     });
   });
 

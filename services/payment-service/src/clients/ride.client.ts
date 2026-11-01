@@ -26,17 +26,7 @@ export class RideClient {
     }
 
     try {
-      let res;
-      try {
-        res = await this.client.get<{ success: boolean; data: RideDto }>(`/api/rides/${id}`);
-      } catch (err: unknown) {
-        if (isAxiosError(err) && err.response?.status === 404) {
-          res = await this.client.get<{ success: boolean; data: RideDto }>(`/api/ride/${id}`);
-        } else {
-          throw err;
-        }
-      }
-
+      const res = await this.client.get<{ success: boolean; data: RideDto }>(`/v1/rides/${id}`);
       return res.data?.data ?? null;
     } catch (err: unknown) {
       const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<RideDto | null>> };
@@ -71,24 +61,11 @@ export class RideClient {
     }
 
     try {
-      let res;
       const payload = { paymentStatus, currentStatus };
-      try {
-        res = await this.client.patch<{ success: boolean; data: RideDto }>(
-          `/api/rides/${id}/payment-status`,
-          payload
-        );
-      } catch (err: unknown) {
-        if (isAxiosError(err) && err.response?.status === 404) {
-          res = await this.client.patch<{ success: boolean; data: RideDto }>(
-            `/api/ride/${id}/payment-status`,
-            payload
-          );
-        } else {
-          throw err;
-        }
-      }
-
+      const res = await this.client.patch<{ success: boolean; data: RideDto }>(
+        `/v1/rides/${id}/payment-status`,
+        payload
+      );
       return res.data?.data;
     } catch (err: unknown) {
       const pRide = prisma.ride as unknown as { updateMany?: Mockable<(args: { where: { id: string; paymentStatus?: string }; data: { paymentStatus: string } }) => Promise<unknown>> };

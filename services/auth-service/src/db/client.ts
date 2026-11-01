@@ -14,15 +14,15 @@ const connectionString =
 /**
  * PostgreSQL connection pooling:
  * - max: 20 concurrent connections in pool
- * - min: 2 warm idle connections
+ * - min: 0 connections (optimized for Neon serverless pooler)
  * - idleTimeoutMillis: 30000 (close idle connections after 30s)
- * - connectionTimeoutMillis: 5000 (fail fast after 5s)
+ * - connectionTimeoutMillis: 15000 (fail fast after 15s)
  * - keepAlive: true (prevent firewall socket drops)
  */
 const poolConfig: PoolConfig = {
   connectionString,
   max: parseInt(process.env.DB_POOL_MAX || '20', 10),
-  min: parseInt(process.env.DB_POOL_MIN || '2', 10),
+  min: parseInt(process.env.DB_POOL_MIN || '0', 10),
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || '15000', 10),
   keepAlive: true,

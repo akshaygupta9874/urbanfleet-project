@@ -5,6 +5,7 @@ import {
   X,
   Car,
   Bike,
+  Shield,
   ShieldCheck,
   Navigation,
   Sparkles,
@@ -224,7 +225,7 @@ function NavBar() {
                 </span>
               </div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#7a4416] mt-0.5">
-                Luxury Transit Console
+                Secure Urban Transportation
               </p>
             </div>
           </button>
@@ -390,8 +391,8 @@ function NavBar() {
                 <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
                 <span className="relative z-10 flex items-center gap-1.5">
                   {isOnDriverPage || (isDriver && !isRider)
-                    ? "Driver Console"
-                    : "Rider Console"}
+                    ? "Driver Dashboard"
+                    : "Passenger Dashboard"}
                   <ArrowRight
                     size={13}
                     className="text-[#ffd88a] transition-transform group-hover:translate-x-0.5"
@@ -460,7 +461,7 @@ function NavBar() {
                         >
                           <span className="flex items-center gap-2.5">
                             <Navigation size={14} className="text-[#b8722c]" />
-                            Passenger Console
+                            Passenger Dashboard
                           </span>
                           <ArrowRight size={12} className="text-[#7a4416]" />
                         </button>
@@ -472,7 +473,7 @@ function NavBar() {
                         >
                           <span className="flex items-center gap-2.5">
                             <Car size={14} className="text-[#b8722c]" />
-                            Captain & Fleet Hub
+                            Driver Dashboard
                           </span>
                           <ArrowRight size={12} className="text-[#7a4416]" />
                         </button>
@@ -505,6 +506,25 @@ function NavBar() {
                             RFC
                           </span>
                         </button>
+
+                        {user?.roles?.includes("ADMIN") && (
+                          <button
+                            type="button"
+                            onClick={() => navigate("/admin")}
+                            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-[#2e1808] hover:bg-[#fffaf0] transition-colors"
+                          >
+                            <span className="flex items-center gap-2.5">
+                              <Shield size={14} className="text-[#b8722c]" />
+                              Admin Operations
+                            </span>
+                            <span
+                              className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-900 border border-amber-500/30"
+                              style={{ fontFamily: MONO_FONT }}
+                            >
+                              ADMIN
+                            </span>
+                          </button>
+                        )}
                       </div>
 
                       <div className="my-2 h-px bg-[#7a4416]/15" />
@@ -604,7 +624,7 @@ function NavBar() {
                       onClick={() => navigate(isAuthenticated ? "/dashboard" : "/login")}
                       className="inline-flex items-center gap-1 rounded-xl bg-[#3a1f0a] px-3.5 py-1.5 text-xs font-bold text-[#ffd88a] hover:opacity-95 transition-opacity"
                     >
-                      Open Dispatch Ticket <ArrowRight size={13} />
+                      Open Driver Dashboard <ArrowRight size={13} />
                     </button>
                   </div>
 
@@ -765,7 +785,7 @@ function NavBar() {
                       Book a Ride
                     </p>
                     <p className="text-[11px] font-medium text-[#7a4416]">
-                      Passenger Console
+                      Passenger Dashboard
                     </p>
                   </div>
                 </button>
@@ -785,10 +805,10 @@ function NavBar() {
                       className="text-sm font-black text-[#2e1808]"
                       style={{ fontFamily: DISPLAY_FONT }}
                     >
-                      Captain Hub
+                      Driver Dashboard
                     </p>
                     <p className="text-[11px] font-medium text-[#7a4416]">
-                      Driver Telemetry
+                      Driver Activity
                     </p>
                   </div>
                 </button>
@@ -874,8 +894,8 @@ function NavBar() {
                       onClick={() => navigate(dashboardPath)}
                     >
                       {isOnDriverPage || (isDriver && !isRider)
-                        ? "Open Driver Console"
-                        : "Open Passenger Console"}
+                        ? "Open Driver Dashboard"
+                        : "Open Passenger Dashboard"}
                       <ArrowRight size={15} className="ml-2 text-[#ffd88a]" />
                     </Button>
 

@@ -164,7 +164,7 @@ export async function registerDriver(
 ): Promise<DriverRegistrationResponse> {
     const response = await appApi.post<{
         data: DriverRegistrationResponse;
-    }>("/driver/register", formData, {
+    }>("/drivers/register", formData, {
         headers: {
             "Content-Type": "multipart/form-data",
         },
@@ -173,7 +173,7 @@ export async function registerDriver(
 }
 
 export async function fetchDriverProfile(): Promise<DriverProfile> {
-  const response = await appApi.get<{ data: DriverProfile }>('/driver/profile');
+  const response = await appApi.get<{ data: DriverProfile }>('/drivers/profile');
   return response.data.data;
 }
 
@@ -201,7 +201,7 @@ export async function updateDriverBankDetails(data: {
   }
 
   const response = await appApi.patch<{ data: DriverBankDetails }>(
-    "/driver/bank-details",
+    "/drivers/bank-details",
     formData,
     {
       headers: {
@@ -213,6 +213,6 @@ export async function updateDriverBankDetails(data: {
 }
 
 export async function fetchDriverRideHistory(): Promise<DriverRideItem[]> {
-  const response = await appApi.get<{ data: DriverRideItem[]; totalRides?: number }>('/ride/history/driver');
+  const response = await appApi.get<{ data: DriverRideItem[]; totalRides?: number }>('/rides/history/driver');
   return response.data.data || [];
 }

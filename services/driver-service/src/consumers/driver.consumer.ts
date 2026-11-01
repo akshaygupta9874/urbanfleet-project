@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
+import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics, RideCompletedPayload, UserRegisteredPayload } from '@urbanfleet/contracts';
 
 const logger = createLogger('driver-event-consumer');
@@ -10,13 +10,13 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
   const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
   const kafka = new Kafka({ clientId: 'driver-service', brokers });
   const consumer = kafka.consumer({ groupId: consumerGroup });
-
   try {
     await consumer.connect();
     await consumer.subscribe({ topic: EventTopics.AUTH_EVENTS, fromBeginning: false });
     await consumer.subscribe({ topic: EventTopics.RIDE_EVENTS, fromBeginning: false });
 
     await consumer.run({
+      autoCommit: false,
       eachMessage: createResilientConsumerRunner(
         {
           kafka,

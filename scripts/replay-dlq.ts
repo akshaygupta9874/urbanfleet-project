@@ -1,6 +1,6 @@
 import { Kafka } from 'kafkajs';
-import { createLogger } from '@urbanfleet/common';
-import { DeadLetterEnvelope } from '@urbanfleet/contracts';
+import { createDurableProducer, createKafkaClient, createKafkaConsumer, createLogger } from '@urbanfleet/common';
+import { DeadLetterEnvelopeSchema } from '@urbanfleet/contracts';
 
 const logger = createLogger('dlq-replay-tool');
 
@@ -16,12 +16,17 @@ async function main() {
 
   const dlqTopic = args[topicArgIdx + 1];
   const limit = limitArgIdx !== -1 ? parseInt(args[limitArgIdx + 1], 10) : 10;
+  if (!dlqTopic.endsWith('.DLQ')) {
+    throw new Error(`Refusing to replay non-DLQ topic: ${dlqTopic}`);
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+    throw new Error('--limit must be an integer between 1 and 1000');
+  }
 
-  const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-  const kafka = new Kafka({ clientId: 'dlq-replay-tool', brokers });
+  const kafka = createKafkaClient('dlq-replay-tool');
 
-  const consumer = kafka.consumer({ groupId: `dlq-replay-${Date.now()}` });
-  const producer = kafka.producer();
+  const consumer = createKafkaConsumer(kafka, `dlq-replay-${Date.now()}`);
+  const producer = createDurableProducer(kafka);
 
   await consumer.connect();
   await producer.connect();
@@ -30,34 +35,48 @@ async function main() {
   logger.info(`Starting redrive replay from ${dlqTopic} (Limit: ${limit} events)...`);
 
   let replayedCount = 0;
+  let skippedCount = 0;
+  let stopping = false;
 
   await consumer.run({
     eachMessage: async ({ message }) => {
-      if (!message.value || replayedCount >= limit) return;
+      if (!message.value || replayedCount >= limit || stopping) return;
 
       try {
         const rawString = message.value.toString();
-        const dlqEnvelope: DeadLetterEnvelope<unknown> = JSON.parse(rawString);
+        const parsed: unknown = JSON.parse(rawString);
+        const dlqEnvelope = DeadLetterEnvelopeSchema.parse(parsed);
 
         const targetTopic = dlqEnvelope.originalTopic;
-        if (!targetTopic) {
-          logger.warn(`Skipping DLQ message ${message.offset}: missing originalTopic metadata.`);
+        if (targetTopic.endsWith('.DLQ')) {
+          throw new Error(`Refusing to replay into another DLQ topic: ${targetTopic}`);
+        }
+
+        const originalValue =
+          dlqEnvelope.originalValue ??
+          (dlqEnvelope.originalEnvelope
+            ? JSON.stringify(dlqEnvelope.originalEnvelope)
+            : undefined);
+        if (!originalValue) {
+          skippedCount++;
+          logger.error(
+            `Skipping legacy DLQ message at offset ${message.offset}: original Kafka value is unavailable.`
+          );
           return;
         }
 
-        // Re-inject original message payload with audit redrive headers
         await producer.send({
+          acks: -1,
           topic: targetTopic,
           messages: [
             {
               key: dlqEnvelope.originalKey || dlqEnvelope.id,
-              value: typeof dlqEnvelope.payload === 'string'
-                ? dlqEnvelope.payload
-                : JSON.stringify(dlqEnvelope.payload),
+              value: originalValue,
               headers: {
                 'x-replayed': 'true',
                 'x-replayed-at': new Date().toISOString(),
                 'x-replayed-from-dlq': dlqTopic,
+                'x-original-event-id': dlqEnvelope.originalEventId || '',
                 'x-original-error': dlqEnvelope.error?.message || 'unknown',
               },
             },
@@ -69,15 +88,19 @@ async function main() {
 
         if (replayedCount >= limit) {
           logger.info(`Reached replay limit of ${limit}. Disconnecting replay worker.`);
-          await consumer.disconnect();
-          await producer.disconnect();
-          process.exit(0);
+          stopping = true;
+          await consumer.stop();
         }
       } catch (err: unknown) {
         logger.error(`Failed to replay DLQ message at offset ${message.offset}:`, err);
+        skippedCount++;
       }
     },
   });
+
+  await consumer.disconnect();
+  await producer.disconnect();
+  logger.info(`DLQ replay complete: replayed=${replayedCount}, skipped=${skippedCount}`);
 }
 
 main().catch((err) => {

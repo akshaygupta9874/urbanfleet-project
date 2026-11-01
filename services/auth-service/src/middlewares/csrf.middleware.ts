@@ -19,15 +19,19 @@ export const generateCSRFToken = async (userId: string, response: Response): Pro
   const csrfToken = crypto.randomBytes(32).toString('hex');
   const redisKey = authRedisKey(`csrf:${userId}`);
 
+  if (!authRedisClient.isOpen) {
+    logger.error('Cannot generate CSRF token because Redis is unavailable', { userId });
+    throw new Error('CSRF token storage unavailable');
+  }
+
   try {
-    if (authRedisClient.isOpen) {
-      await authRedisClient.setEx(redisKey, CSRF_EXPIRE_SECONDS, csrfToken);
-    }
+    await authRedisClient.setEx(redisKey, CSRF_EXPIRE_SECONDS, csrfToken);
   } catch (err: unknown) {
-    logger.warn('Failed to cache CSRF token in Redis; falling back to double-submit cookie', {
+    logger.error('Failed to store CSRF token in Redis', {
       userId,
       error: err instanceof Error ? err.message : String(err),
     });
+    throw new Error('CSRF token storage unavailable');
   }
 
   response.cookie('csrfToken', csrfToken, getCsrfCookieOptions({
@@ -60,28 +64,27 @@ export const verifyCsrfToken = async (req: AuthenticatedRequest, res: Response, 
     return next(new ForbiddenError('CSRF token missing', 'CSRF_TOKEN_MISSING'));
   }
 
-  // 4. Validate token strictly against Redis (Single Source of Truth for dynamic security state)
+  // 4. Redis is the single source of truth; fail closed if it is unavailable.
+  if (!authRedisClient.isOpen) {
+    logger.error('Rejecting CSRF-protected request because Redis is unavailable', { userId });
+    return next(new ForbiddenError('CSRF validation unavailable', 'CSRF_VALIDATION_UNAVAILABLE'));
+  }
+
   const redisKey = authRedisKey(`csrf:${userId}`);
   let storedCSRFToken: string | null = null;
 
   try {
-    if (authRedisClient.isOpen) {
-      storedCSRFToken = await authRedisClient.get(redisKey);
-    }
+    storedCSRFToken = await authRedisClient.get(redisKey);
   } catch (err: unknown) {
     logger.error('Failed to query CSRF token from Redis', {
       userId,
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-
-  // If Redis is connected and key was expired/missing:
-  if (authRedisClient.isOpen && !storedCSRFToken) {
-    return next(new ForbiddenError('CSRF Token expired', 'CSRF_TOKEN_EXPIRED'));
+    return next(new ForbiddenError('CSRF validation unavailable', 'CSRF_VALIDATION_UNAVAILABLE'));
   }
 
   if (!storedCSRFToken) {
-    return next(new ForbiddenError('CSRF Token expired or invalid', 'CSRF_TOKEN_INVALID'));
+    return next(new ForbiddenError('CSRF Token expired', 'CSRF_TOKEN_EXPIRED'));
   }
 
   if (clientToken !== storedCSRFToken) {

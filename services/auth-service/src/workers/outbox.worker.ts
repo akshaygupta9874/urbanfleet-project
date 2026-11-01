@@ -61,26 +61,25 @@ export class OutboxWorker {
     let processedCount = 0;
 
     for (const event of events) {
-      try {
-        let envelopePayload = event.payload;
-        if (typeof envelopePayload === 'string') {
-          try {
-            envelopePayload = JSON.parse(envelopePayload);
-          } catch (parseErr: unknown) {
-            logger.debug('Outbox payload is not valid JSON string, keeping raw string', {
-              eventId: event.id,
-              error: parseErr instanceof Error ? parseErr.message : String(parseErr),
-            });
-          }
+      const evObj = event as unknown as Record<string, unknown>;
+      let envelopePayload: unknown = event.payload;
+      if (typeof envelopePayload === 'string') {
+        try {
+          envelopePayload = JSON.parse(envelopePayload);
+        } catch (parseErr: unknown) {
+          logger.debug('Outbox payload is not valid JSON string, keeping raw string', {
+            eventId: event.id,
+            error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+          });
         }
+      }
+      const eventType = String(event.eventType || evObj.event_type || '');
+      const partitionKey = String(event.partitionKey || evObj.partition_key || '');
+      const aggregateType = String(event.aggregateType || evObj.aggregate_type || 'USER');
+      const aggregateId = String(event.aggregateId || evObj.aggregate_id || '');
+      const aggregateSequence = Number(event.aggregateSequence || evObj.aggregate_sequence || 1);
 
-        const evObj = event as unknown as Record<string, unknown>;
-        const eventType = String(event.eventType || evObj.event_type || '');
-        const partitionKey = String(event.partitionKey || evObj.partition_key || '');
-        const aggregateType = String(event.aggregateType || evObj.aggregate_type || 'USER');
-        const aggregateId = String(event.aggregateId || evObj.aggregate_id || '');
-        const aggregateSequence = Number(event.aggregateSequence || evObj.aggregate_sequence || 1);
-
+      try {
         // Ensure payload is enveloped
         const payloadObj = envelopePayload as Record<string, unknown> | null;
         const envelope = (payloadObj && payloadObj.eventType && payloadObj.id)
@@ -99,6 +98,7 @@ export class OutboxWorker {
             };
 
         await producer.send({
+          acks: -1,
           topic: event.topic,
           messages: [
             {
@@ -113,9 +113,22 @@ export class OutboxWorker {
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.error(`Failed to publish outbox event ${event.id}:`, err);
+        let deadLettered = false;
         if (((event.retryCount || 0) + 1) >= 5 && producer) {
           try {
             const dlqTopic = `${event.topic}.DLQ`;
+            const replayableEnvelope = {
+              id: event.id,
+              version: 1,
+              eventType,
+              producer: 'auth-service',
+              timestamp: event.createdAt ? new Date(event.createdAt).toISOString() : new Date().toISOString(),
+              partitionKey,
+              aggregateType,
+              aggregateId,
+              aggregateSequence,
+              payload: envelopePayload,
+            };
             const dlqEnvelope = {
               id: crypto.randomUUID(),
               originalEventId: event.id,
@@ -131,18 +144,26 @@ export class OutboxWorker {
                 name: 'OutboxPublishExhaustionError',
                 message: errorMsg,
               },
-              payload: event.payload,
+              payload: envelopePayload,
+              originalValue: JSON.stringify(replayableEnvelope),
+              originalEnvelope: replayableEnvelope,
             };
-            producer.send({
+            await producer.send({
               topic: dlqTopic,
               messages: [{ key: (event as any).partitionKey || event.id, value: JSON.stringify(dlqEnvelope) }],
-            }).catch((e: unknown) => logger.error('Async error dispatching outbox DLQ in auth:', e));
+            });
+            deadLettered = true;
             logger.error(`[OUTBOX_DLQ] Event ${event.id} exhausted retries and was sent to DLQ topic ${dlqTopic}`);
           } catch (dlqErr) {
             logger.error(`Failed to dispatch exhausted outbox event ${event.id} to DLQ:`, dlqErr);
           }
         }
-        await this.outboxRepo.markFailed(event.id, errorMsg);
+        if (deadLettered) {
+          await this.outboxRepo.markFailed(event.id, errorMsg);
+        } else {
+          logger.error(`Keeping outbox event ${event.id} retryable because DLQ publication was not confirmed.`);
+          await this.outboxRepo.markRetryable(event.id, errorMsg);
+        }
       }
     }
 

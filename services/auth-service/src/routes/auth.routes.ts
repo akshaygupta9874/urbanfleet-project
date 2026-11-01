@@ -80,7 +80,6 @@ export function createAuthRouter(controller: AuthController): Router {
   router.get('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
   // Refresh Token & Session Revocation (Canonical transport: HttpOnly Cookie)
   router.post('/refresh', controller.refreshToken);
-  router.post('/refresh-token', controller.refreshToken);
   router.post('/logout', controller.logout);
 
   // Password & Email Recovery Endpoints

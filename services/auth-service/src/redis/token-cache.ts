@@ -75,15 +75,21 @@ export async function validateSessionInRedis(
   userId: string,
   sessionId: string
 ): Promise<{ valid: boolean; reason?: string }> {
+  if (!authRedisClient || !authRedisClient.isOpen) {
+    logger.error('Session validation rejected because Redis client is unavailable', { userId, sessionId });
+    return { valid: false, reason: 'REDIS_UNAVAILABLE' };
+  }
+
   try {
-    if (!authRedisClient || !authRedisClient.isOpen) {
-      return { valid: true };
+    let storedSession = await authRedisClient.get(authRedisKey(`session:${sessionId}`));
+    if (!storedSession) {
+      storedSession = await authRedisClient.get(`session:${sessionId}`);
     }
 
-    const [storedSession, activeSessionIds] = await Promise.all([
-      authRedisClient.get(authRedisKey(`session:${sessionId}`)) || authRedisClient.get(`session:${sessionId}`),
-      authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)),
-    ]);
+    let activeSessionIds = await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`));
+    if (!activeSessionIds || activeSessionIds.length === 0) {
+      activeSessionIds = await authRedisClient.sMembers(`user-sessions:${userId}`);
+    }
 
     if (!storedSession) {
       return { valid: false, reason: 'SESSION_EXPIRED' };
@@ -100,12 +106,12 @@ export async function validateSessionInRedis(
 
     return { valid: true };
   } catch (err: unknown) {
-    logger.warn('Error validating session in Redis; falling back to DB validation:', {
+    logger.error('Error validating session in Redis; failing closed:', {
       error: err instanceof Error ? err.message : String(err),
       userId,
       sessionId,
     });
-    return { valid: true };
+    return { valid: false, reason: 'REDIS_UNAVAILABLE' };
   }
 }
 
@@ -120,6 +126,7 @@ export interface CachedUser {
   firstName: string;
   lastName: string;
   driverId?: string;
+  isSuspended?: boolean;
 }
 
 /**

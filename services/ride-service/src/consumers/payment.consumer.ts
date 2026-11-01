@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
+import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 import { emitPaymentCaptured as emitPaymentCapturedToDriver } from '../websocket/emitters/driver.emitter.js';
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from '../websocket/emitters/rider.emitter.js';
@@ -11,15 +11,15 @@ const logger = createLogger('ride-payment-consumer');
 const consumerGroup = 'ride-service-payment-group';
 
 export async function initRidePaymentConsumer(prisma: PrismaClient): Promise<Consumer | null> {
-  const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-  const kafka = new Kafka({ clientId: 'ride-service-payment-consumer', brokers });
-  const consumer = kafka.consumer({ groupId: consumerGroup });
+  const kafka = createKafkaClient('ride-service-payment-consumer');
+  const consumer = createKafkaConsumer(kafka, consumerGroup);
 
   try {
     await consumer.connect();
     await consumer.subscribe({ topic: EventTopics.PAYMENT_EVENTS, fromBeginning: false });
 
     await consumer.run({
+      autoCommit: false,
       eachMessage: createResilientConsumerRunner(
         {
           kafka,

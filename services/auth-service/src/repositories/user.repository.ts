@@ -53,4 +53,54 @@ export class UserRepository {
   async count(): Promise<number> {
     return this.prisma.user.count();
   }
+
+  async list(params: { page: number; limit: number; search?: string; role?: Role }) {
+    const where = {
+      ...(params.search
+        ? {
+            OR: [
+              { email: { contains: params.search, mode: 'insensitive' as const } },
+              { firstName: { contains: params.search, mode: 'insensitive' as const } },
+              { lastName: { contains: params.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+      ...(params.role ? { roles: { has: params.role } } : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          roles: true,
+          isEmailVerified: true,
+          isSuspended: true,
+          suspendedAt: true,
+          suspensionReason: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: { select: { sessions: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (params.page - 1) * params.limit,
+        take: params.limit,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+    return { items, total };
+  }
+
+  async setSuspension(id: string, suspended: boolean, reason?: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        isSuspended: suspended,
+        suspendedAt: suspended ? new Date() : null,
+        suspensionReason: suspended ? reason : null,
+      },
+    });
+  }
 }

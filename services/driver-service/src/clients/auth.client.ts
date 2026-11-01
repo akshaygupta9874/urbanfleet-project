@@ -30,10 +30,10 @@ export class AuthClient {
   async getUserById(userId: string, token?: string): Promise<AuthUser | null> {
     try {
       const res = token
-        ? await this.client.get<{ success: boolean; data: AuthUser }>(`/api/auth/users/${userId}`, {
+        ? await this.client.get<{ success: boolean; data: AuthUser }>(`/v1/auth/users/${userId}`, {
             headers: { Authorization: `Bearer ${token}` },
           })
-        : await this.client.get<{ success: boolean; data: AuthUser }>(`/api/auth/users/${userId}`);
+        : await this.client.get<{ success: boolean; data: AuthUser }>(`/v1/auth/users/${userId}`);
       return res.data?.data ?? null;
     } catch (err: unknown) {
       if (isAxiosError(err)) {
@@ -51,7 +51,7 @@ export class AuthClient {
 
   async grantDriverRole(userId: string): Promise<void> {
     try {
-      await this.client.post(`/api/auth/internal/users/${userId}/driver-role`);
+      await this.client.post(`/v1/auth/internal/users/${userId}/driver-role`);
     } catch (err: unknown) {
       if (isAxiosError(err)) {
         if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {

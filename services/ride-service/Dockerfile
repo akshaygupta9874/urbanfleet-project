@@ -3,12 +3,13 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.base.json ./
 COPY packages/ ./packages/
+COPY scripts/ ./scripts/
 COPY services/ride-service/ ./services/ride-service/
 
 RUN npm config set fetch-retries 5 \
     && npm config set fetch-retry-mintimeout 20000 \
     && npm config set fetch-retry-maxtimeout 120000 \
-    && npm install
+    && npm ci --ignore-scripts --no-audit --fund=false
 RUN npm run build:packages
 RUN npm run build --workspace=@urbanfleet/ride-service
 
@@ -17,6 +18,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/services/ride-service/dist ./dist
 COPY --from=builder /app/services/ride-service/src/generated ./src/generated
 COPY --from=builder /app/services/ride-service/package.json ./package.json

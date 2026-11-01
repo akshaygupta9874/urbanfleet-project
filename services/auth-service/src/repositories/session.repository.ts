@@ -62,6 +62,32 @@ export class SessionRepository {
     });
   }
 
+  async list(params: { page: number; limit: number; userId?: string }) {
+    const where = params.userId ? { userId: params.userId } : {};
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.session.findMany({
+        where,
+        select: {
+          id: true,
+          userId: true,
+          userAgent: true,
+          ipAddress: true,
+          deviceType: true,
+          browser: true,
+          os: true,
+          lastActiveAt: true,
+          expiresAt: true,
+          createdAt: true,
+        },
+        orderBy: { lastActiveAt: 'desc' },
+        skip: (params.page - 1) * params.limit,
+        take: params.limit,
+      }),
+      this.prisma.session.count({ where }),
+    ]);
+    return { items, total };
+  }
+
   /**
    * Deprecated backward compatibility helper
    */

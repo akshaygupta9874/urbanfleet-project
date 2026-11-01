@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { appApi } from "../lib/api";
 import { Button } from "./ui/button";
-import { formatFare, getDistanceKm, getDurationMinutes } from "../lib/formatters";
+import { formatFare, formatDistance, formatDuration } from "../lib/formatters";
 import type { Coordinates } from "../types/location";
 import type { RideDto as Ride } from "../types/ride";
 
@@ -28,10 +28,6 @@ interface RiderHistoryPanelProps {
     destinationCoords?: Coordinates
   ) => void;
   onExpandView?: () => void;
-}
-
-function formatPaise(paise: number): string {
-  return formatFare(paise);
 }
 
 export default function RiderHistoryPanel({
@@ -47,17 +43,23 @@ export default function RiderHistoryPanel({
     setLoading(true);
     try {
       const response = await appApi
-        .get<{ success: boolean; data: Ride[] | { rides?: Ride[] } }>("/ride/history")
+        .get<{ success: boolean; data: Ride[] | { rides?: Ride[] } }>("/rides/history")
         .catch(() =>
-          appApi.get<{ success: boolean; data: Ride[] | { rides?: Ride[] } }>("/ride/rider/history")
+          appApi
+            .get<{ success: boolean; data: Ride[] | { rides?: Ride[] } }>("/ride/history")
+            .catch(() =>
+              appApi.get<{ success: boolean; data: Ride[] | { rides?: Ride[] } }>(
+                "/ride/rider/history"
+              )
+            )
         );
 
       const rawData = response?.data?.data;
       const list = Array.isArray(rawData)
         ? rawData
         : Array.isArray(rawData?.rides)
-        ? rawData.rides
-        : [];
+          ? rawData.rides
+          : [];
       setRides(list);
     } catch (err) {
       console.error("Failed to load rider history:", err);
@@ -68,13 +70,7 @@ export default function RiderHistoryPanel({
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    void Promise.resolve().then(() => {
-      if (!cancelled) void fetchHistory();
-    });
-    return () => {
-      cancelled = true;
-    };
+    void fetchHistory();
   }, [fetchHistory]);
 
   const filteredRides = rides.filter((r) => filter === "ALL" || r.status === filter);
@@ -85,13 +81,85 @@ export default function RiderHistoryPanel({
     (acc, r) => acc + (r.fare?.final ?? r.fare?.estimated ?? 0),
     0
   );
-  const totalDistanceKm = completedRides
-    .reduce((acc, r) => acc + getDistanceKm(r.distance), 0)
-    .toFixed(1);
+  const totalDistanceRaw = completedRides.reduce(
+    (acc, r) => acc + (r.distance?.actual ?? r.distance?.estimated ?? 0),
+    0
+  );
+
+  // Full Shimmer Skeleton While Loading (Prevents 0 / ₹0.00 / 0 km Flash)
+  if (loading) {
+    return (
+      <div className="w-full space-y-5 animate-in fade-in duration-200">
+        {!compact && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="relative overflow-hidden rounded-[1.75rem] border border-[#c58a3a]/30 bg-gradient-to-br from-[#fffdf9]/90 via-[#fff4dc]/85 to-[#f7e2b8]/85 p-5 shadow-md backdrop-blur-xl"
+              >
+                <div className="uf-skeleton-shimmer pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-28 rounded-md bg-[#7a4416]/15" />
+                  <div className="h-10 w-10 rounded-2xl bg-[#3a1f0a]/15" />
+                </div>
+                <div className="mt-4 h-7 w-24 rounded-lg bg-[#3a1f0a]/20" />
+                <div className="mt-2 h-3 w-32 rounded-md bg-[#7a4416]/15" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div
+          className={`relative overflow-hidden rounded-[2.25rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 shadow-xl backdrop-blur-2xl ${
+            compact ? "p-5 sm:p-6" : "p-6 sm:p-8"
+          }`}
+        >
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+          <div className="flex items-center justify-between gap-3 border-b border-[#7a4416]/15 pb-4 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+              <div>
+                <h3
+                  className={`${compact ? "text-base" : "text-lg"} font-black text-[#2e1808]`}
+                  style={{ fontFamily: "'Fraunces', Georgia, serif" }}
+                >
+                  Synchronizing Travel Ledger…
+                </h3>
+                <p className="text-[11px] font-medium text-[#7a4416]">
+                  Loading past trips, fare receipts, and route coordinates.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {Array.from({ length: compact ? 2 : 3 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="relative overflow-hidden rounded-2xl border border-[#7a4416]/15 bg-[#fffdf9]/90 p-4 shadow-2xs"
+              >
+                <div className="uf-skeleton-shimmer pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-[#fff4dc]/80 to-transparent" />
+                <div className="flex items-center justify-between border-b border-[#7a4416]/10 pb-2.5 mb-3">
+                  <div className="h-4 w-28 rounded-md bg-[#3a1f0a]/15" />
+                  <div className="h-4 w-20 rounded-full bg-[#3a1f0a]/15" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3.5 w-4/5 rounded-md bg-[#3a1f0a]/15" />
+                  <div className="h-3.5 w-3/5 rounded-md bg-[#7a4416]/15" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full space-y-5">
-      {/* Full-View Summary KPIs */}
+    <div className="w-full space-y-5 animate-in fade-in duration-200">
+      {/* Full-View Summary KPIs (Only rendered after data has loaded) */}
       {!compact && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="rounded-[1.75rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 shadow-lg backdrop-blur-xl">
@@ -121,7 +189,7 @@ export default function RiderHistoryPanel({
               </div>
             </div>
             <p className="mt-3 text-2xl font-black text-[#2e1808] console-readout">
-              {formatPaise(totalSpentPaise)}
+              {formatFare(totalSpentPaise)}
             </p>
             <p className="mt-1 text-xs font-medium text-[#6b3a12]">Verified settled fares</p>
           </div>
@@ -136,7 +204,7 @@ export default function RiderHistoryPanel({
               </div>
             </div>
             <p className="mt-3 text-2xl font-black text-[#2e1808] console-readout">
-              {totalDistanceKm} km
+              {formatDistance(totalDistanceRaw)}
             </p>
             <p className="mt-1 text-xs font-medium text-[#6b3a12]">Across urban transit routes</p>
           </div>
@@ -145,7 +213,7 @@ export default function RiderHistoryPanel({
 
       {/* Main History List Container */}
       <div
-        className={`relative overflow-hidden rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 shadow-xl backdrop-blur-2xl ${
+        className={`relative overflow-hidden rounded-[2.25rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 shadow-xl backdrop-blur-2xl ${
           compact ? "p-5 sm:p-6" : "p-6 sm:p-8"
         }`}
       >
@@ -198,14 +266,7 @@ export default function RiderHistoryPanel({
         </div>
 
         {/* Ride Cards */}
-        {loading ? (
-          <div className="py-12 text-center">
-            <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#b8722c]" />
-            <p className="mt-2.5 text-xs font-semibold text-[#7a4416]">
-              Loading your travel ledger...
-            </p>
-          </div>
-        ) : displayedRides.length === 0 ? (
+        {displayedRides.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[#7a4416]/25 bg-[#fffaf0]/60 p-8 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#3a1f0a]/10 text-[#7a4416]">
               <History className="h-6 w-6" />
@@ -221,13 +282,15 @@ export default function RiderHistoryPanel({
             </p>
           </div>
         ) : (
-          <div className={`space-y-3 ${compact ? "max-h-[370px] overflow-y-auto pr-1 rd-scroll-fade" : ""}`}>
+          <div
+            className={`space-y-3 ${
+              compact ? "max-h-[370px] overflow-y-auto pr-1 rd-scroll-fade" : ""
+            }`}
+          >
             {displayedRides.map((ride) => {
               const isCompleted = ride.status === "COMPLETED";
               const isCancelled = ride.status === "CANCELLED";
               const farePaise = ride.fare?.final ?? ride.fare?.estimated ?? 0;
-              const distanceKm = getDistanceKm(ride.distance).toFixed(1);
-              const durationMin = getDurationMinutes(ride.duration);
 
               return (
                 <div
@@ -240,26 +303,28 @@ export default function RiderHistoryPanel({
                         #{ride.id.slice(-6)}
                       </span>
                       <span className="text-[11px] font-medium text-[#6b3a12]">
-                        {ride.createdAt ? new Date(ride.createdAt).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }) : "—"}
+                        {ride.createdAt
+                          ? new Date(ride.createdAt).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "Date unavailable"}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <span className="console-readout text-xs font-black text-[#2e1808]">
-                        {formatPaise(farePaise)}
+                        {formatFare(farePaise)}
                       </span>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                           isCompleted
                             ? "bg-emerald-950/15 text-emerald-900 border border-emerald-500/30"
                             : isCancelled
-                            ? "bg-rose-950/15 text-rose-900 border border-rose-500/30"
-                            : "bg-amber-950/15 text-amber-900 border border-amber-500/30"
+                              ? "bg-rose-950/15 text-rose-900 border border-rose-500/30"
+                              : "bg-amber-950/15 text-amber-900 border border-amber-500/30"
                         }`}
                       >
                         {isCompleted ? (
@@ -292,11 +357,13 @@ export default function RiderHistoryPanel({
                   <div className="mt-3 pt-2.5 border-t border-[#7a4416]/10 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 text-[11px] text-[#7a4416] console-readout font-semibold">
                       <span className="flex items-center gap-1">
-                        <RouteIcon className="h-3 w-3 text-[#b8722c]" /> {distanceKm} km
+                        <RouteIcon className="h-3 w-3 text-[#b8722c]" />{" "}
+                        {formatDistance(ride.distance)}
                       </span>
                       <span>•</span>
                       <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3 text-[#b8722c]" /> {durationMin} min
+                        <Clock className="h-3 w-3 text-[#b8722c]" />{" "}
+                        {formatDuration(ride.duration)}
                       </span>
                       {ride.ratings?.[0]?.score && (
                         <>
@@ -314,10 +381,10 @@ export default function RiderHistoryPanel({
                         type="button"
                         onClick={() =>
                           onRebook(
-                            ride.pickup?.address || "",
-                            ride.destination?.address || "",
-                            ride.pickup?.coordinates,
-                            ride.destination?.coordinates
+                            ride.pickup.address,
+                            ride.destination.address,
+                            ride.pickup.coordinates,
+                            ride.destination.coordinates
                           )
                         }
                         className="inline-flex items-center gap-1 rounded-xl border border-[#c58a3a]/40 bg-[#fffaf0] px-2.5 py-1 text-[11px] font-bold text-[#3a1f0a] shadow-2xs hover:bg-[#3a1f0a] hover:text-[#ffd88a] active:scale-95 transition-all"

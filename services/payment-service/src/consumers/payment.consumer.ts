@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
+import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 import { PaymentService } from '../services/payment.service.js';
 import { NonRetryablePaymentError } from '../errors/payment.errors.js';
@@ -28,12 +28,12 @@ export async function initPaymentConsumer(
   const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
   const kafka = new Kafka({ clientId: 'payment-service', brokers });
   const consumer = kafka.consumer({ groupId: consumerGroup });
-
   try {
     await consumer.connect();
     await consumer.subscribe({ topic: EventTopics.RIDE_EVENTS, fromBeginning: false });
 
     await consumer.run({
+      autoCommit: false,
       eachMessage: createResilientConsumerRunner(
         {
           kafka,

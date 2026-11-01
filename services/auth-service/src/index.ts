@@ -12,6 +12,7 @@ import { AuthService } from './services/auth.service.js';
 import { UserService } from './services/user.service.js';
 import { AuthController } from './controllers/auth.controller.js';
 import { createAuthRouter } from './routes/auth.routes.js';
+import { createAdminRouter } from './routes/admin.routes.js';
 
 import { initAuthRedis, authRedisClient } from './redis/client.js';
 import { OutboxRepository } from './repositories/outbox.repository.js';
@@ -43,7 +44,7 @@ const outboxWorker = new OutboxWorker(outboxRepo);
 outboxWorker.start();
 
 const authService = new AuthService(userRepo, sessionRepo, outboxRepo);
-const userService = new UserService(userRepo);
+const userService = new UserService(userRepo, sessionRepo);
 
 const authController = new AuthController(authService, userService);
 
@@ -83,14 +84,12 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
 
 app.get('/health', healthHandler);
 app.get('/v1/auth/health', healthHandler);
-app.get('/api/auth/health', healthHandler);
 
-// 4. Mounting Routes
+// 4. Mounting Routes (Single Canonical Endpoint)
 const authRouter = createAuthRouter(authController);
 
-app.use('/auth', authRouter);
-app.use('/api/auth', authRouter);
 app.use('/v1/auth', authRouter);
+app.use('/v1/auth/admin', createAdminRouter(userService, sessionRepo));
 
 // 5. Global Error Handler
 app.use((err: unknown, req: express.Request, res: express.Response, next: NextFunction) => {

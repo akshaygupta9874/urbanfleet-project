@@ -9,9 +9,9 @@ import type { RideDto } from "../types/ride";
 export type UserRole = "RIDER" | "DRIVER" | "ADMIN";
 
 export const ProtectedRoutes = ({
-  allowedroles,
+  allowedRoles = [],
 }: {
-  allowedroles: UserRole[];
+  allowedRoles?: UserRole[];
 }) => {
   const { user, isAuthenticated, loading } = useAuthContext();
   const location = useLocation();
@@ -19,7 +19,7 @@ export const ProtectedRoutes = ({
 
   useEffect(() => {
     const isRiderRoute =
-      allowedroles.includes("RIDER") && location.pathname !== "/driver-dashboard";
+      allowedRoles.includes("RIDER") && location.pathname !== "/driver-dashboard";
     if (
       !isAuthenticated ||
       !isRiderRoute ||
@@ -33,7 +33,7 @@ export const ProtectedRoutes = ({
     // 1. If user is a driver navigating to rider routes, check if they are actively driving
     if (user?.roles?.includes("DRIVER")) {
       appApi
-        .get<{ success: boolean; data: RideDto }>("/ride/driver/current")
+        .get<{ success: boolean; data: RideDto }>("/rides/driver/current")
         .then((res) => {
           if (cancelled) return;
           const driverRide = res.data?.data;
@@ -52,7 +52,7 @@ export const ProtectedRoutes = ({
     // 2. Check if user is in an active ride as a passenger/rider
     if (user?.roles?.includes("RIDER")) {
       appApi
-        .get<{ success: boolean; data: RideDto }>("/ride/current")
+        .get<{ success: boolean; data: RideDto }>("/rides/current")
         .then((res) => {
           if (cancelled) return;
           const ride = res.data?.data;
@@ -71,7 +71,7 @@ export const ProtectedRoutes = ({
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, isAuthenticated, user?.id, user?.roles, allowedroles, navigate]);
+  }, [location.pathname, isAuthenticated, user?.id, user?.roles, allowedRoles, navigate]);
 
   if (loading) {
     return <LoadingScreen />;
@@ -85,8 +85,8 @@ export const ProtectedRoutes = ({
 
   // Check if user has at least one of the allowed roles for this route
   const hasAllowedRole =
-    allowedroles.length === 0 ||
-    userRoles.some((role: UserRole) => allowedroles.includes(role));
+    allowedRoles.length === 0 ||
+    userRoles.some((role: UserRole) => allowedRoles.includes(role));
 
   if (!hasAllowedRole) {
     if (userRoles.includes("DRIVER") && !userRoles.includes("RIDER")) {

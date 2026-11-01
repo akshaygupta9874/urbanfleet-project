@@ -207,7 +207,7 @@ export default function ActiveSessions({
             <div className="space-y-1.5">
               <div className="mb-1 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#ffd88a] shadow-sm">
                 <ShieldCheck size={12} />
-                Security & Endpoint Telemetry
+                Account security
               </div>
               <h1
                 className="text-2xl md:text-3xl font-black tracking-tight text-[#2e1808]"

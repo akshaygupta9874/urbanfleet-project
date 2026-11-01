@@ -30,12 +30,6 @@ import {
 import { authRedisClient, authRedisKey } from "../redis/client.js";
 import { OutboxRepository } from "../repositories/outbox.repository.js";
 import { EventTopics } from "@urbanfleet/contracts";
-import {
-  publishUserRegistered,
-  publishPasswordResetRequested,
-  publishEmailVerificationRequested,
-  publishLoginOtpRequested,
-} from "../events/auth.publisher.js";
 
 const logger = createLogger("auth-service");
 
@@ -81,8 +75,9 @@ export class AuthService {
         throw new ConflictError("A user with this email address already exists. Please log in or check your credentials.");
       }
 
-      const newRoles = input.roles && input.roles.length > 0 ? (input.roles as Role[]) : [Role.RIDER];
-      const mergedRoles = Array.from(new Set([...existing.roles, ...newRoles])) as Role[];
+      const newRoles = input.roles?.filter((role) => role !== Role.ADMIN) as Role[] | undefined;
+      const requestedRoles = newRoles && newRoles.length > 0 ? newRoles : [Role.RIDER];
+      const mergedRoles = Array.from(new Set([...existing.roles, ...requestedRoles])) as Role[];
       if (mergedRoles.length === existing.roles.length) {
         throw new ConflictError("A user with this email address and role already exists. Please log in.");
       }
@@ -117,7 +112,7 @@ export class AuthService {
       passwordHash,
       firstName: input.firstName,
       lastName: input.lastName,
-      roles: input.roles,
+      roles: input.roles?.filter((role) => role !== Role.ADMIN) as Role[] | undefined,
       isEmailVerified: false,
     });
 
@@ -215,26 +210,6 @@ export class AuthService {
       }
     }
 
-    // Emit Kafka event asynchronously using matching event ID
-    publishUserRegistered(
-      {
-        userId: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        roles: user.roles as ("RIDER" | "DRIVER")[],
-      },
-      registrationEventId,
-    ).catch((err: unknown) => {
-      logger.warn(
-        "Direct Kafka event publication failed on registration (Outbox will deliver):",
-        {
-          error: err instanceof Error ? err.message : String(err),
-          userId: user.id,
-        },
-      );
-    });
-
     return {
       user: {
         id: user.id,
@@ -255,6 +230,9 @@ export class AuthService {
     const user = await this.userRepo.findByEmail(input.email);
     if (!user) {
       throw new UnauthorizedError("Invalid email or password");
+    }
+    if (user.isSuspended) {
+      throw new ForbiddenError("This account is suspended", "ACCOUNT_SUSPENDED");
     }
 
     const isValid = await this.comparePassword(
@@ -333,21 +311,6 @@ export class AuthService {
       }
     }
 
-    // Publish Kafka event for fast email notification delivery
-    publishLoginOtpRequested({
-      userId: user.id,
-      email: user.email,
-      otp,
-    }).catch((err: unknown) => {
-      logger.warn(
-        "Direct Kafka event publication failed for login OTP (Outbox will deliver):",
-        {
-          error: err instanceof Error ? err.message : String(err),
-          userId: user.id,
-        },
-      );
-    });
-
     return {
       email: user.email,
       message: "Verification code sent to your email",
@@ -424,8 +387,9 @@ export class AuthService {
     }
 
     let activeUser = user;
-    if (input.roles && input.roles.length > 0) {
-      const mergedRoles = Array.from(new Set([...activeUser.roles, ...input.roles])) as Role[];
+    const requestedRoles = input.roles?.filter((role) => role !== Role.ADMIN);
+    if (requestedRoles && requestedRoles.length > 0) {
+      const mergedRoles = Array.from(new Set([...activeUser.roles, ...requestedRoles])) as Role[];
       if (mergedRoles.length !== activeUser.roles.length) {
         activeUser = await this.userRepo.update(activeUser.id, { roles: mergedRoles });
         await cacheUser({
@@ -803,21 +767,6 @@ export class AuthService {
       }
     }
 
-    // Publish notification event to Kafka for fast dispatch
-    publishPasswordResetRequested({
-      userId: user.id,
-      email: user.email,
-      resetToken,
-    }).catch((err: unknown) => {
-      logger.warn(
-        "Direct Kafka event publication failed for password reset (Outbox will deliver):",
-        {
-          error: err instanceof Error ? err.message : String(err),
-          userId: user.id,
-        },
-      );
-    });
-
     return {
       success: true,
       message: "Password reset instructions dispatched",
@@ -1017,20 +966,6 @@ export class AuthService {
       }
     }
 
-    publishEmailVerificationRequested({
-      userId: user.id,
-      email: user.email,
-      verifyToken,
-    }).catch((err: unknown) => {
-      logger.warn(
-        "Direct Kafka event publication failed for email verification (Outbox will deliver):",
-        {
-          error: err instanceof Error ? err.message : String(err),
-          userId: user.id,
-        },
-      );
-    });
-
     return {
       success: true,
       message: "Verification link resent successfully",
@@ -1214,25 +1149,6 @@ export class AuthService {
         }
       }
 
-      const registeredUser = user;
-      publishUserRegistered(
-        {
-          userId: registeredUser.id,
-          email: registeredUser.email,
-          firstName: registeredUser.firstName,
-          lastName: registeredUser.lastName,
-          roles: registeredUser.roles as ("RIDER" | "DRIVER")[],
-        },
-        registrationEventId,
-      ).catch((err: unknown) => {
-        logger.warn(
-          "Direct Kafka event publication failed for Google registration (Outbox will deliver):",
-          {
-            error: err instanceof Error ? err.message : String(err),
-            userId: registeredUser.id,
-          },
-        );
-      });
     } else {
       // If user exists and specific roles were requested, merge if not already present
       if (requestedRoles && requestedRoles.length > 0) {

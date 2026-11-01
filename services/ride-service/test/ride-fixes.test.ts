@@ -403,7 +403,8 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
 
       await worker.processPendingEvents();
 
-      expect(mockProducer.send).toHaveBeenCalledWith({
+      expect(mockProducer.send).toHaveBeenNthCalledWith(1, {
+        acks: -1,
         topic: 'ride.events',
         messages: [
           {

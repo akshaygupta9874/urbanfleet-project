@@ -1,32 +1,71 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, type Variants, AnimatePresence } from "framer-motion";
-import { Sparkles, MapPin, Navigation, Mail, Car, User as UserIcon } from "lucide-react";
+import {
+  Sparkles,
+  MapPin,
+  Navigation,
+  Mail,
+  Car,
+  User as UserIcon,
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  AlertTriangle,
+  KeyRound,
+  RefreshCw,
+} from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext, type User } from "./context/auth-context";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import CityMapBackground from "./components/CityMapBackground";
 
-// ---------- Form animation ----------
+const DISPLAY_FONT = "'Fraunces', Georgia, serif";
+const BODY_FONT = "'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif";
+const MONO_FONT = "'JetBrains Mono', ui-monospace, 'SF Mono', monospace";
+
+// ---------- GPU-Composited Animations ----------
 const containerVariants: Variants = {
-  hidden: { opacity: 0, y: 24, scale: 0.98 },
+  hidden: { opacity: 0, y: 18, scale: 0.98 },
   visible: {
     opacity: 1,
     y: 0,
     scale: 1,
     transition: {
-      staggerChildren: 0.08,
-      delayChildren: 0.3,
-      duration: 0.8,
-      ease: [0.16, 1, 0.3, 1] as const,
+      staggerChildren: 0.06,
+      delayChildren: 0.1,
+      duration: 0.5,
+      ease: [0.16, 1, 0.3, 1],
     },
   },
 };
 
 const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 14 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.55, ease: "easeOut" as const } },
+  hidden: { opacity: 0, y: 10 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] },
+  },
+};
+
+const stepSwitchVariants: Variants = {
+  hidden: { opacity: 0, x: 14 },
+  visible: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.28, ease: [0.16, 1, 0.3, 1] },
+  },
+  exit: {
+    opacity: 0,
+    x: -14,
+    transition: { duration: 0.18, ease: "easeIn" },
+  },
 };
 
 function WelcomePill() {
@@ -34,31 +73,50 @@ function WelcomePill() {
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.5, duration: 0.6 }}
-      className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#7a4416]/25 bg-gradient-to-r from-[#fff4dc]/90 via-[#ffe4b0]/90 to-[#fff4dc]/90 px-4 py-2 text-xs font-semibold text-[#3a1f0a] shadow-[0_8px_24px_-8px_rgba(122,68,22,0.4)] backdrop-blur-md"
+      transition={{ duration: 0.45, ease: "easeOut" }}
+      className="mb-4 sm:mb-5 inline-flex items-center gap-2 rounded-full border border-[#c58a3a]/40 bg-gradient-to-r from-[#fffdf9]/95 via-[#fff4dc]/95 to-[#f7e2b8]/95 px-4 py-1.5 text-[11px] sm:text-xs font-bold text-[#3a1f0a] shadow-[0_8px_24px_-8px_rgba(58,31,10,0.3)] backdrop-blur-xl"
     >
-      <motion.span
-        animate={{ rotate: [0, 15, -15, 0] }}
-        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <Sparkles size={14} className="text-[#b8722c]" />
-      </motion.span>
-      <span className="tracking-wide">Welcome back · Sign in to continue your journey</span>
+      <Sparkles size={13} className="text-[#b8722c] shrink-0" />
+      <span className="tracking-wide">
+        UrbanFleet · Secure Account Access
+      </span>
     </motion.div>
   );
 }
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { user, checkAuthentication, establishSession, isAuthenticated, loading } = useAuthContext();
+  const { user, checkAuthentication, establishSession, isAuthenticated, loading } =
+    useAuthContext();
+
   const [selectedRole, setSelectedRole] = useState<"RIDER" | "DRIVER">("RIDER");
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState("");
   const [status, setStatus] = useState("");
+  const [statusTone, setStatusTone] = useState<"info" | "error">("info");
   const [showOtp, setShowOtp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Measure Google button container width so the iframe fits mobile & desktop cleanly
+  const googleWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [googleBtnWidth, setGoogleBtnWidth] = useState<number>(340);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (googleWrapperRef.current) {
+        const w = Math.floor(googleWrapperRef.current.getBoundingClientRect().width);
+        if (w > 180) {
+          setGoogleBtnWidth(Math.min(380, w - 8));
+        }
+      }
+    };
+    updateWidth();
+    window.addEventListener("resize", updateWidth, { passive: true });
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
 
   useEffect(() => {
     if (!loading && isAuthenticated && user) {
@@ -74,8 +132,7 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, loading, navigate, user, selectedRole]);
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function requestLoginOtp() {
     setStatus("");
     setIsSubmitting(true);
 
@@ -98,6 +155,7 @@ export default function LoginPage() {
       });
 
       const receivedDevOtp = data.data?.devOtp ?? data.devOtp;
+      setStatusTone("info");
       if (receivedDevOtp) {
         setStatus(`Verification code sent! (Dev code: ${receivedDevOtp} or 123456)`);
         setOtp(receivedDevOtp);
@@ -106,9 +164,10 @@ export default function LoginPage() {
       }
       setShowOtp(true);
     } catch (error) {
+      setStatusTone("error");
       setStatus(
         error instanceof AxiosError
-          ? (error.response?.data?.message || error.message)
+          ? error.response?.data?.message || error.message
           : "Login failed"
       );
     } finally {
@@ -116,7 +175,15 @@ export default function LoginPage() {
     }
   }
 
-  async function handleVerifyOtp() {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await requestLoginOtp();
+  }
+
+  async function handleVerifyOtp(event?: FormEvent<HTMLFormElement>) {
+    if (event) event.preventDefault();
+    if (!otp.trim()) return;
+
     setStatus("");
     setIsSubmitting(true);
 
@@ -152,7 +219,12 @@ export default function LoginPage() {
       }
       navigate(target, { replace: true });
     } catch (error) {
-      setStatus(error instanceof AxiosError ? (error.response?.data?.message || error.message) : "OTP verification failed");
+      setStatusTone("error");
+      setStatus(
+        error instanceof AxiosError
+          ? error.response?.data?.message || error.message
+          : "OTP verification failed"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -160,6 +232,7 @@ export default function LoginPage() {
 
   async function handleGoogleLogin(credentialResponse: CredentialResponse) {
     if (!credentialResponse.credential) {
+      setStatusTone("error");
       setStatus("Google did not return a credential. Please try again.");
       return;
     }
@@ -175,7 +248,8 @@ export default function LoginPage() {
         credential: credentialResponse.credential,
         roles: [selectedRole],
       });
-      const resolvedToken = response.data?.data?.accessToken ?? response.data?.accessToken;
+      const resolvedToken =
+        response.data?.data?.accessToken ?? response.data?.accessToken;
       const resolvedUser = response.data?.data?.user ?? response.data?.user;
       if (resolvedToken && resolvedUser) {
         establishSession(resolvedToken, resolvedUser);
@@ -183,20 +257,23 @@ export default function LoginPage() {
         throw new Error("Unable to establish session from Google credentials");
       }
 
-      // Respect explicit user choice: Drive -> driver-dashboard, Ride -> dashboard
       let target = "/dashboard";
       if (selectedRole === "DRIVER" && resolvedUser.roles?.includes("DRIVER")) {
         target = "/driver-dashboard";
       } else if (selectedRole === "RIDER") {
         target = "/dashboard";
-      } else if (resolvedUser.roles?.includes("DRIVER") && !resolvedUser.roles?.includes("RIDER")) {
+      } else if (
+        resolvedUser.roles?.includes("DRIVER") &&
+        !resolvedUser.roles?.includes("RIDER")
+      ) {
         target = "/driver-dashboard";
       }
       navigate(target, { replace: true });
     } catch (error) {
+      setStatusTone("error");
       setStatus(
         error instanceof AxiosError
-          ? (error.response?.data?.message || error.message)
+          ? error.response?.data?.message || error.message
           : "Google sign-in failed"
       );
     } finally {
@@ -204,285 +281,483 @@ export default function LoginPage() {
     }
   }
 
-  const inputBase =
-    "w-full rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/95 px-5 py-3.5 text-base text-[#2e1808] outline-none transition-all duration-300 placeholder:text-[#7a4416]/45 focus:border-transparent focus:ring-2 focus:ring-[#b8722c] focus:shadow-[0_0_0_4px_rgba(184,114,44,0.15)]";
+  const otpDigits = otp.padEnd(6, " ").slice(0, 6).split("");
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f5e6c8] font-sans text-[#2e1808]">
+    <div
+      className="relative flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-[#f5e6c8] text-[#2e1808] selection:bg-[#3a1f0a] selection:text-[#ffd88a]"
+      style={{ fontFamily: BODY_FONT }}
+    >
       <CityMapBackground />
 
-      {/* Main Form Content */}
-      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 pb-16 pt-8">
+      <style>{`
+        @keyframes uf-ticket-sheen {
+          0% { transform: translate3d(-130%, 0, 0) rotate(12deg); }
+          100% { transform: translate3d(280%, 0, 0) rotate(12deg); }
+        }
+        .uf-sheen-sweep {
+          animation: uf-ticket-sheen 5.5s ease-in-out infinite;
+          will-change: transform;
+        }
+      `}</style>
+
+      {/* Main Centered Auth Workspace */}
+      <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
         <WelcomePill />
 
         <motion.div
           variants={containerVariants}
           initial="hidden"
           animate="visible"
-          className="relative w-full max-w-[460px] overflow-hidden rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/90 via-[#fff4dc]/85 to-[#f7e2b8]/85 p-8 pt-10 shadow-[0_40px_100px_-24px_rgba(80,40,10,0.55),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-2xl md:p-10"
+          className={`relative w-full max-w-[460px] overflow-hidden rounded-[2.25rem] sm:rounded-[2.5rem] border bg-gradient-to-b from-[#fffdf9]/96 via-[#fff4dc]/92 to-[#f5dfb5]/92 p-6 sm:p-9 shadow-[0_32px_90px_-20px_rgba(46,24,8,0.42),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl transition-colors duration-300 transform-gpu ${
+            focusedField ? "border-[#b8722c]" : "border-[#fff4dc]/85"
+          }`}
         >
           {/* Perforation ticket-edge dots */}
-          <div className="pointer-events-none absolute left-0 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-2">
+          <div className="pointer-events-none absolute left-0 top-1/2 hidden sm:flex -translate-x-1/2 -translate-y-1/2 flex-col gap-2">
             {Array.from({ length: 10 }).map((_, i) => (
-              <span key={`pl-${i}`} className="h-2 w-2 rounded-full bg-[#f5e6c8]" />
+              <span
+                key={`pl-${i}`}
+                className="h-2.5 w-2.5 rounded-full bg-[#f5e6c8] shadow-inner"
+              />
             ))}
           </div>
-          <div className="pointer-events-none absolute right-0 top-1/2 flex translate-x-1/2 -translate-y-1/2 flex-col gap-2">
+          <div className="pointer-events-none absolute right-0 top-1/2 hidden sm:flex translate-x-1/2 -translate-y-1/2 flex-col gap-2">
             {Array.from({ length: 10 }).map((_, i) => (
-              <span key={`pr-${i}`} className="h-2 w-2 rounded-full bg-[#f5e6c8]" />
+              <span
+                key={`pr-${i}`}
+                className="h-2.5 w-2.5 rounded-full bg-[#f5e6c8] shadow-inner"
+              />
             ))}
           </div>
 
           {/* Brass top rail */}
           <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
 
-          {/* Moving brass sheen */}
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute -inset-y-10 -left-1/3 w-1/3 rotate-12 bg-gradient-to-r from-transparent via-[#fff2cc]/80 to-transparent"
-            animate={{ x: ["0%", "460%"] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", repeatDelay: 3.5 }}
-          />
+          {/* GPU Specular Sheen */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[2.5rem]">
+            <div className="uf-sheen-sweep absolute -inset-y-16 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+          </div>
 
-          {/* Aura ring behind card (only visible on focus) */}
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute -inset-4 -z-10 rounded-[2.5rem] bg-gradient-to-r from-[#b8722c] via-[#f4b860] to-[#7a4416] opacity-0 blur-2xl transition duration-700"
-            animate={{ opacity: focusedField ? 0.45 : 0 }}
-          />
-
-          {/* Route pin badge — top of card */}
+          {/* Card Header Bar: Route Badge + Security Chip */}
           <motion.div
             variants={itemVariants}
-            className="mb-5 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-[#ffd88a] shadow-[0_8px_20px_-8px_rgba(58,31,10,0.6)]"
+            className="mb-4 flex items-center justify-between gap-2"
           >
-            <MapPin size={12} />
-            {showOtp ? "Email OTP Verification" : "Welcome back"}
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#ffd88a] shadow-sm">
+              <MapPin size={11} />
+              {showOtp ? "Step 2 · OTP Vault" : "Step 1 · Credentials"}
+            </span>
+
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-emerald-600/30 bg-emerald-950/10 px-2.5 py-1 text-[10px] font-bold text-emerald-900"
+              style={{ fontFamily: MONO_FONT }}
+            >
+              <ShieldCheck size={12} className="text-emerald-700" />
+              RFC 6819
+            </span>
           </motion.div>
 
-          <motion.h2
-            variants={itemVariants}
-            className="mb-2 bg-gradient-to-br from-[#2e1808] via-[#6b3a12] to-[#b8722c] bg-clip-text text-3xl font-bold tracking-tight text-transparent md:text-4xl"
-          >
-            {showOtp ? "Verify Login Code" : selectedRole === "DRIVER" ? "Sign in to drive" : "Sign in to ride"}
-          </motion.h2>
-          <motion.p variants={itemVariants} className="mb-6 text-sm font-medium text-[#6b3a12]/80">
-            {showOtp
-              ? `We sent a 6-digit verification code to ${email}.`
-              : "Enter your credentials to continue your journey."}
-          </motion.p>
+          {/* Dynamic Title & Subtitle */}
+          <motion.div variants={itemVariants} className="mb-5">
+            <h1
+              className="text-2xl sm:text-3xl font-black tracking-tight text-[#2e1808]"
+              style={{ fontFamily: DISPLAY_FONT }}
+            >
+              {showOtp
+                ? "Verify login code"
+                : selectedRole === "DRIVER"
+                  ? "Sign in to Captain Hub"
+                  : "Sign in to ride"}
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm font-medium text-[#6b3a12] leading-relaxed">
+              {showOtp ? (
+                <>
+                  Enter the 6-digit verification code sent to{" "}
+                  <strong className="font-bold text-[#2e1808] break-all">{email}</strong>
+                </>
+              ) : selectedRole === "DRIVER" ? (
+                "Access live dispatch radar, instant payouts, and fleet telemetry."
+              ) : (
+                "Book instant city rides, track captains live, and manage receipts."
+              )}
+            </p>
+          </motion.div>
 
+          {/* Spring-Animated Role Switcher (Passenger vs Captain) */}
           {!showOtp && (
-            <motion.div variants={itemVariants} className="relative mb-5 grid grid-cols-2 gap-2 rounded-xl border border-[#7a4416]/20 bg-[#2e1808]/5 p-1.5 shadow-inner">
-              <button
-                type="button"
-                onClick={() => setSelectedRole("RIDER")}
-                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
-                  selectedRole === "RIDER"
-                    ? "bg-gradient-to-r from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-md shadow-[#3a1f0a]/30"
-                    : "text-[#6b3a12] hover:text-[#2e1808]"
-                }`}
-              >
-                <UserIcon size={14} />
-                Ride
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedRole("DRIVER")}
-                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
-                  selectedRole === "DRIVER"
-                    ? "bg-gradient-to-r from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-md shadow-[#3a1f0a]/30"
-                    : "text-[#6b3a12] hover:text-[#2e1808]"
-                }`}
-              >
-                <Car size={14} />
-                Drive
-              </button>
+            <motion.div
+              variants={itemVariants}
+              role="radiogroup"
+              aria-label="Select portal mode"
+              className="relative mb-5 grid grid-cols-2 gap-1.5 rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/90 p-1.5 shadow-inner"
+            >
+              {(
+                [
+                  { id: "RIDER", label: "Ride · Passenger", icon: UserIcon },
+                  { id: "DRIVER", label: "Drive · Captain", icon: Car },
+                ] as const
+              ).map((role) => {
+                const isSelected = selectedRole === role.id;
+                const RoleIcon = role.icon;
+                return (
+                  <button
+                    key={role.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    onClick={() => setSelectedRole(role.id)}
+                    className={`relative flex items-center justify-center gap-2 rounded-xl py-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors ${
+                      isSelected
+                        ? "text-[#ffd88a]"
+                        : "text-[#6b3a12] hover:text-[#2e1808]"
+                    }`}
+                  >
+                    {isSelected && (
+                      <motion.span
+                        layoutId="loginRoleSelectorPill"
+                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] shadow-md ring-1 ring-[#c58a3a]/45"
+                      />
+                    )}
+                    <span className="relative z-10 flex items-center gap-1.5 truncate">
+                      <RoleIcon size={14} className="shrink-0" />
+                      <span className="truncate">{role.label}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </motion.div>
           )}
 
-          {!showOtp ? (
-            <motion.form variants={itemVariants} className="relative mb-6 space-y-4" onSubmit={handleLogin}>
-              <motion.div
-                aria-hidden
-                className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-[#7a4416] via-[#f4b860] to-[#b8722c] blur transition duration-500"
-                animate={{ opacity: focusedField ? 0.35 : 0 }}
-              />
-
-              {/* Email */}
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                onFocus={() => setFocusedField("contact")}
-                onBlur={() => setFocusedField(null)}
-                required
-                className={`${inputBase} py-4 text-lg`}
-              />
-
-              {/* Password */}
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                onFocus={() => setFocusedField("password")}
-                onBlur={() => setFocusedField(null)}
-                required
-                className={`${inputBase} py-4 text-lg`}
-              />
-
-              {/* Primary CTA — brass gradient with shine sweep and glow */}
-              <motion.button
-                type="submit"
-                disabled={isSubmitting}
-                whileTap={{ scale: 0.98 }}
-                className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] py-4 text-lg font-semibold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_50px_-14px_rgba(58,31,10,0.85),inset_0_1px_0_rgba(255,216,138,0.5)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
+          {/* Animated Step Switcher: Credentials Form vs. OTP Verification Vault */}
+          <AnimatePresence mode="wait">
+            {!showOtp ? (
+              <motion.form
+                key="login-credentials-form"
+                variants={stepSwitchVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="space-y-3.5 mb-5"
+                onSubmit={handleLogin}
               >
-                {/* Brass inner rim */}
-                <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
-                {/* Shine sweep */}
-                <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/60 to-transparent transition-transform duration-1000 group-hover:translate-x-[460%]" />
-                <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                  {isSubmitting ? (
-                    <>
-                      <motion.span
-                        className="inline-block h-3 w-3 rounded-full border-2 border-[#ffd88a]/40 border-t-[#ffd88a]"
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-                      />
-                      Sending Code...
-                    </>
-                  ) : (
-                    <>
-                      <Navigation size={16} className="text-[#ffd88a]" />
-                      Continue with OTP
-                    </>
-                  )}
-                </span>
-              </motion.button>
-            </motion.form>
-          ) : (
-            <motion.div variants={itemVariants} className="mb-6 space-y-4">
-              <div className="flex items-center gap-3 rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/80 p-3 text-xs text-[#6b3a12]">
-                <Mail size={16} className="text-[#b8722c] shrink-0" />
-                <span>Enter the 6-digit OTP code sent to your email to complete login.</span>
-              </div>
-              <input
-                type="text"
-                placeholder="Enter 6-digit OTP"
-                value={otp}
-                onChange={(event) => setOtp(event.target.value)}
-                maxLength={8}
-                required
-                className={`${inputBase} py-4 text-lg text-center tracking-widest font-mono font-bold`}
-              />
-              <motion.button
-                type="button"
-                disabled={isSubmitting || !otp}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleVerifyOtp}
-                className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#7a4416] via-[#9a581e] to-[#3a1f0a] py-3.5 text-base font-semibold text-[#ffe9be] shadow-md transition-all hover:opacity-95 disabled:opacity-60"
-              >
-                <span className="relative z-10 inline-flex items-center justify-center gap-2">
-                  {isSubmitting ? (
-                    <>
-                      <motion.span
-                        className="inline-block h-3 w-3 rounded-full border-2 border-[#ffd88a]/40 border-t-[#ffd88a]"
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
-                      />
-                      Verifying OTP...
-                    </>
-                  ) : (
-                    "Verify Code & Sign In"
-                  )}
-                </span>
-              </motion.button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOtp(false);
-                  setOtp("");
-                  setStatus("");
-                }}
-                className="w-full text-center text-xs font-semibold text-[#6b3a12] hover:text-[#3a1f0a] transition-colors py-1"
-              >
-                ← Back to sign in
-              </button>
-            </motion.div>
-          )}
+                {/* Email Field */}
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#7a4416] pl-1">
+                    Email Address
+                  </span>
+                  <div
+                    className={`flex items-center gap-3 rounded-2xl border bg-[#fffdf9] px-4 py-3 transition-all duration-200 shadow-2xs ${
+                      focusedField === "contact"
+                        ? "border-[#3a1f0a] ring-3 ring-[#c58a3a]/25"
+                        : "border-[#7a4416]/25 hover:border-[#b8722c]/60"
+                    }`}
+                  >
+                    <Mail
+                      size={17}
+                      className={`shrink-0 transition-colors ${
+                        focusedField === "contact" ? "text-[#3a1f0a]" : "text-[#b8722c]"
+                      }`}
+                    />
+                    <input
+                      type="email"
+                      placeholder="name@example.com"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      onFocus={() => setFocusedField("contact")}
+                      onBlur={() => setFocusedField(null)}
+                      required
+                      className="w-full bg-transparent text-sm sm:text-base font-semibold text-[#2e1808] placeholder:font-normal placeholder:text-[#7a4416]/45 outline-none"
+                    />
+                  </div>
+                </label>
 
+                {/* Password Field with Show/Hide Toggle */}
+                <label className="block space-y-1">
+                  <div className="flex items-center justify-between pl-1 pr-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#7a4416]">
+                      Password
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/forgot-password")}
+                      className="text-[11px] font-bold text-[#b8722c] hover:text-[#3a1f0a] transition-colors"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div
+                    className={`flex items-center gap-3 rounded-2xl border bg-[#fffdf9] px-4 py-3 transition-all duration-200 shadow-2xs ${
+                      focusedField === "password"
+                        ? "border-[#3a1f0a] ring-3 ring-[#c58a3a]/25"
+                        : "border-[#7a4416]/25 hover:border-[#b8722c]/60"
+                    }`}
+                  >
+                    <Lock
+                      size={17}
+                      className={`shrink-0 transition-colors ${
+                        focusedField === "password" ? "text-[#3a1f0a]" : "text-[#b8722c]"
+                      }`}
+                    />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      onFocus={() => setFocusedField("password")}
+                      onBlur={() => setFocusedField(null)}
+                      required
+                      className="w-full bg-transparent text-sm sm:text-base font-semibold text-[#2e1808] placeholder:font-normal placeholder:text-[#7a4416]/45 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="rounded-lg p-1 text-[#7a4416] hover:bg-[#7a4416]/10 hover:text-[#2e1808] transition-colors shrink-0"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </label>
+
+                {/* Primary Submit CTA */}
+                <div className="pt-1.5">
+                  <motion.button
+                    type="submit"
+                    disabled={isSubmitting}
+                    whileTap={{ scale: 0.98 }}
+                    className="group relative flex h-13.5 w-full items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 text-sm sm:text-base font-bold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-65"
+                  >
+                    <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-[#c58a3a]/40" />
+                    <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/50 to-transparent transition-transform duration-1000 group-hover:translate-x-[460%]" />
+                    <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                      {isSubmitting ? (
+                        <>
+                          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#ffd88a]/35 border-t-[#ffd88a]" />
+                          <span>Sending Verification Code…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Navigation size={15} className="text-[#ffd88a]" />
+                          <span>Continue with OTP</span>
+                          <ArrowRight
+                            size={15}
+                            className="text-[#ffd88a] transition-transform group-hover:translate-x-0.5"
+                          />
+                        </>
+                      )}
+                    </span>
+                  </motion.button>
+                </div>
+              </motion.form>
+            ) : (
+              <motion.form
+                key="login-otp-form"
+                variants={stepSwitchVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                onSubmit={handleVerifyOtp}
+                className="mb-5 space-y-4"
+              >
+                {/* OTP Instructions Banner */}
+                <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/90 px-3.5 py-2.5 text-xs text-[#6b3a12]">
+                  <span className="flex items-center gap-2 font-medium">
+                    <KeyRound size={15} className="text-[#b8722c] shrink-0" />
+                    <span>Enter 6-digit security PIN</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => void requestLoginOtp()}
+                    className="inline-flex items-center gap-1 font-bold text-[#3a1f0a] hover:text-[#b8722c] disabled:opacity-50 transition-colors shrink-0"
+                  >
+                    <RefreshCw size={12} className={isSubmitting ? "animate-spin" : ""} />
+                    Resend
+                  </button>
+                </div>
+
+                {/* Interactive Segmented 6-Digit Visual OTP Input */}
+                <div className="relative">
+                  {/* Visual 6-Slot Display */}
+                  <div className="grid grid-cols-6 gap-2 sm:gap-2.5">
+                    {otpDigits.map((digit, idx) => {
+                      const isCurrentSlot =
+                        focusedField === "otp" &&
+                        (otp.length === idx || (otp.length >= 6 && idx === 5));
+                      const isFilled = digit.trim() !== "";
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex h-13 sm:h-14 items-center justify-center rounded-xl border-2 text-lg sm:text-xl font-black transition-all ${
+                            isCurrentSlot
+                              ? "border-[#3a1f0a] bg-[#fffdf9] ring-3 ring-[#c58a3a]/30 scale-[1.03]"
+                              : isFilled
+                                ? "border-[#b8722c] bg-[#fffdf9] text-[#2e1808]"
+                                : "border-[#7a4416]/25 bg-[#fffaf0]/75 text-[#7a4416]/40"
+                          }`}
+                          style={{ fontFamily: MONO_FONT }}
+                        >
+                          {digit.trim() || "•"}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Transparent Native Input Overlay (Supports Paste, Backspace & Mobile OTP Autofill) */}
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    aria-label="Enter 6-digit OTP"
+                    value={otp}
+                    onChange={(event) =>
+                      setOtp(event.target.value.replace(/\s/g, "").slice(0, 8))
+                    }
+                    onFocus={() => setFocusedField("otp")}
+                    onBlur={() => setFocusedField(null)}
+                    maxLength={8}
+                    autoFocus
+                    required
+                    className="absolute inset-0 h-full w-full cursor-text opacity-0"
+                  />
+                </div>
+
+                {/* Primary Verify CTA */}
+                <motion.button
+                  type="submit"
+                  disabled={isSubmitting || !otp.trim()}
+                  whileTap={{ scale: 0.98 }}
+                  className="group relative flex h-13.5 w-full items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-6 text-sm sm:text-base font-bold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7)] transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-[#c58a3a]/40" />
+                  <span className="relative z-10 inline-flex items-center justify-center gap-2">
+                    {isSubmitting ? (
+                      <>
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#ffd88a]/35 border-t-[#ffd88a]" />
+                        <span>Verifying OTP…</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={16} className="text-[#ffd88a]" />
+                        <span>Verify Code & Sign In</span>
+                      </>
+                    )}
+                  </span>
+                </motion.button>
+
+                {/* Back to Credentials Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOtp(false);
+                    setOtp("");
+                    setStatus("");
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 py-1.5 text-xs font-bold text-[#6b3a12] hover:text-[#3a1f0a] transition-colors"
+                >
+                  <ArrowLeft size={13} />
+                  <span>Back to email & password</span>
+                </button>
+              </motion.form>
+            )}
+          </AnimatePresence>
+
+          {/* Contextual Status / Error Banner */}
           <AnimatePresence>
             {status && (
-              <motion.p
+              <motion.div
                 key={status}
                 initial={{ opacity: 0, y: -6, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mb-6 rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/90 px-4 py-3 text-center text-sm font-medium text-[#3a1f0a] shadow-sm backdrop-blur-md"
+                className={`mb-5 flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-xs font-semibold shadow-2xs backdrop-blur-md ${
+                  statusTone === "error"
+                    ? "border-rose-500/40 bg-rose-950/15 text-rose-950"
+                    : "border-emerald-600/35 bg-emerald-950/10 text-emerald-950"
+                }`}
               >
-                {status}
-              </motion.p>
+                {statusTone === "error" ? (
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0 text-rose-700" />
+                ) : (
+                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-700" />
+                )}
+                <span className="leading-relaxed break-words">{status}</span>
+              </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Links Row */}
-          <motion.div variants={itemVariants} className="mb-6 flex justify-between text-sm">
-            <button
-              type="button"
-              onClick={() => navigate("/signup")}
-              className="group relative font-semibold text-[#6b3a12] transition-colors hover:text-[#3a1f0a]"
-            >
-              Don't have an account?{" "}
-              <span className="relative inline-block">
-                Sign up
-                <span className="absolute inset-x-0 -bottom-0.5 h-px scale-x-100 bg-gradient-to-r from-[#7a4416] via-[#c58a3a] to-[#7a4416] transition-transform duration-300 group-hover:scale-x-110" />
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/forgot-password")}
-              className="group relative font-semibold text-[#6b3a12] transition-colors hover:text-[#3a1f0a]"
-            >
-              <span className="relative inline-block">
-                Forgot password?
-                <span className="absolute inset-x-0 -bottom-0.5 h-px scale-x-100 bg-gradient-to-r from-[#7a4416] via-[#c58a3a] to-[#7a4416] transition-transform duration-300 group-hover:scale-x-110" />
-              </span>
-            </button>
-          </motion.div>
-
-          {/* Divider */}
-          <motion.div variants={itemVariants} className="mb-6 flex items-center gap-4">
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#7a4416]/40 to-transparent" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#6b3a12]/70">
+          {/* Ticket Perforation Divider */}
+          <motion.div variants={itemVariants} className="relative my-5 flex items-center gap-3">
+            <div
+              className="h-px flex-1"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(90deg, #7a4416 0 6px, transparent 6px 12px)",
+                opacity: 0.35,
+              }}
+            />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#7a4416]">
               or continue with
             </span>
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#7a4416]/40 to-transparent" />
+            <div
+              className="h-px flex-1"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(90deg, #7a4416 0 6px, transparent 6px 12px)",
+                opacity: 0.35,
+              }}
+            />
           </motion.div>
 
-          <motion.div variants={itemVariants} className="mb-6 flex w-full justify-center">
-            <div className="mx-auto flex w-full max-w-[360px] items-center justify-center overflow-hidden rounded-full border border-[#7a4416]/20 bg-[#fffaf0]/70 p-1 shadow-[0_10px_24px_-16px_rgba(58,31,10,0.65)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_30px_-18px_rgba(58,31,10,0.75)]">
+          {/* Responsive Pixel-Fitted Google Sign-In Container */}
+          <motion.div
+            ref={googleWrapperRef}
+            variants={itemVariants}
+            className="mb-5 flex w-full justify-center"
+          >
+            <div className="flex w-full items-center justify-center overflow-hidden rounded-full border border-[#7a4416]/20 bg-[#fffdf9] py-1.5 px-2 shadow-sm transition-all duration-200 hover:border-[#b8722c]/60 hover:shadow-md">
               <GoogleLogin
                 onSuccess={handleGoogleLogin}
-                onError={() => setStatus("Google sign-in could not be started. Please try again.")}
+                onError={() => {
+                  setStatusTone("error");
+                  setStatus("Google sign-in could not be started. Please try again.");
+                }}
                 text="continue_with"
                 theme="outline"
                 size="large"
                 shape="pill"
                 logo_alignment="center"
-                width="100%"
+                width={String(googleBtnWidth)}
               />
             </div>
+          </motion.div>
+
+          {/* Sign-Up Prompt Row */}
+          <motion.div
+            variants={itemVariants}
+            className="mb-4 rounded-2xl border border-[#7a4416]/15 bg-[#fffaf0]/75 px-4 py-3 text-center text-xs font-medium text-[#6b3a12]"
+          >
+            New to UrbanFleet?{" "}
+            <button
+              type="button"
+              onClick={() => navigate("/signup")}
+              className="font-black text-[#3a1f0a] underline decoration-[#b8722c] underline-offset-4 hover:text-[#b8722c] transition-colors ml-1"
+            >
+              Create your account →
+            </button>
           </motion.div>
 
           {/* Disclaimer */}
           <motion.p
             variants={itemVariants}
-            className="text-center text-[11px] leading-relaxed text-[#6b3a12]/65"
+            className="text-center text-[11px] leading-relaxed text-[#6b3a12]/70"
           >
-            By proceeding, you consent to receive account emails, receipts, and trip updates from UrbanFleet.
+            By proceeding, you consent to receive account emails, fare receipts, and live
+            trip telemetry updates from UrbanFleet.
           </motion.p>
 
           {/* Brass bottom rail */}

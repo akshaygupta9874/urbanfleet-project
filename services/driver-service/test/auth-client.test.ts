@@ -31,7 +31,7 @@ describe('AuthClient Inter-Service HTTP Communication in driver-service', () => 
 
     const result = await client.getUserById('usr-123');
     expect(result).toEqual(mockUser);
-    expect(getSpy).toHaveBeenCalledWith('/api/auth/users/usr-123');
+    expect(getSpy).toHaveBeenCalledWith('/v1/auth/users/usr-123');
   });
 
   it('returns null when user is not found (404)', async () => {
@@ -62,7 +62,7 @@ describe('AuthClient Inter-Service HTTP Communication in driver-service', () => 
     await client.grantDriverRole('usr-driver-1');
 
     expect(postSpy).toHaveBeenCalledWith(
-      '/api/auth/internal/users/usr-driver-1/driver-role'
+      '/v1/auth/internal/users/usr-driver-1/driver-role'
     );
   });
 

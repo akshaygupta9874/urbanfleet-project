@@ -6,12 +6,16 @@ import { NotificationRepository } from './repositories/notification.repository.j
 import { NotificationService } from './services/notification.service.js';
 import { NotificationDispatcher } from './workers/notification.dispatcher.js';
 import { initNotificationConsumer } from './consumers/notification.consumer.js';
+import { notificationRedisClient, initNotificationRedis, disconnectNotificationRedis } from './redis/client.js';
 
 const logger = createLogger('notification-service');
 import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.NOTIFICATION_PORT || process.env.PORT || 4003;
+
+// Initialize Redis & Kafka Consumer
+initNotificationRedis().catch(err => logger.error('Notification Redis startup error:', err));
 
 app.use(helmet());
 app.use(express.json());
@@ -41,12 +45,26 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
     dbStatus = 'DOWN';
   }
 
-  const isHealthy = dbStatus === 'UP';
+  let redisStatus = 'DOWN';
+  try {
+    if (notificationRedisClient.isOpen) {
+      await notificationRedisClient.ping();
+      redisStatus = 'UP';
+    } else {
+      await notificationRedisClient.connect();
+      redisStatus = notificationRedisClient.isOpen ? 'UP' : 'DOWN';
+    }
+  } catch {
+    redisStatus = 'DOWN';
+  }
+
+  const isHealthy = dbStatus === 'UP' && redisStatus === 'UP';
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'UP' : 'DOWN',
     service: 'notification-service',
     dependencies: {
       database: dbStatus,
+      redis: redisStatus,
       dispatcher: dispatcher.isHealthy() ? 'UP' : 'DOWN',
       consumer: notifConsumer ? 'UP' : 'INITIALIZING'
     }
@@ -54,14 +72,10 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
 };
 
 app.get('/health', healthHandler);
-app.get('/notifications/health', healthHandler);
 app.get('/v1/notifications/health', healthHandler);
-app.get('/api/notifications/health', healthHandler);
 
-// Routes
+// Routes (Single Canonical Endpoint)
 const notifRouter = createNotificationRouter(notifRepo);
-app.use('/notifications', notifRouter);
-app.use('/api/notifications', notifRouter);
 app.use('/v1/notifications', notifRouter);
 
 const server = app.listen(port, () => {
@@ -77,6 +91,7 @@ const gracefulShutdown = async (signal: string) => {
       if (notifConsumer && typeof notifConsumer.disconnect === 'function') {
         await notifConsumer.disconnect();
       }
+      await disconnectNotificationRedis();
       await prisma.$disconnect();
       logger.info('Notification Service shut down cleanly.');
       process.exit(0);

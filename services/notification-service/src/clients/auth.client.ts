@@ -27,7 +27,7 @@ export class AuthClient {
   async getUserById(userId: string): Promise<AuthUser | null> {
     try {
       const res = await this.client.get<{ success: boolean; data: AuthUser }>(
-        `/api/auth/users/${userId}`
+        `/v1/auth/users/${userId}`
       );
       return res.data?.data ?? null;
     } catch (err: unknown) {
