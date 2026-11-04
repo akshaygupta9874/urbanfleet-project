@@ -66,7 +66,10 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
               const payload = envelope.payload as RideCompletedPayload;
               const profile = await tx.driverProfile.findFirst({
                 where: {
-                  id: payload.driverId,
+                  OR: [
+                    { id: payload.driverId },
+                    { userId: payload.driverId },
+                  ],
                 },
               });
               if (profile) {

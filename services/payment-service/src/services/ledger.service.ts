@@ -496,7 +496,7 @@ export class LedgerService {
     /** Debit / credit totals of one owner's account (e.g. one driver's earnings). */
     async getOwnerBalance(
         account: LedgerAccount,
-        ownerId: string
+        ownerId: string | string[]
     ): Promise<OwnerBalance> {
 
         const totals =

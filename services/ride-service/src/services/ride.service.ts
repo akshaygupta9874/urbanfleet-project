@@ -196,6 +196,55 @@ export class RideService {
     return this.rideRepo.findHistoryByDriverId(driverId);
   }
 
+  async getDriverRideMetrics(driverId: string) {
+    return this.rideRepo.getDriverRideAggregates(driverId);
+  }
+
+  async getDriverRatingsSummary(driverUserId: string) {
+    const ratings = await this.rideRepo.findRatingsForDriver(driverUserId);
+
+    const totalRatings = ratings.length;
+    const distribution: Record<number, { count: number; pct: number }> = {
+      5: { count: 0, pct: 0 },
+      4: { count: 0, pct: 0 },
+      3: { count: 0, pct: 0 },
+      2: { count: 0, pct: 0 },
+      1: { count: 0, pct: 0 },
+    };
+
+    let scoreSum = 0;
+    for (const r of ratings) {
+      const score = Math.max(1, Math.min(5, Math.round(r.score)));
+      distribution[score].count++;
+      scoreSum += r.score;
+    }
+
+    if (totalRatings > 0) {
+      for (let s = 1; s <= 5; s++) {
+        distribution[s].pct = Math.round((distribution[s].count / totalRatings) * 100);
+      }
+    }
+
+    const averageRating = totalRatings > 0 ? Number((scoreSum / totalRatings).toFixed(2)) : null;
+
+    const reviews = ratings.map((r, index) => ({
+      id: r.id,
+      score: r.score,
+      comment: r.feedback || null,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+      pickupAddress: (r as any).ride?.pickupAddress || undefined,
+      destinationAddress: (r as any).ride?.destinationAddress || undefined,
+      passengerLabel: `Verified Passenger #${totalRatings - index}`,
+    }));
+
+    return {
+      averageRating,
+      totalRatings,
+      distribution,
+      reviews,
+    };
+  }
+
   async getActiveRideForUser(userId: string, isDriver: boolean): Promise<RideWithOtp | null> {
     const activeRide = await (isDriver
       ? this.rideRepo.findActiveRideByDriverId(userId)

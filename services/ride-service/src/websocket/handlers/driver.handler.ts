@@ -68,13 +68,29 @@ async function handleGoOnline(
     return;
   }
 
+  // Check if client requested to retain availability, or was previously available
+  let shouldBeAvailable = false;
+  if (typeof data === 'object' && data !== null && 'available' in data) {
+    shouldBeAvailable = Boolean((data as { available?: boolean }).available);
+  }
+
   if (deps?.presenceService) {
-    const current = await deps.presenceService.setDriverOnline(driverId);
+    if (!shouldBeAvailable) {
+      const existing = await deps.presenceService.getPresence(driverId);
+      if (existing?.available) {
+        shouldBeAvailable = true;
+      }
+    }
+
+    const current = shouldBeAvailable
+      ? await deps.presenceService.setDriverAvailable(driverId, true)
+      : await deps.presenceService.setDriverOnline(driverId);
+
     socket.send(
       JSON.stringify({
         event: ServerEvents.DRIVER_STATUS,
         data: {
-          status: 'ONLINE',
+          status: shouldBeAvailable ? 'AVAILABLE' : 'ONLINE',
           isOnline: current.online,
           isAvailable: current.available,
           driverId,

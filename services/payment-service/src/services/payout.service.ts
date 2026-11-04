@@ -44,6 +44,7 @@ export class PayoutService {
    */
   async createPayout(input: {
     driverId: string;
+    altDriverId?: string;
     paymentId?: string | null;
     rideId?: string | null;
     amountPaise: number;
@@ -77,8 +78,12 @@ export class PayoutService {
         );
       }
 
+      const matchesDriver =
+        payment.driver.toString() === input.driverId.toString() ||
+        (input.altDriverId && payment.driver.toString() === input.altDriverId.toString());
+
       if (
-        payment.driver.toString() !== input.driverId.toString() ||
+        !matchesDriver ||
         (input.rideId && payment.ride.toString() !== input.rideId.toString())
       ) {
         throw new AppError(
@@ -328,11 +333,30 @@ export class PayoutService {
   }
 
   /** How much the platform owes a driver and how much of it is already spoken for. */
-  async getDriverBalance(driverId: string): Promise<DriverBalance> {
-    const owner = await ledgerService.getOwnerBalance(LedgerAccount.DRIVER, driverId);
+  async getDriverBalance(driverId: string, altDriverId?: string): Promise<DriverBalance> {
+    const ids = new Set<string>([driverId]);
+    if (altDriverId) ids.add(altDriverId);
+
+    if (ids.size === 1) {
+      try {
+        const { driverClient } = await import('../clients/driver.client.js');
+        const byUser = await driverClient.getDriverByUserId(driverId);
+        if (byUser?.id) ids.add(byUser.id);
+        const byId = await driverClient.getDriverById(driverId);
+        if (byId?.userId) ids.add(byId.userId);
+      } catch {
+        // Continue with available ID
+      }
+    }
+
+    const driverIds = Array.from(ids);
+    const owner = await ledgerService.getOwnerBalance(
+      LedgerAccount.DRIVER,
+      driverIds.length > 1 ? driverIds : driverId
+    );
 
     const reservedPaise = await payoutRepository.sumAmountByDriver(
-      driverId.toString(),
+      driverIds.length > 1 ? driverIds : driverId.toString(),
       [PayoutStatus.PENDING, PayoutStatus.PROCESSING]
     );
 

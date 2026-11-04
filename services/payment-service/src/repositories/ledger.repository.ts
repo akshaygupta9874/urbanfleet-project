@@ -157,14 +157,18 @@ class LedgerRepository {
             from?: Date;
             to?: Date;
         },
-        ownerId?: string
+        ownerId?: string | string[]
     ): Promise<AccountTotals> {
         const where: Prisma.LedgerEntryWhereInput = {
             account: account as unknown as Prisma.EnumLedgerAccountFilter["equals"],
         };
 
         if (ownerId) {
-            where.ownerId = ownerId.toString();
+            if (Array.isArray(ownerId)) {
+                where.ownerId = { in: ownerId.map((id) => id.toString()) };
+            } else {
+                where.ownerId = ownerId.toString();
+            }
         }
 
         if (range?.from || range?.to) {

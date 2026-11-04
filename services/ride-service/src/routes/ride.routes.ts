@@ -143,6 +143,8 @@ export function createRideRouter(controller: RideController): Router {
   // Ride History (Single Canonical Endpoints)
   router.get('/history', authMiddleware, controller.getRiderHistory);
   router.get('/history/driver', authMiddleware, requireRole('DRIVER'), controller.getDriverHistory);
+  router.get('/metrics/driver', authMiddleware, requireRole('DRIVER'), controller.getDriverMetrics);
+  router.get('/ratings/driver', authMiddleware, requireRole('DRIVER'), controller.getDriverRatings);
 
   // Single Ride details & fare preview (must stay after specific string paths like /current, /history)
   // Uses optionalAuth so peer microservices (e.g. payment-service) can resolve ride details without external user tokens

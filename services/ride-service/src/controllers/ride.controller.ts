@@ -160,13 +160,23 @@ export class RideController {
 
   getDriverHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
-    const history = await this.rideService.getDriverHistory(userId);
+    const [history, metrics] = await Promise.all([
+      this.rideService.getDriverHistory(userId),
+      this.rideService.getDriverRideMetrics(userId),
+    ]);
     const formattedList = (history || []).map((r) => toRideDto(r));
     res.status(200).json({
       success: true,
       data: formattedList,
       totalRides: formattedList.length,
+      metrics,
     });
+  });
+
+  getDriverMetrics = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getUserId(req);
+    const metrics = await this.rideService.getDriverRideMetrics(userId);
+    res.status(200).json({ success: true, data: metrics });
   });
 
   getActiveRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -290,5 +300,11 @@ export class RideController {
       }
     }
     res.status(200).json({ success: true, data: formatted });
+  });
+
+  getDriverRatings = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getUserId(req);
+    const summary = await this.rideService.getDriverRatingsSummary(userId);
+    res.status(200).json({ success: true, data: summary });
   });
 }

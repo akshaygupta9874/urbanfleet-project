@@ -43,6 +43,24 @@ export class DriverClient {
       return null;
     }
   }
+
+  async getDriverById(driverId: string): Promise<DriverProfile | null> {
+    try {
+      const res = await this.client.get<{ success: boolean; data: DriverProfile }>(
+        `/v1/drivers/${driverId}`
+      );
+      return res?.data?.data ?? null;
+    } catch (err: unknown) {
+      if (isAxiosError(err) && err.response?.status === 404) {
+        return null;
+      }
+      logger.warn('Failed to query driver by id from driver-service', {
+        driverId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
 }
 
 export const driverClient = new DriverClient();

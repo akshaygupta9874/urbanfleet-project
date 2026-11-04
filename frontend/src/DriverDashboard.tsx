@@ -48,12 +48,17 @@ import { connectDriverSocket, sendDriverLocation } from "./lib/socket";
 import {
   fetchDriverProfile,
   fetchDriverRideHistory,
+  fetchDriverRideMetrics,
+  fetchDriverRatings,
   isDriverApproved,
   type DriverRideItem,
+  type DriverRideMetrics,
+  type DriverRatingsSummary,
+  type DriverReviewItem,
 } from "./lib/driverApi";
 import { sessionApi, type DeviceSession } from "./lib/sessionApi";
 import DriverCTA from "./components/DriverCTA";
-import DriverWalletModal from "./components/DriverWalletModal";
+import DriverWalletModal, { type DriverBalance } from "./components/DriverWalletModal";
 import DriverBankDetailsModal from "./components/DriverBankDetailsModal";
 import { useAuthContext } from "./context/auth-context";
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
@@ -72,6 +77,8 @@ type DashboardTab = "console" | "history" | "ratings" | "sessions" | "vehicle";
 
 interface DriverProfileData {
   id: string;
+  isAvailable?: boolean;
+  isOnline?: boolean;
   profilePhoto: { url: string; publicId: string };
   vehicleImages: { front: string; back: string; left: string; right: string; interior: string };
   vehicle: {
@@ -496,6 +503,15 @@ function RideStepper({ status }: { status: RideStatus }) {
   );
 }
 
+const getStoredDriverAvailability = (userId?: string): boolean => {
+  if (!userId || typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(`urbanfleet_driver_available_${userId}`) === "true";
+  } catch {
+    return false;
+  }
+};
+
 export default function DriverDashboard() {
   const { user, logout } = useAuthContext();
   const navigate = useNavigate();
@@ -503,7 +519,20 @@ export default function DriverDashboard() {
   const [currentRide, setCurrentRide] = useState<Ride | null>(null);
   const [driverLocation, setDriverLocation] = useState<Coordinates | null>(null);
   const [riderLocation, setRiderLocation] = useState<Coordinates | null>(null);
-  const [driverStatus, setDriverStatus] = useState<DriverStatus>("ONLINE");
+  const [driverStatus, setDriverStatus] = useState<DriverStatus>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const keys = Object.keys(localStorage);
+        const availKey = keys.find((k) => k.startsWith("urbanfleet_driver_available_"));
+        if (availKey && localStorage.getItem(availKey) === "true") {
+          return "AVAILABLE";
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return "ONLINE";
+  });
   const [routePolyline, setRoutePolyline] = useState<{
     rideId: string;
     points: Array<{ lat: number; lng: number }>;
@@ -514,6 +543,18 @@ export default function DriverDashboard() {
   const [currentTime] = useState(() => Date.now());
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<DriverBalance | null>(null);
+
+  const syncWalletBalance = useCallback(async () => {
+    try {
+      const res = await appApi.get<{ success: boolean; data: DriverBalance }>("/payments/payouts/balance");
+      if (res.data?.data) {
+        setWalletBalance(res.data.data);
+      }
+    } catch {
+      // Non-blocking
+    }
+  }, []);
   const [isBankDetailsOpen, setIsBankDetailsOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [tripOtp, setTripOtp] = useState("");
@@ -523,9 +564,14 @@ export default function DriverDashboard() {
   // Decoupled Driver Feature States: Tabs, History, Ratings, Sessions
   const [activeTab, setActiveTab] = useState<DashboardTab>("console");
   const [rideHistory, setRideHistory] = useState<DriverRideItem[]>([]);
+  const [driverMetrics, setDriverMetrics] = useState<DriverRideMetrics | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<"ALL" | "COMPLETED" | "CANCELLED">("ALL");
+
+  const [ratingsSummary, setRatingsSummary] = useState<DriverRatingsSummary | null>(null);
+  const [ratingsLoading, setRatingsLoading] = useState(true);
+  const [hasLoadedRatings, setHasLoadedRatings] = useState(false);
 
   const [sessions, setSessions] = useState<DeviceSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
@@ -537,13 +583,32 @@ export default function DriverDashboard() {
   const loadDriverHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const data = await fetchDriverRideHistory();
-      setRideHistory(data);
+      const [historyData, metricsData] = await Promise.all([
+        fetchDriverRideHistory(),
+        fetchDriverRideMetrics().catch(() => null),
+      ]);
+      setRideHistory(historyData);
+      if (metricsData) {
+        setDriverMetrics(metricsData);
+      }
     } catch (err) {
       console.error("Failed to load driver ride history:", err);
     } finally {
       setHistoryLoading(false);
       setHasLoadedHistory(true);
+    }
+  }, []);
+
+  const loadDriverRatings = useCallback(async () => {
+    setRatingsLoading(true);
+    try {
+      const data = await fetchDriverRatings();
+      setRatingsSummary(data);
+    } catch (err) {
+      console.error("Failed to load driver ratings:", err);
+    } finally {
+      setRatingsLoading(false);
+      setHasLoadedRatings(true);
     }
   }, []);
 
@@ -567,6 +632,8 @@ export default function DriverDashboard() {
 
       if (nextTab === "history" && !hasLoadedHistory) {
         setHistoryLoading(true);
+      } else if (nextTab === "ratings" && !hasLoadedRatings) {
+        setRatingsLoading(true);
       } else if (nextTab === "sessions" && !hasLoadedSessions) {
         setSessionsLoading(true);
       }
@@ -580,7 +647,7 @@ export default function DriverDashboard() {
         }, 60);
       }
     },
-    [activeTab, hasLoadedHistory, hasLoadedSessions]
+    [activeTab, hasLoadedHistory, hasLoadedRatings, hasLoadedSessions]
   );
 
   const handleRevokeSession = async (sessionId: string) => {
@@ -616,15 +683,26 @@ export default function DriverDashboard() {
   useEffect(() => {
     if (activeTab === "history") {
       void loadDriverHistory();
+    } else if (activeTab === "ratings") {
+      void loadDriverRatings();
     } else if (activeTab === "sessions") {
       void loadDriverSessions();
     }
-  }, [activeTab, loadDriverHistory, loadDriverSessions]);
+  }, [activeTab, loadDriverHistory, loadDriverRatings, loadDriverSessions]);
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
-  const driverStatusRef = useRef<DriverStatus>("ONLINE");
+  const driverStatusRef = useRef<DriverStatus>(driverStatus);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const isSaved = getStoredDriverAvailability(user.id);
+    if (isSaved && driverStatusRef.current !== "BUSY") {
+      setDriverStatus("AVAILABLE");
+      driverStatusRef.current = "AVAILABLE";
+    }
+  }, [user?.id]);
   const currentRideRef = useRef<Ride | null>(null);
   const hasEmittedOnlineRef = useRef(false);
   const routeRequestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -642,6 +720,57 @@ export default function DriverDashboard() {
           ? Math.round(ride.fare.estimated * 0.8)
           : 0);
     const distanceKm = getDistanceKm(ride.distance);
+
+    setDriverMetrics((prev) => {
+      if (!prev) {
+        return {
+          totalTrips: 1,
+          completedTrips: 1,
+          cancelledTrips: 0,
+          totalDistanceKm: distanceKm,
+          totalDistanceMeters: Math.round(distanceKm * 1000),
+          totalFarePaise: ride.fare?.final ?? ride.fare?.estimated ?? 0,
+          totalEarningsPaise: earningPaise,
+        };
+      }
+      return {
+        ...prev,
+        totalTrips: prev.totalTrips + 1,
+        completedTrips: prev.completedTrips + 1,
+        totalDistanceKm: Number((prev.totalDistanceKm + distanceKm).toFixed(2)),
+        totalDistanceMeters: prev.totalDistanceMeters + Math.round(distanceKm * 1000),
+        totalFarePaise: prev.totalFarePaise + (ride.fare?.final ?? ride.fare?.estimated ?? 0),
+        totalEarningsPaise: prev.totalEarningsPaise + earningPaise,
+      };
+    });
+
+    setRideHistory((prev) => {
+      const completedItem: DriverRideItem = {
+        id: ride.id,
+        riderId: ride.riderId,
+        driverId: ride.driverId ?? null,
+        status: "COMPLETED",
+        paymentStatus: ride.paymentStatus ?? "CAPTURED",
+        pickup: ride.pickup,
+        destination: ride.destination,
+        fare: {
+          estimated: ride.fare?.estimated ?? 0,
+          final: ride.fare?.final ?? null,
+          breakdown: ride.fare?.breakdown ?? null,
+        },
+        distance: {
+          estimated: ride.distance?.estimated ?? 0,
+          actual: ride.distance?.actual ?? ride.distance?.estimated ?? 0,
+        },
+        duration: ride.duration ?? { estimated: 0, actual: null },
+        createdAt: ride.createdAt || new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      if (prev.some((r) => r.id === ride.id)) {
+        return prev.map((r) => (r.id === ride.id ? completedItem : r));
+      }
+      return [completedItem, ...prev];
+    });
 
     setProfile((prevProfile) => {
       if (!prevProfile) return prevProfile;
@@ -705,17 +834,55 @@ export default function DriverDashboard() {
           }
         }
 
-        const [profileResponse, rideResponse] = await Promise.all([
-          fetchDriverProfile(),
+        const [profileResponse, rideResponse, ratingsResponse, historyResponse, metricsResponse, balanceResponse] = await Promise.all([
+          fetchDriverProfile().catch(() => null),
           appApi.get<{ success: boolean; data: Ride }>("/rides/driver/current").catch(() => null),
+          fetchDriverRatings().catch(() => null),
+          fetchDriverRideHistory().catch(() => []),
+          fetchDriverRideMetrics().catch(() => null),
+          appApi.get<{ success: boolean; data: DriverBalance }>("/payments/payouts/balance").catch(() => null),
         ]);
-        setProfile(profileResponse);
+        if (profileResponse) setProfile(profileResponse);
+        if (ratingsResponse) {
+          setRatingsSummary(ratingsResponse);
+          setHasLoadedRatings(true);
+          setRatingsLoading(false);
+        }
+        if (historyResponse) {
+          setRideHistory(historyResponse);
+          setHasLoadedHistory(true);
+          setHistoryLoading(false);
+        }
+        if (metricsResponse) {
+          setDriverMetrics(metricsResponse);
+        }
+        if (balanceResponse?.data?.data) {
+          setWalletBalance(balanceResponse.data.data);
+        }
+        const hasBusyRide = Boolean(
+          rideResponse?.data?.data && BUSY_RIDE_STATUSES.includes(rideResponse.data.data.status)
+        );
+
         if (rideResponse && rideResponse.data?.data) {
           const currentRideData = rideResponse.data.data;
           setCurrentRide(currentRideData);
           if (BUSY_RIDE_STATUSES.includes(currentRideData.status)) {
             setDriverStatus("BUSY");
             driverStatusRef.current = "BUSY";
+          }
+        }
+
+        if (!hasBusyRide) {
+          const isDbAvailable = Boolean(profileResponse?.isAvailable);
+          const isStoredAvailable = user?.id ? getStoredDriverAvailability(user.id) : false;
+          if (isDbAvailable || isStoredAvailable) {
+            setDriverStatus("AVAILABLE");
+            driverStatusRef.current = "AVAILABLE";
+            if (user?.id) {
+              try {
+                localStorage.setItem(`urbanfleet_driver_available_${user.id}`, "true");
+              } catch {}
+            }
           }
         }
       } catch (err: unknown) {
@@ -829,9 +996,19 @@ export default function DriverDashboard() {
     const driverSocket = connectDriverSocket({
       onReady: () => {
         setError("");
+        const isPersistedAvailable =
+          (user?.id ? getStoredDriverAvailability(user.id) : false) ||
+          Boolean(profile?.isAvailable) ||
+          driverStatusRef.current === "AVAILABLE";
+
         if (!hasEmittedOnlineRef.current) {
           hasEmittedOnlineRef.current = true;
-          driverSocket.send(JSON.stringify({ event: DriverEvents.GO_ONLINE, data: {} }));
+          driverSocket.send(
+            JSON.stringify({
+              event: DriverEvents.GO_ONLINE,
+              data: { available: isPersistedAvailable },
+            })
+          );
         }
         if (
           currentRideRef.current &&
@@ -839,6 +1016,16 @@ export default function DriverDashboard() {
         ) {
           driverSocket.send(JSON.stringify({ event: DriverEvents.SET_BUSY, data: {} }));
           setDriverStatus("BUSY");
+          driverStatusRef.current = "BUSY";
+        } else if (isPersistedAvailable) {
+          driverSocket.send(
+            JSON.stringify({
+              event: DriverEvents.SET_AVAILABLE,
+              data: { available: true },
+            })
+          );
+          setDriverStatus("AVAILABLE");
+          driverStatusRef.current = "AVAILABLE";
         }
       },
       onError: (message) => setError(message),
@@ -875,7 +1062,29 @@ export default function DriverDashboard() {
             break;
           case ServerEvents.DRIVER_STATUS:
             if (["OFFLINE", "ONLINE", "AVAILABLE", "BUSY"].includes(data?.status)) {
-              setDriverStatus(data.status);
+              const isPersistedAvailable =
+                (user?.id ? getStoredDriverAvailability(user.id) : false) ||
+                driverStatusRef.current === "AVAILABLE";
+
+              if (
+                data.status === "ONLINE" &&
+                isPersistedAvailable &&
+                (!currentRideRef.current || !BUSY_RIDE_STATUSES.includes(currentRideRef.current.status))
+              ) {
+                setDriverStatus("AVAILABLE");
+                driverStatusRef.current = "AVAILABLE";
+              } else {
+                setDriverStatus(data.status);
+                driverStatusRef.current = data.status;
+                if (user?.id && (data.status === "AVAILABLE" || data.status === "ONLINE")) {
+                  try {
+                    localStorage.setItem(
+                      `urbanfleet_driver_available_${user.id}`,
+                      data.status === "AVAILABLE" ? "true" : "false"
+                    );
+                  } catch {}
+                }
+              }
             }
             break;
           case ServerEvents.RIDER_LOCATION: {
@@ -928,6 +1137,21 @@ export default function DriverDashboard() {
               return updated;
             });
             setRiderLocation(null);
+            // Re-fetch authoritative driver statistics from database to sync persistent earnings
+            void Promise.all([
+              fetchDriverProfile().then((fresh) => { if (fresh) setProfile(fresh); }),
+              syncWalletBalance(),
+              loadDriverHistory(),
+              loadDriverRatings(),
+            ]);
+            setTimeout(() => {
+              void Promise.all([
+                fetchDriverProfile().then((fresh) => { if (fresh) setProfile(fresh); }),
+                syncWalletBalance(),
+                loadDriverHistory(),
+                loadDriverRatings(),
+              ]);
+            }, 1200);
             break;
           }
           case ServerEvents.RIDE_CANCELLED:
@@ -1056,28 +1280,50 @@ export default function DriverDashboard() {
     }
   }, [currentRide, currentRide?.status]);
 
-  const handleToggleAvailability = () => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      setError("Socket connection not ready.");
-      return;
-    }
+  const handleToggleAvailability = async () => {
     if (driverStatus === "BUSY") {
       setError("You can't go offline while a ride is active.");
       return;
     }
 
-    if (driverStatus === "ONLINE") {
-      socketRef.current.send(
-        JSON.stringify({ event: DriverEvents.SET_AVAILABLE, data: { available: true } })
-      );
-      setDriverStatus("AVAILABLE");
-      return;
+    const nextIsAvailable = driverStatus !== "AVAILABLE";
+    const nextStatus: DriverStatus = nextIsAvailable ? "AVAILABLE" : "ONLINE";
+
+    // 1. Immediate optimistic UI transition
+    setDriverStatus(nextStatus);
+    driverStatusRef.current = nextStatus;
+
+    // 2. Persist in localStorage so refresh never resets state
+    if (user?.id) {
+      try {
+        localStorage.setItem(
+          `urbanfleet_driver_available_${user.id}`,
+          nextIsAvailable ? "true" : "false"
+        );
+      } catch {}
     }
 
-    socketRef.current.send(
-      JSON.stringify({ event: DriverEvents.SET_AVAILABLE, data: { available: false } })
-    );
-    setDriverStatus("ONLINE");
+    // 3. Persist in driver-service database
+    try {
+      void appApi
+        .post("/drivers/availability", { isAvailable: nextIsAvailable })
+        .then(() => {
+          setProfile((prev) => (prev ? { ...prev, isAvailable: nextIsAvailable } : prev));
+        })
+        .catch((err) => {
+          console.warn("Could not persist driver availability to API:", err);
+        });
+    } catch {}
+
+    // 4. Send socket event to ride-service
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({
+          event: DriverEvents.SET_AVAILABLE,
+          data: { available: nextIsAvailable },
+        })
+      );
+    }
   };
 
   const handleAcceptRide = (rideId: string) => {
@@ -1146,12 +1392,135 @@ export default function DriverDashboard() {
     socketRef.current.send(JSON.stringify({ event, data: { rideId, ...extraData } }));
   };
 
-  const acceptanceRate = useMemo(() => {
-    if (!profile) return 0;
-    const total = profile.statistics?.totalTrips ?? 1;
-    const completed = profile.statistics?.completedTrips ?? 0;
-    return Math.round((completed / (total || 1)) * 100);
-  }, [profile]);
+  // 1. Completed rides from history
+  const completedRides = useMemo(() => {
+    return rideHistory.filter((r) => r.status === "COMPLETED");
+  }, [rideHistory]);
+
+  // 2. Total distance in km from completed rides
+  const historyDistanceKm = useMemo(() => {
+    return completedRides.reduce((acc, r) => {
+      const d = r.distance?.actual ?? r.distance?.estimated ?? 0;
+      return acc + (typeof d === "number" ? d : Number(d) || 0);
+    }, 0);
+  }, [completedRides]);
+
+  // 3. Driver earnings in paise from completed rides
+  const historyEarningsPaise = useMemo(() => {
+    return completedRides.reduce((acc, r) => {
+      const earning =
+        r.fare?.breakdown?.driverEarningPaise ??
+        (r.fare?.final
+          ? Math.round(r.fare.final * 0.8)
+          : r.fare?.estimated
+            ? Math.round(r.fare.estimated * 0.8)
+            : 0);
+      return acc + earning;
+    }, 0);
+  }, [completedRides]);
+
+  // 4. Effective Total Distance (km): highest truthful value from ride history, profile stats, or ride metrics
+  const effectiveTotalDistanceKm = useMemo(() => {
+    const metricKm = Number(driverMetrics?.totalDistanceKm ?? 0);
+    const rawProfileDistance = Number(profile?.statistics?.totalDistance ?? 0);
+    const profileDistanceKm = rawProfileDistance > 100 ? rawProfileDistance / 1000 : rawProfileDistance;
+    return Math.max(metricKm, historyDistanceKm, profileDistanceKm);
+  }, [driverMetrics?.totalDistanceKm, historyDistanceKm, profile?.statistics?.totalDistance]);
+
+  // 5. Effective Net Earnings (paise): highest truthful value from wallet balance ledger, ride history, or profile stats
+  const effectiveNetEarningsPaise = useMemo(() => {
+    const ledgerEarned = Number(walletBalance?.earnedPaise ?? 0);
+    const metricEarnings = Number(driverMetrics?.totalEarningsPaise ?? 0);
+    const profileEarnings = Number(profile?.statistics?.totalEarnings ?? profile?.totalEarningsPaise ?? 0);
+    return Math.max(ledgerEarned, metricEarnings, historyEarningsPaise, profileEarnings);
+  }, [walletBalance?.earnedPaise, driverMetrics?.totalEarningsPaise, historyEarningsPaise, profile?.statistics?.totalEarnings, profile?.totalEarningsPaise]);
+
+  // 6. Effective Completed Trips
+  const effectiveCompletedTrips = useMemo(() => {
+    const metricCompleted = Number(driverMetrics?.completedTrips ?? 0);
+    const profileCompleted = Number(profile?.statistics?.completedTrips ?? 0);
+    return Math.max(metricCompleted, completedRides.length, profileCompleted);
+  }, [driverMetrics?.completedTrips, completedRides.length, profile?.statistics?.completedTrips]);
+
+  // 7. Effective Total Trips
+  const effectiveTotalTrips = useMemo(() => {
+    const metricTotal = Number(driverMetrics?.totalTrips ?? 0);
+    const profileTotal = Number(profile?.statistics?.totalTrips ?? profile?.totalTrips ?? 0);
+    return Math.max(metricTotal, rideHistory.length, profileTotal, effectiveCompletedTrips);
+  }, [driverMetrics?.totalTrips, rideHistory.length, profile?.statistics?.totalTrips, profile?.totalTrips, effectiveCompletedTrips]);
+
+  // 8. Effective Completion / Acceptance Rate
+  const effectiveAcceptanceRate = useMemo(() => {
+    if (effectiveTotalTrips <= 0) return 100;
+    return Math.min(100, Math.round((effectiveCompletedTrips / effectiveTotalTrips) * 100));
+  }, [effectiveCompletedTrips, effectiveTotalTrips]);
+
+  // Backwards compatibility alias for acceptanceRate
+  const acceptanceRate = effectiveAcceptanceRate;
+
+  const fallbackRatingsFromHistory: DriverReviewItem[] = useMemo(() => {
+    const list: DriverReviewItem[] = [];
+    for (const r of rideHistory) {
+      if (r.ratings && r.ratings.length > 0) {
+        for (const rt of r.ratings) {
+          list.push({
+            id: rt.id,
+            score: rt.score,
+            comment: rt.feedback || null,
+            createdAt: rt.createdAt || r.completedAt || r.createdAt,
+            pickupAddress: r.pickup?.address,
+            destinationAddress: r.destination?.address,
+            passengerLabel: "Verified Passenger",
+          });
+        }
+      }
+    }
+    return list;
+  }, [rideHistory]);
+
+  const effectiveReviews: DriverReviewItem[] = useMemo(() => {
+    return ratingsSummary ? ratingsSummary.reviews : fallbackRatingsFromHistory;
+  }, [ratingsSummary, fallbackRatingsFromHistory]);
+
+  const effectiveTotalRatings = useMemo(() => {
+    if (ratingsSummary) return ratingsSummary.totalRatings;
+    if (fallbackRatingsFromHistory.length > 0) return fallbackRatingsFromHistory.length;
+    return Number(profile?.rating?.totalRatings ?? 0);
+  }, [ratingsSummary, fallbackRatingsFromHistory, profile?.rating?.totalRatings]);
+
+  const effectiveAverage = useMemo(() => {
+    if (ratingsSummary && ratingsSummary.averageRating !== null) {
+      return ratingsSummary.averageRating;
+    }
+    if (fallbackRatingsFromHistory.length > 0) {
+      const sum = fallbackRatingsFromHistory.reduce((acc, r) => acc + r.score, 0);
+      return Number((sum / fallbackRatingsFromHistory.length).toFixed(2));
+    }
+    return effectiveTotalRatings > 0 ? Number(profile?.rating?.average ?? 5.0) : 5.0;
+  }, [ratingsSummary, fallbackRatingsFromHistory, effectiveTotalRatings, profile?.rating?.average]);
+
+  const effectiveDistribution = useMemo(() => {
+    if (ratingsSummary?.distribution) {
+      return ratingsSummary.distribution;
+    }
+    const dist: Record<number, { count: number; pct: number }> = {
+      5: { count: 0, pct: 0 },
+      4: { count: 0, pct: 0 },
+      3: { count: 0, pct: 0 },
+      2: { count: 0, pct: 0 },
+      1: { count: 0, pct: 0 },
+    };
+    if (fallbackRatingsFromHistory.length > 0) {
+      for (const r of fallbackRatingsFromHistory) {
+        const s = Math.max(1, Math.min(5, Math.round(r.score)));
+        dist[s].count++;
+      }
+      for (let s = 1; s <= 5; s++) {
+        dist[s].pct = Math.round((dist[s].count / fallbackRatingsFromHistory.length) * 100);
+      }
+    }
+    return dist;
+  }, [ratingsSummary, fallbackRatingsFromHistory]);
 
   if (loading) {
     return <LoadingScreen label="Loading driver dashboard" />;
@@ -1297,7 +1666,7 @@ export default function DriverDashboard() {
       label: "Ratings & Reviews",
       shortLabel: "Ratings",
       icon: Star,
-      badge: `${Number(profile?.rating?.average ?? 5.0).toFixed(1)}★`,
+      badge: effectiveTotalRatings > 0 ? `${effectiveAverage.toFixed(1)}★` : "New",
     },
     {
       id: "sessions",
@@ -1414,7 +1783,7 @@ export default function DriverDashboard() {
                 <Wallet className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#ffd88a] transition-transform group-hover:scale-110 shrink-0" />
                 <span>Wallet</span>
                 <span className="hidden lg:inline-block rounded-md bg-white/10 px-1.5 py-0.5 console-readout text-[11px] text-[#ffd88a]">
-                  {formatPaise(profile?.statistics?.totalEarnings ?? 0)}
+                  {formatPaise(walletBalance?.availablePaise ?? effectiveNetEarningsPaise)}
                 </span>
               </button>
 
@@ -1611,7 +1980,7 @@ export default function DriverDashboard() {
                 <div className="flex items-center justify-center gap-1 mt-1">
                   <Star className="h-3.5 w-3.5 sm:h-4 sm:w-4 fill-amber-500 text-amber-500 shrink-0" />
                   <span className="text-base sm:text-xl font-black text-[#2e1808] console-readout">
-                    {Number(profile?.rating?.average ?? 5.0).toFixed(1)}
+                    {effectiveTotalRatings > 0 ? effectiveAverage.toFixed(1) : "—"}
                   </span>
                 </div>
               </div>
@@ -1621,7 +1990,7 @@ export default function DriverDashboard() {
                   Reviews
                 </p>
                 <p className="text-base sm:text-xl font-black text-[#2e1808] console-readout mt-1">
-                  {profile?.rating?.totalRatings ?? 0}
+                  {effectiveTotalRatings}
                 </p>
               </div>
 
@@ -1829,25 +2198,25 @@ export default function DriverDashboard() {
             <section className="w-full grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <StatCard
                 label="Total Trips"
-                value={String(profile?.statistics?.totalTrips ?? 0)}
+                value={String(effectiveTotalTrips)}
                 icon={RouteIcon}
                 trend="+4% wk"
               />
               <StatCard
                 label="Driver Rating"
-                value={Number(profile?.rating?.average ?? 5).toFixed(1)}
+                value={effectiveTotalRatings > 0 ? effectiveAverage.toFixed(1) : "New"}
                 icon={Star}
-                trend="Top Tier"
+                trend={effectiveTotalRatings > 0 ? (effectiveAverage >= 4.8 ? "Top Tier" : "Good Standing") : "Unrated"}
               />
               <StatCard
                 label="Total Earnings"
-                value={formatPaise(profile?.statistics?.totalEarnings ?? 0)}
+                value={formatPaise(effectiveNetEarningsPaise)}
                 icon={Wallet}
                 trend="Verified"
               />
               <StatCard
                 label="Completion Rate"
-                value={`${acceptanceRate}%`}
+                value={`${effectiveAcceptanceRate}%`}
                 icon={CheckCircle2}
                 trend="Reliable"
               />
@@ -2405,9 +2774,7 @@ export default function DriverDashboard() {
                         </div>
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        {rideHistory.filter((r) => r.status === "COMPLETED").length ||
-                          profile?.statistics?.completedTrips ||
-                          0}
+                        {effectiveCompletedTrips}
                       </p>
                       <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">
                         Verified dispatches
@@ -2424,13 +2791,7 @@ export default function DriverDashboard() {
                         </div>
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        ₹
-                        {((profile?.statistics?.totalEarnings ?? 0) / 100).toLocaleString(
-                          "en-IN",
-                          {
-                            minimumFractionDigits: 2,
-                          }
-                        )}
+                        {formatFare(effectiveNetEarningsPaise)}
                       </p>
                       <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">Settled payouts</p>
                     </div>
@@ -2445,7 +2806,7 @@ export default function DriverDashboard() {
                         </div>
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        {formatDistance(profile?.statistics?.totalDistance)}
+                        {formatDistance(effectiveTotalDistanceKm)}
                       </p>
                       <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">
                         Distance navigated
@@ -2462,10 +2823,10 @@ export default function DriverDashboard() {
                         </div>
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        {Number(profile?.rating?.average ?? 5.0).toFixed(1)} / 5.0
+                        {effectiveTotalRatings > 0 ? `${effectiveAverage.toFixed(1)} / 5.0` : "Not rated yet"}
                       </p>
                       <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">
-                        {profile?.rating?.totalRatings ?? 0} reviews
+                        {effectiveTotalRatings} {effectiveTotalRatings === 1 ? "review" : "reviews"}
                       </p>
                     </div>
                   </div>
@@ -2679,210 +3040,291 @@ export default function DriverDashboard() {
               animate="visible"
               className="w-full space-y-6"
             >
-              {/* Rating Overview Card */}
-              <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-10 shadow-xl backdrop-blur-2xl relative">
-                <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
-                  {/* Big Score Box */}
-                  <div className="text-center lg:text-left border-b lg:border-b-0 lg:border-r border-[#7a4416]/20 pb-6 lg:pb-0 lg:pr-8">
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-950 shadow-2xs mb-3">
-                      <Award className="h-3.5 w-3.5 text-amber-600" />
-                      Top Rated Captain
-                    </span>
-                    <div className="flex items-baseline justify-center lg:justify-start gap-3">
-                      <span
-                        className="text-5xl sm:text-6xl font-black text-[#2e1808] console-readout tracking-tight"
-                        style={{ fontFamily: "'Fraunces', Georgia, serif" }}
+              {ratingsLoading && !hasLoadedRatings ? (
+                <TabTelemetryLoader
+                  title="Synchronizing Driver Ratings & Reviews…"
+                  subtitle="Retrieving verified passenger telemetry, star ratings, and ride feedback."
+                  showKpiSkeletons={true}
+                  cardCount={3}
+                />
+              ) : (
+                <>
+                  {/* Rating Overview Card */}
+                  <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-10 shadow-xl backdrop-blur-2xl relative">
+                    <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+
+                    {/* Header with Refresh button */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 mb-6 border-b border-[#7a4416]/20">
+                      <div>
+                        <h2
+                          className="text-xl sm:text-2xl font-black text-[#2e1808]"
+                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
+                        >
+                          Performance, Ratings & Feedback
+                        </h2>
+                        <p className="text-xs sm:text-sm text-[#7a4416] mt-0.5">
+                          Real passenger feedback and satisfaction metrics for your driver account.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => void loadDriverRatings()}
+                        disabled={ratingsLoading}
+                        variant="outline"
+                        size="sm"
+                        className="h-10 border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] text-xs font-bold rounded-xl shrink-0"
                       >
-                        {Number(profile?.rating?.average ?? 4.95).toFixed(2)}
-                      </span>
-                      <span className="text-xl font-bold text-[#7a4416]">/ 5.0</span>
-                    </div>
-                    <div className="flex items-center justify-center lg:justify-start gap-1.5 mt-3">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          className="h-5 w-5 sm:h-6 sm:w-6 fill-amber-500 text-amber-500 drop-shadow-xs"
+                        <RefreshCw
+                          className={`mr-1.5 h-3.5 w-3.5 text-[#b8722c] ${
+                            ratingsLoading ? "animate-spin" : ""
+                          }`}
                         />
-                      ))}
+                        Refresh
+                      </Button>
                     </div>
-                    <p className="mt-2 text-xs font-semibold text-[#6b3a12]">
-                      Based on {profile?.rating?.totalRatings || 48} verified rider reviews
-                    </p>
-                    <p className="mt-1 text-[11px] text-[#7a4416]">
-                      Top 5% highest customer satisfaction across fleet
-                    </p>
-                  </div>
 
-                  {/* Star Distribution Progress Bars */}
-                  <div className="lg:col-span-2 space-y-2.5">
-                    <h3 className="text-sm font-bold text-[#2e1808] mb-3">Rating Distribution</h3>
-                    {[
-                      {
-                        stars: 5,
-                        pct: 92,
-                        count: Math.round((profile?.rating?.totalRatings || 48) * 0.92),
-                      },
-                      {
-                        stars: 4,
-                        pct: 5,
-                        count: Math.round((profile?.rating?.totalRatings || 48) * 0.05),
-                      },
-                      {
-                        stars: 3,
-                        pct: 2,
-                        count: Math.round((profile?.rating?.totalRatings || 48) * 0.02),
-                      },
-                      {
-                        stars: 2,
-                        pct: 1,
-                        count: Math.round((profile?.rating?.totalRatings || 48) * 0.01),
-                      },
-                      { stars: 1, pct: 0, count: 0 },
-                    ].map((row) => (
-                      <div key={row.stars} className="flex items-center gap-3 text-xs">
-                        <span className="w-12 font-bold text-[#3a1f0a] flex items-center gap-1 console-readout">
-                          {row.stars} <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
-                        </span>
-                        <div className="flex-1 h-3 rounded-full bg-[#3a1f0a]/10 overflow-hidden border border-[#7a4416]/15">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${row.pct}%` }}
-                            transition={{ duration: 0.7, ease: "easeOut" }}
-                            className="h-full bg-gradient-to-r from-[#b8722c] to-[#e6a84f] rounded-full"
-                          />
-                        </div>
-                        <span className="w-10 text-right console-readout font-bold text-[#6b3a12]">
-                          {row.pct}%
-                        </span>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
+                      {/* Big Score Box */}
+                      <div className="text-center lg:text-left border-b lg:border-b-0 lg:border-r border-[#7a4416]/20 pb-6 lg:pb-0 lg:pr-8">
+                        {effectiveTotalRatings > 0 ? (
+                          <>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-950 shadow-2xs mb-3">
+                              <Award className="h-3.5 w-3.5 text-amber-600" />
+                              {effectiveAverage >= 4.8
+                                ? "Top Rated Captain"
+                                : effectiveAverage >= 4.0
+                                ? "High Performer"
+                                : "Active Captain"}
+                            </span>
+                            <div className="flex items-baseline justify-center lg:justify-start gap-3">
+                              <span
+                                className="text-5xl sm:text-6xl font-black text-[#2e1808] console-readout tracking-tight"
+                                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
+                              >
+                                {effectiveAverage.toFixed(2)}
+                              </span>
+                              <span className="text-xl font-bold text-[#7a4416]">/ 5.0</span>
+                            </div>
+                            <div className="flex items-center justify-center lg:justify-start gap-1.5 mt-3">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  className={`h-5 w-5 sm:h-6 sm:w-6 drop-shadow-xs ${
+                                    star <= Math.round(effectiveAverage)
+                                      ? "fill-amber-500 text-amber-500"
+                                      : "fill-amber-500/20 text-amber-500/30"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <p className="mt-2 text-xs font-semibold text-[#6b3a12]">
+                              Based on {effectiveTotalRatings} verified rider {effectiveTotalRatings === 1 ? "review" : "reviews"}
+                            </p>
+                            <p className="mt-1 text-[11px] text-[#7a4416]">
+                              {effectiveAverage >= 4.8
+                                ? "Exceptional satisfaction score across completed trips"
+                                : "Genuine feedback calculated directly from completed trips"}
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-950 shadow-2xs mb-3">
+                              <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                              Newly Onboarded
+                            </span>
+                            <div className="flex items-baseline justify-center lg:justify-start gap-3">
+                              <span
+                                className="text-5xl sm:text-6xl font-black text-[#2e1808] console-readout tracking-tight"
+                                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
+                              >
+                                —
+                              </span>
+                              <span className="text-xl font-bold text-[#7a4416]">/ 5.0</span>
+                            </div>
+                            <div className="flex items-center justify-center lg:justify-start gap-1.5 mt-3">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  className="h-5 w-5 sm:h-6 sm:w-6 fill-amber-500/20 text-amber-500/30 drop-shadow-xs"
+                                />
+                              ))}
+                            </div>
+                            <p className="mt-2 text-xs font-semibold text-[#6b3a12]">
+                              No verified rider reviews submitted yet
+                            </p>
+                            <p className="mt-1 text-[11px] text-[#7a4416]">
+                              Accept and complete trip requests to build your genuine captain rating
+                            </p>
+                          </>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
 
-              {/* Recognition Badges — 2x2 on Mobile */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                {[
-                  {
-                    title: "Smooth & Safe Drive",
-                    desc: "No harsh braking or speeding",
-                    icon: ShieldCheck,
-                    color: "text-emerald-800 bg-emerald-950/15",
-                  },
-                  {
-                    title: "Spotless Cabin",
-                    desc: "Rated 5-star for cleanliness",
-                    icon: Sparkles,
-                    color: "text-amber-800 bg-amber-950/15",
-                  },
-                  {
-                    title: "Prompt & Punctual",
-                    desc: "98% on-time pickup rate",
-                    icon: Clock,
-                    color: "text-blue-800 bg-blue-950/15",
-                  },
-                  {
-                    title: "Expert Navigation",
-                    desc: "Optimal peak-hour routing",
-                    icon: RouteIcon,
-                    color: "text-purple-800 bg-purple-950/15",
-                  },
-                ].map((badge) => (
-                  <div
-                    key={badge.title}
-                    className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md"
-                  >
-                    <div
-                      className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl ${badge.color} mb-3`}
-                    >
-                      <badge.icon className="h-4 w-4 sm:h-5 sm:w-5" />
+                      {/* Star Distribution Progress Bars */}
+                      <div className="lg:col-span-2 space-y-2.5">
+                        <h3 className="text-sm font-bold text-[#2e1808] mb-3">Rating Distribution</h3>
+                        {[5, 4, 3, 2, 1].map((stars) => {
+                          const item = effectiveDistribution[stars] || { count: 0, pct: 0 };
+                          return (
+                            <div key={stars} className="flex items-center gap-3 text-xs">
+                              <span className="w-12 font-bold text-[#3a1f0a] flex items-center gap-1 console-readout">
+                                {stars} <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                              </span>
+                              <div className="flex-1 h-3 rounded-full bg-[#3a1f0a]/10 overflow-hidden border border-[#7a4416]/15">
+                                <motion.div
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${item.pct}%` }}
+                                  transition={{ duration: 0.7, ease: "easeOut" }}
+                                  className="h-full bg-gradient-to-r from-[#b8722c] to-[#e6a84f] rounded-full"
+                                />
+                              </div>
+                              <span className="w-16 text-right console-readout font-bold text-[#6b3a12]">
+                                {item.count} ({item.pct}%)
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">{badge.title}</h4>
-                    <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">{badge.desc}</p>
                   </div>
-                ))}
-              </div>
 
-              {/* Verified Passenger Testimonials */}
-              <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
-                <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                <div className="flex items-center gap-3 border-b border-[#7a4416]/20 pb-4 mb-6">
-                  <MessageSquare className="h-5 w-5 text-[#b8722c]" />
-                  <h3
-                    className="text-lg font-bold text-[#2e1808]"
-                    style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                  >
-                    Verified Rider Feedback & Compliments
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[
-                    {
-                      name: "Ananya Sharma",
-                      score: 5,
-                      date: "2 days ago",
-                      comment:
-                        "Extremely polite captain! Arrived 2 minutes before scheduled pickup and the AC was set to perfect temperature. Highly recommended.",
-                      badge: "Punctual & Courteous",
-                    },
-                    {
-                      name: "Rahul Verma",
-                      score: 5,
-                      date: "4 days ago",
-                      comment:
-                        "Very smooth drive through peak Silk Board junction. Calm driving style, followed GPS accurately, and spotless car interior.",
-                      badge: "Smooth Driving",
-                    },
-                    {
-                      name: "Priya Mukherjee",
-                      score: 5,
-                      date: "1 week ago",
-                      comment:
-                        "Felt very safe traveling late at night from Kempegowda Airport. Courteous demeanor and great vehicle suspension.",
-                      badge: "Safety Excellence",
-                    },
-                    {
-                      name: "Vikram Kulkarni",
-                      score: 5,
-                      date: "2 weeks ago",
-                      comment:
-                        "Great experience! Quick routing via the outer ring road avoided the heavy underpass waterlogging.",
-                      badge: "Route Master",
-                    },
-                  ].map((review, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-5 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#3a1f0a] text-[#ffd88a] font-bold text-xs">
-                            {review.name[0]}
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-[#2e1808]">{review.name}</p>
-                            <p className="text-[10px] text-[#7a4416]">{review.date}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 text-amber-500 console-readout text-xs font-bold">
-                          <Star className="h-3.5 w-3.5 fill-amber-500" />
-                          <span>{review.score}.0</span>
-                        </div>
+                  {/* Recognition Badges — Genuine stats */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
+                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-emerald-800 bg-emerald-950/15 mb-3">
+                        <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />
                       </div>
-                      <p className="text-xs text-[#3a1f0a] italic mt-2 leading-relaxed">
-                        "{review.comment}"
+                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Trip Completion</h4>
+                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
+                        {effectiveAcceptanceRate}% completion rate ({effectiveCompletedTrips} trips)
                       </p>
-                      <div className="mt-3 flex items-center gap-1.5">
-                        <span className="rounded-full bg-emerald-950/15 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-900">
-                          ✓ {review.badge}
-                        </span>
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+
+                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
+                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-purple-800 bg-purple-950/15 mb-3">
+                        <RouteIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+                      </div>
+                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Distance Logged</h4>
+                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
+                        {effectiveTotalDistanceKm.toFixed(1)} km navigated
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
+                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-amber-800 bg-amber-950/15 mb-3">
+                        <Star className="h-4 w-4 sm:h-5 sm:w-5 fill-amber-500 text-amber-500" />
+                      </div>
+                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Passenger Feedback</h4>
+                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
+                        {effectiveTotalRatings > 0
+                          ? `${effectiveAverage.toFixed(1)} avg across ${effectiveTotalRatings} reviews`
+                          : "Awaiting first completed trip rating"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
+                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-blue-800 bg-blue-950/15 mb-3">
+                        <Award className="h-4 w-4 sm:h-5 sm:w-5" />
+                      </div>
+                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Platform Standing</h4>
+                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
+                        {profile?.isVerified ? "Verified & Certified Captain" : "Documents in Review"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Verified Passenger Testimonials */}
+                  <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
+                    <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+                    <div className="flex items-center justify-between border-b border-[#7a4416]/20 pb-4 mb-6">
+                      <div className="flex items-center gap-3">
+                        <MessageSquare className="h-5 w-5 text-[#b8722c]" />
+                        <h3
+                          className="text-lg font-bold text-[#2e1808]"
+                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
+                        >
+                          Verified Rider Feedback & Compliments
+                        </h3>
+                      </div>
+                      <span className="rounded-full bg-[#3a1f0a]/10 px-3 py-1 text-xs font-bold text-[#6b3a12] console-readout">
+                        {effectiveReviews.length} {effectiveReviews.length === 1 ? "Review" : "Reviews"}
+                      </span>
+                    </div>
+
+                    {effectiveReviews.length === 0 ? (
+                      <div className="py-12 px-4 text-center rounded-2xl border border-dashed border-[#7a4416]/25 bg-[#fffdf9]/60">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3a1f0a]/10 text-[#b8722c] mb-4">
+                          <MessageSquare className="h-7 w-7" />
+                        </div>
+                        <h4
+                          className="text-base font-bold text-[#2e1808]"
+                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
+                        >
+                          No Rider Reviews Yet
+                        </h4>
+                        <p className="text-xs text-[#7a4416] max-w-md mx-auto mt-1 leading-relaxed">
+                          Once passengers rate your completed trips and leave comments, their genuine feedback and ratings will appear here in real-time.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {effectiveReviews.map((review, idx) => {
+                          const dateStr = review.createdAt
+                            ? new Date(review.createdAt).toLocaleDateString(undefined, {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })
+                            : "Recent";
+                          return (
+                            <div
+                              key={review.id || idx}
+                              className="rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-5 shadow-sm flex flex-col justify-between"
+                            >
+                              <div>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#3a1f0a] text-[#ffd88a] font-bold text-xs">
+                                      {review.passengerLabel?.[0] || "P"}
+                                    </div>
+                                    <div>
+                                      <p className="text-xs font-bold text-[#2e1808]">
+                                        {review.passengerLabel || "Verified Passenger"}
+                                      </p>
+                                      <p className="text-[10px] text-[#7a4416]">{dateStr}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-amber-500 console-readout text-xs font-bold">
+                                    <Star className="h-3.5 w-3.5 fill-amber-500" />
+                                    <span>{review.score.toFixed(1)}</span>
+                                  </div>
+                                </div>
+                                {review.comment ? (
+                                  <p className="text-xs text-[#3a1f0a] italic mt-2 leading-relaxed">
+                                    "{review.comment}"
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-[#7a4416]/70 italic mt-2">
+                                    Passenger submitted a {review.score}-star rating.
+                                  </p>
+                                )}
+                              </div>
+                              <div className="mt-4 pt-3 border-t border-[#7a4416]/10 flex flex-wrap items-center justify-between gap-2">
+                                <span className="rounded-full bg-emerald-950/15 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-900">
+                                  ✓ {review.score >= 5 ? "Top Rating" : review.score >= 4 ? "Great Experience" : "Trip Review"}
+                                </span>
+                                {review.destinationAddress && (
+                                  <span className="text-[10px] text-[#7a4416] truncate max-w-[180px]">
+                                    to {review.destinationAddress}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
 
@@ -3612,7 +4054,13 @@ export default function DriverDashboard() {
       {/* Driver Wallet Modal */}
       <DriverWalletModal
         isOpen={isWalletOpen}
-        onClose={() => setIsWalletOpen(false)}
+        onClose={() => {
+          setIsWalletOpen(false);
+          void syncWalletBalance();
+          void fetchDriverProfile().then((fresh) => {
+            if (fresh) setProfile(fresh);
+          });
+        }}
         onOpenBankDetails={() => setIsBankDetailsOpen(true)}
       />
       <DriverBankDetailsModal

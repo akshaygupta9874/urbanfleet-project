@@ -26,6 +26,8 @@ export interface DriverBankDetails {
 
 export interface DriverProfile {
   id: string;
+  isAvailable?: boolean;
+  isOnline?: boolean;
   user: {
     id: string;
     firstName: string;
@@ -132,9 +134,9 @@ export interface DriverRideItem {
       distanceFarePaise?: number;
       timeFarePaise?: number;
       platformCommissionPaise?: number;
-    };
+    } | null;
   };
-  distance: { estimated: number; actual: number };
+  distance: { estimated: number; actual: number | null };
   duration: { estimated: number; actual: number | null };
   ratings?: Array<{
     id: string;
@@ -212,7 +214,44 @@ export async function updateDriverBankDetails(data: {
   return response.data.data;
 }
 
+export interface DriverRideMetrics {
+  totalTrips: number;
+  completedTrips: number;
+  cancelledTrips: number;
+  totalDistanceKm: number;
+  totalDistanceMeters: number;
+  totalFarePaise: number;
+  totalEarningsPaise: number;
+}
+
 export async function fetchDriverRideHistory(): Promise<DriverRideItem[]> {
-  const response = await appApi.get<{ data: DriverRideItem[]; totalRides?: number }>('/rides/history/driver');
+  const response = await appApi.get<{ data: DriverRideItem[]; totalRides?: number; metrics?: DriverRideMetrics }>('/rides/history/driver');
   return response.data.data || [];
+}
+
+export async function fetchDriverRideMetrics(): Promise<DriverRideMetrics> {
+  const response = await appApi.get<{ success: boolean; data: DriverRideMetrics }>('/rides/metrics/driver');
+  return response.data.data;
+}
+
+export interface DriverReviewItem {
+  id: string;
+  score: number;
+  comment: string | null;
+  createdAt: string;
+  pickupAddress?: string;
+  destinationAddress?: string;
+  passengerLabel?: string;
+}
+
+export interface DriverRatingsSummary {
+  averageRating: number | null;
+  totalRatings: number;
+  distribution: Record<number, { count: number; pct: number }>;
+  reviews: DriverReviewItem[];
+}
+
+export async function fetchDriverRatings(): Promise<DriverRatingsSummary> {
+  const response = await appApi.get<{ data: DriverRatingsSummary }>('/rides/ratings/driver');
+  return response.data.data;
 }

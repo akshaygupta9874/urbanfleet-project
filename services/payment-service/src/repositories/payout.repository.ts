@@ -144,14 +144,19 @@ class PayoutRepository {
     }
 
     async sumAmountByDriver(
-        driver: string,
+        driver: string | string[],
         statuses: readonly PayoutStatus[]
     ): Promise<number> {
+        const where: Prisma.PayoutWhereInput = {
+            status: { in: [...statuses] as unknown as Prisma.EnumPayoutStatusFilter["in"] },
+        };
+        if (Array.isArray(driver)) {
+            where.driverId = { in: driver.map((d) => d.toString()) };
+        } else {
+            where.driverId = driver.toString();
+        }
         const result = await prisma.payout.aggregate({
-            where: {
-                driverId: driver.toString(),
-                status: { in: [...statuses] as unknown as Prisma.EnumPayoutStatusFilter["in"] },
-            },
+            where,
             _sum: {
                 amountPaise: true,
             },
@@ -196,14 +201,19 @@ class PayoutRepository {
         return formatPayout(updated);
     }
 
-    async findPendingForDriver(driver: string): Promise<IPayout[]> {
-        const rows = await prisma.payout.findMany({
-            where: {
-                driverId: driver.toString(),
-                status: {
-                    in: [PayoutStatus.PENDING, PayoutStatus.PROCESSING] as unknown as Prisma.EnumPayoutStatusFilter["in"],
-                },
+    async findPendingForDriver(driver: string | string[]): Promise<IPayout[]> {
+        const where: Prisma.PayoutWhereInput = {
+            status: {
+                in: [PayoutStatus.PENDING, PayoutStatus.PROCESSING] as unknown as Prisma.EnumPayoutStatusFilter["in"],
             },
+        };
+        if (Array.isArray(driver)) {
+            where.driverId = { in: driver.map((d) => d.toString()) };
+        } else {
+            where.driverId = driver.toString();
+        }
+        const rows = await prisma.payout.findMany({
+            where,
             orderBy: {
                 createdAt: "asc",
             },
@@ -225,16 +235,16 @@ class PayoutRepository {
     }
 
     async list(
-        driver: string,
+        driver: string | string[],
         page = 1,
         limit = 20
     ): Promise<{
         items: IPayout[];
         total: number;
     }> {
-        const where = {
-            driverId: driver.toString(),
-        };
+        const where: Prisma.PayoutWhereInput = Array.isArray(driver)
+            ? { driverId: { in: driver.map((d) => d.toString()) } }
+            : { driverId: driver.toString() };
 
         const [rows, total] = await Promise.all([
             prisma.payout.findMany({
@@ -254,9 +264,12 @@ class PayoutRepository {
         };
     }
 
-    async findByDriver(driverId: string): Promise<IPayout[]> {
+    async findByDriver(driverId: string | string[]): Promise<IPayout[]> {
+        const where: Prisma.PayoutWhereInput = Array.isArray(driverId)
+            ? { driverId: { in: driverId.map((d) => d.toString()) } }
+            : { driverId: driverId.toString() };
         const rows = await prisma.payout.findMany({
-            where: { driverId: driverId.toString() },
+            where,
             orderBy: { createdAt: "desc" },
         });
         return rows.map(formatPayout);

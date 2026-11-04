@@ -363,12 +363,13 @@ export const getDriverBalance =
     req: AuthenticatedRequest,
     res: Response
   ) => {
-    const driverId = req.driverId;
+    const driverId = req.driverId || req.userId;
     if (!driverId) {
       throw new AppError("Driver identity required", 403, "FORBIDDEN");
     }
+    const altDriverId = req.userId && req.userId !== driverId ? req.userId : undefined;
 
-    const balance = await payoutService.getDriverBalance(driverId);
+    const balance = await payoutService.getDriverBalance(driverId, altDriverId);
     res.status(200).json({
       success: true,
       data: balance,
@@ -381,10 +382,11 @@ export const requestPayout =
     req: AuthenticatedRequest,
     res: Response
   ) => {
-    const driverId = req.driverId;
+    const driverId = req.driverId || req.userId;
     if (!driverId) {
       throw new AppError("Driver identity required", 403, "FORBIDDEN");
     }
+    const altDriverId = req.userId && req.userId !== driverId ? req.userId : undefined;
 
     const { amountPaise, rideId, paymentId, mode, metadata } = req.body;
     if (!amountPaise || amountPaise <= 0) {
@@ -396,6 +398,7 @@ export const requestPayout =
 
     const payout = await payoutService.createPayout({
       driverId,
+      altDriverId,
       rideId: isUuid(rideId) ? rideId : null,
       paymentId: isUuid(paymentId) ? paymentId : null,
       amountPaise: Math.round(Number(amountPaise)),
@@ -430,12 +433,14 @@ export const listPayouts =
       return res.status(200).json({ success: true, data: payouts });
     }
 
-    const driverId = req.driverId;
+    const driverId = req.driverId || req.userId;
     if (!driverId) {
       throw new AppError("Driver identity required", 403, "FORBIDDEN");
     }
+    const altDriverId = req.userId && req.userId !== driverId ? req.userId : undefined;
+    const driverIds = altDriverId ? [driverId, altDriverId] : driverId;
 
-    const payouts = await payoutRepository.findByDriver(driverId);
+    const payouts = await payoutRepository.findByDriver(driverIds);
 
     res.status(200).json({
       success: true,

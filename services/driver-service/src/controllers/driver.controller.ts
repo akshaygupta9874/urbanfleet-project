@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import axios from 'axios';
 import { AuthenticatedRequest, AppError, createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('driver-controller');
@@ -90,7 +91,16 @@ export interface RawDriverProfile {
   [key: string]: unknown;
 }
 
-export function formatDriverProfileForFrontend(profile: RawDriverProfile | null | undefined) {
+export function formatDriverProfileForFrontend(
+  profile: RawDriverProfile | null | undefined,
+  extraStats?: {
+    totalTrips?: number;
+    completedTrips?: number;
+    cancelledTrips?: number;
+    totalDistance?: number;
+    totalEarnings?: number;
+  }
+) {
   if (!profile) return null;
   const vehicle = profile.vehicles?.[0] || profile.vehicle || {
     type: 'CAR',
@@ -103,11 +113,11 @@ export function formatDriverProfileForFrontend(profile: RawDriverProfile | null 
 
   const ratingObj = typeof profile.rating === 'object' && profile.rating !== null ? (profile.rating as { average?: number; totalRatings?: number }) : null;
   const ratingAvg = Number(ratingObj?.average ?? profile.rating ?? 5.0);
-  const totalTrips = Number(profile.statistics?.totalTrips ?? profile.totalTrips ?? 0);
-  const completedTrips = Number(profile.statistics?.completedTrips ?? totalTrips);
-  const totalEarningsPaise = Number(profile.statistics?.totalEarnings ?? profile.totalEarningsPaise ?? 0);
+  const totalTrips = Number(extraStats?.totalTrips ?? profile.statistics?.totalTrips ?? profile.totalTrips ?? 0);
+  const completedTrips = Number(extraStats?.completedTrips ?? profile.statistics?.completedTrips ?? totalTrips);
+  const totalEarningsPaise = Number(extraStats?.totalEarnings ?? profile.statistics?.totalEarnings ?? profile.totalEarningsPaise ?? 0);
   const totalEarnings = totalEarningsPaise;
-  const totalDistance = Number(profile.statistics?.totalDistance ?? 0);
+  const totalDistance = Number(extraStats?.totalDistance ?? profile.statistics?.totalDistance ?? 0);
 
   const banking = {
     accountHolderName: String(profile.accountHolderName || ''),
@@ -160,12 +170,12 @@ export function formatDriverProfileForFrontend(profile: RawDriverProfile | null 
       (profile.verificationStatus === 'APPROVED' || profile.verificationStatus === 'VERIFIED'),
     rating: {
       average: ratingAvg,
-      totalRatings: Number(ratingObj?.totalRatings ?? 10),
+      totalRatings: Number(ratingObj?.totalRatings ?? 0),
     },
     statistics: {
       totalTrips,
       completedTrips,
-      cancelledTrips: Number(profile.statistics?.cancelledTrips ?? 0),
+      cancelledTrips: Number(extraStats?.cancelledTrips ?? profile.statistics?.cancelledTrips ?? 0),
       totalDistance,
       totalEarnings,
     },
@@ -513,7 +523,32 @@ export class DriverController {
     const userId = this.getAuthenticatedUserId(req);
     const profile = await this.driverService.getDriverByUserId(userId);
     await this.grantDriverRoleIfApproved(profile.id);
-    const formatted = formatDriverProfileForFrontend(profile);
+
+    let extraStats = undefined;
+    try {
+      const rideServiceUrl = process.env.RIDE_SERVICE_URL || 'http://localhost:4003';
+      const authHeader = req.headers.authorization;
+      const resp = await axios.get(`${rideServiceUrl}/v1/rides/metrics/driver`, {
+        timeout: 2000,
+        headers: {
+          ...(authHeader ? { Authorization: authHeader } : {}),
+          'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret',
+        },
+      });
+      if (resp.data?.data) {
+        extraStats = {
+          totalTrips: resp.data.data.totalTrips,
+          completedTrips: resp.data.data.completedTrips,
+          cancelledTrips: resp.data.data.cancelledTrips,
+          totalDistance: resp.data.data.totalDistanceKm,
+          totalEarnings: resp.data.data.totalEarningsPaise,
+        };
+      }
+    } catch {
+      // Non-blocking fallback if ride-service is unavailable
+    }
+
+    const formatted = formatDriverProfileForFrontend(profile, extraStats);
     res.status(200).json({ success: true, data: formatted });
   });
 
@@ -697,7 +732,41 @@ export class DriverController {
   getEarnings = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = this.getAuthenticatedUserId(req);
     const earnings = await this.driverService.calculateEarnings(userId);
-    res.status(200).json({ success: true, data: earnings });
+
+    let rideMetrics = null;
+    try {
+      const rideServiceUrl = process.env.RIDE_SERVICE_URL || 'http://localhost:4003';
+      const authHeader = req.headers.authorization;
+      const resp = await axios.get(`${rideServiceUrl}/v1/rides/metrics/driver`, {
+        timeout: 2000,
+        headers: {
+          ...(authHeader ? { Authorization: authHeader } : {}),
+          'x-internal-service-key': process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret',
+        },
+      });
+      rideMetrics = resp.data?.data;
+    } catch {
+      // Non-blocking
+    }
+
+    const totalEarningsPaise = Math.max(
+      earnings.totalEarningsPaise,
+      Number(rideMetrics?.totalEarningsPaise ?? 0)
+    );
+    const totalTrips = Math.max(
+      earnings.totalTrips,
+      Number(rideMetrics?.totalTrips ?? 0)
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...earnings,
+        totalEarningsPaise,
+        totalTrips,
+        totalDistanceKm: Number(rideMetrics?.totalDistanceKm ?? 0),
+      },
+    });
   });
 
   getDriverById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
