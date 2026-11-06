@@ -5,6 +5,9 @@ import { AdminController } from '../controllers/admin.controller.js';
 export function createAdminRouter(controller: AdminController): Router {
   const router = Router();
 
+  // Public Health Endpoint (unprotected for gateway and health checks)
+  router.get('/health', (_req, res) => res.status(200).json({ status: 'UP', service: 'admin-operations' }));
+
   // All endpoints require verified administrator authentication
   router.use(authMiddleware, requireRole('ADMIN'));
 

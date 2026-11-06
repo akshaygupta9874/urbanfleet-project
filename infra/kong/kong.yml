@@ -10,7 +10,6 @@ services:
       - name: auth-routes
         paths:
           - /v1/auth
-          - /v1/admin
         strip_path: false
         protocols:
           - http
@@ -20,6 +19,13 @@ services:
             config:
               minute: 60
               policy: local
+      - name: admin-routes
+        paths:
+          - /v1/admin
+        strip_path: false
+        protocols:
+          - http
+          - https
 
   # ========================================================
   # 2. DRIVER SERVICE (Internal Port 4002)

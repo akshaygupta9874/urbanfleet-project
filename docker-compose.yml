@@ -132,6 +132,10 @@ services:
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-https://urbanfleet.duckdns.org}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      DRIVER_SERVICE_URL: "http://driver-service:4002"
+      RIDE_SERVICE_URL: "http://ride-service:4004"
+      PAYMENT_SERVICE_URL: "http://payment-service:4005"
+      NOTIFICATION_SERVICE_URL: "http://notification-service:4003"
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     volumes:
       - ./scripts/wait-for-dependencies.cjs:/app/scripts/wait-for-dependencies.cjs:ro

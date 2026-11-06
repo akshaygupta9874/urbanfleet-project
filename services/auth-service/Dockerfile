@@ -12,6 +12,13 @@ RUN npm config set fetch-retries 5 \
     && npm ci --ignore-scripts --no-audit --fund=false
 RUN npm run build:packages
 RUN npm run build --workspace=@urbanfleet/auth-service
+RUN rm -rf /root/.npm \
+    /app/node_modules/prisma/build/public \
+    /app/node_modules/prisma/build/studio.* \
+    /app/node_modules/prisma/build/*mysql* \
+    /app/node_modules/prisma/build/*sqlite* \
+    /app/node_modules/prisma/build/*sqlserver* \
+    /app/node_modules/prisma/build/*cockroachdb*
 
 FROM node:22-alpine AS runner
 WORKDIR /app
