@@ -1,9 +1,11 @@
 import axios from 'axios';
-import { authClient, AuthClient } from '../clients/auth.client.js';
 import { driverClient, DriverClient } from '../clients/driver.client.js';
 import { rideClient, RideClient } from '../clients/ride.client.js';
 import { paymentClient, PaymentClient } from '../clients/payment.client.js';
-import { adminRedisClient } from '../redis/client.js';
+import { authRedisClient } from '../redis/client.js';
+import { prisma } from '../db/client.js';
+import { UserService } from './user.service.js';
+import { SessionRepository } from '../repositories/session.repository.js';
 import { config } from '../config/config.js';
 import type {
   DriverVerificationInput,
@@ -108,7 +110,8 @@ export class AdminService {
   };
 
   constructor(
-    private readonly auth: AuthClient = authClient,
+    private readonly userService: UserService,
+    private readonly sessionRepository: SessionRepository,
     private readonly driver: DriverClient = driverClient,
     private readonly ride: RideClient = rideClient,
     private readonly payment: PaymentClient = paymentClient
@@ -118,15 +121,15 @@ export class AdminService {
 
   private async initializeSettingsFromRedis(): Promise<void> {
     try {
-      if (adminRedisClient && adminRedisClient.isOpen) {
-        const stored = await adminRedisClient.get(SETTINGS_REDIS_KEY);
+      if (authRedisClient.isOpen) {
+        const stored = await authRedisClient.get(SETTINGS_REDIS_KEY);
         if (stored) {
           this.settings = { ...this.settings, ...JSON.parse(stored) };
-          console.log('[admin-service] Loaded system settings from Redis cluster');
+          console.log('[auth-service] Loaded admin settings from Redis');
         }
       }
     } catch (err) {
-      console.warn('[admin-service] Could not read settings from Redis on boot:', err);
+      console.warn('[auth-service] Could not read admin settings from Redis on boot:', err);
     }
   }
 
@@ -134,9 +137,9 @@ export class AdminService {
     const degradedServices: string[] = [];
 
     const [usersRes, driversRes, ridesRes, paymentsRes] = await Promise.all([
-      this.auth.getUsers(bearer, { limit: 1 }).catch(() => {
+      this.userService.listUsers({ page: 1, limit: 1 }).catch(() => {
         degradedServices.push('auth-service');
-        return { data: { pagination: { total: 0 } } };
+        return { items: [], total: 0 };
       }),
       this.driver.getDrivers(bearer, { limit: 1 }).catch(() => {
         degradedServices.push('driver-service');
@@ -154,7 +157,7 @@ export class AdminService {
 
     return {
       users: {
-        total: (usersRes as any).data?.pagination?.total ?? 0,
+        total: usersRes.total,
         degraded: degradedServices.includes('auth-service'),
       },
       drivers: {
@@ -174,35 +177,35 @@ export class AdminService {
   }
 
   async getUsers(bearer: string | undefined, query: PaginationQuery) {
-    const res = await this.auth.getUsers(bearer, query);
-    return res.data;
+    const result = await this.userService.listUsers(query);
+    return { success: true, data: result.items, pagination: { page: query.page, limit: query.limit, total: result.total } };
   }
 
   async getSessions(bearer: string | undefined, query: PaginationQuery) {
-    const res = await this.auth.getSessions(bearer, query);
-    return res.data;
+    const result = await this.sessionRepository.list(query);
+    return { success: true, data: result.items, pagination: { page: query.page, limit: query.limit, total: result.total } };
   }
 
-  async revokeSession(bearer: string | undefined, sessionId: string) {
-    const res = await this.auth.revokeSession(bearer, sessionId);
-    await this.auth.recordAudit(bearer, {
+  async revokeSession(_bearer: string | undefined, sessionId: string, adminUserId?: string) {
+    await this.sessionRepository.delete(sessionId);
+    await this.recordAudit(adminUserId, {
       action: 'SESSION_REVOKED',
       resource: 'SESSION',
       resourceId: sessionId,
       reason: 'Revoked by administrator from operations console',
-    }).catch(() => undefined);
-    return res.data;
+    });
+    return { success: true };
   }
 
-  async setSuspension(bearer: string | undefined, userId: string, suspended: boolean, input: UserSuspensionInput) {
-    const res = await this.auth.setSuspension(bearer, userId, suspended, input.reason);
-    await this.auth.recordAudit(bearer, {
+  async setSuspension(_bearer: string | undefined, userId: string, suspended: boolean, input: UserSuspensionInput, adminUserId?: string) {
+    const user = await this.userService.setSuspension(userId, suspended, input.reason);
+    await this.recordAudit(adminUserId, {
       action: suspended ? 'USER_SUSPENDED' : 'USER_RESTORED',
       resource: 'USER',
       resourceId: userId,
       reason: input.reason,
-    }).catch(() => undefined);
-    return res.data;
+    });
+    return user;
   }
 
   async getDrivers(bearer: string | undefined, query: PaginationQuery) {
@@ -210,9 +213,9 @@ export class AdminService {
     return res.data;
   }
 
-  async verifyDriver(bearer: string | undefined, driverId: string, input: DriverVerificationInput) {
+  async verifyDriver(bearer: string | undefined, driverId: string, input: DriverVerificationInput, adminUserId?: string) {
     const res = await this.driver.updateVerification(bearer, driverId, input.status, input.reason);
-    await this.auth.recordAudit(bearer, {
+    await this.recordAudit(adminUserId, {
       action: `DRIVER_${input.status}`,
       resource: 'DRIVER',
       resourceId: driverId,
@@ -231,13 +234,13 @@ export class AdminService {
     return res.data;
   }
 
-  async refundPayment(bearer: string | undefined, paymentId: string, input: RefundRequestInput, idempotencyKey?: string) {
+  async refundPayment(bearer: string | undefined, paymentId: string, input: RefundRequestInput, idempotencyKey?: string, adminUserId?: string) {
     const refundArgs: any[] = [bearer, paymentId, input.reason, input.amountPaise];
     if (idempotencyKey !== undefined) {
       refundArgs.push(idempotencyKey);
     }
     const res = await (this.payment.refundPayment as any)(...refundArgs);
-    await this.auth.recordAudit(bearer, {
+    await this.recordAudit(adminUserId, {
       action: 'REFUND_REQUESTED',
       resource: 'PAYMENT',
       resourceId: paymentId,
@@ -247,13 +250,22 @@ export class AdminService {
   }
 
   async getAuditLogs(bearer: string | undefined, query: PaginationQuery) {
-    const res = await this.auth.getAuditLogs(bearer, query);
-    return res.data;
+    const [items, total] = await prisma.$transaction([
+      prisma.adminAuditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      prisma.adminAuditLog.count(),
+    ]);
+    return { success: true, data: items, pagination: { page: query.page, limit: query.limit, total } };
   }
 
-  async recordAudit(bearer: string | undefined, payload: { action: string; resource: string; resourceId?: string; reason: string }) {
-    const res = await (this.auth as any).recordAudit(bearer, payload);
-    return res.data;
+  async recordAudit(adminUserId: string | undefined, payload: { action: string; resource: string; resourceId?: string; reason?: string }) {
+    if (!adminUserId) return;
+    return prisma.adminAuditLog.create({
+      data: { adminUserId, action: payload.action, resource: payload.resource, resourceId: payload.resourceId, reason: payload.reason },
+    });
   }
 
   getSettings(): SystemSettingsState {
@@ -273,14 +285,14 @@ export class AdminService {
     };
 
     try {
-      if (adminRedisClient && adminRedisClient.isOpen) {
-        await adminRedisClient.set(SETTINGS_REDIS_KEY, JSON.stringify(this.settings));
+      if (authRedisClient.isOpen) {
+        await authRedisClient.set(SETTINGS_REDIS_KEY, JSON.stringify(this.settings));
       }
     } catch (err) {
-      console.warn('[admin-service] Could not persist settings to Redis:', err);
+      console.warn('[auth-service] Could not persist admin settings to Redis:', err);
     }
 
-    await this.auth.recordAudit(bearer, {
+    await this.recordAudit(adminUserId, {
       action: 'SYSTEM_CONFIG_UPDATED',
       resource: 'SYSTEM',
       resourceId: 'global-settings',
@@ -467,10 +479,10 @@ export class AdminService {
           speedKmh = 26;
         }
       } else {
-        if (adminRedisClient && adminRedisClient.isOpen) {
+        if (authRedisClient.isOpen) {
           try {
             const driverKey = driver.id || driver.userId;
-            const pos = await adminRedisClient.geoPos('geo:drivers', driverKey);
+            const pos = await authRedisClient.geoPos('geo:drivers', driverKey);
             if (pos && pos[0]) {
               lat = Number(pos[0].latitude);
               lng = Number(pos[0].longitude);
@@ -537,8 +549,6 @@ export class AdminService {
       })
     );
 
-    return Object.fromEntries(checks);
+    return { auth: { status: 'UP', dependencies: {}, latencyMs: 0 }, ...Object.fromEntries(checks) };
   }
 }
-
-export const adminService = new AdminService();

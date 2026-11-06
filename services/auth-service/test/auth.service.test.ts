@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import jwt from 'jsonwebtoken';
 import { AuthService } from '../src/services/auth.service.js';
 import { UserService } from '../src/services/user.service.js';
 import { authRedisClient } from '../src/redis/client.js';
-import { ServiceUnavailableError, UnauthorizedError, ForbiddenError } from '@urbanfleet/common';
+import { ServiceUnavailableError, UnauthorizedError, ForbiddenError, BadRequestError } from '@urbanfleet/common';
 
 describe('Auth Service Business Logic', () => {
   const mockUserRepo: any = {
@@ -14,8 +15,7 @@ describe('Auth Service Business Logic', () => {
   };
 
   const mockSessionRepo: any = {
-    create: vi.fn().mockResolvedValue({ id: 'sess-1' }),
-    findByToken: vi.fn(),
+    create: vi.fn().mockResolvedValue({ id: 'sess-1', version: 1 }),
     delete: vi.fn().mockResolvedValue({}),
     deleteByIdAndUserId: vi.fn().mockResolvedValue({ count: 1 }),
     deleteByUserId: vi.fn().mockResolvedValue({ count: 1 }),
@@ -33,7 +33,7 @@ describe('Auth Service Business Logic', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    mockSessionRepo.create = vi.fn().mockResolvedValue({ id: 'sess-1' });
+    mockSessionRepo.create = vi.fn().mockResolvedValue({ id: 'sess-1', version: 1 });
     mockSessionRepo.delete = vi.fn().mockResolvedValue({ id: 'sess-1' });
     mockSessionRepo.deleteByIdAndUserId = vi.fn().mockResolvedValue({ count: 1 });
     mockSessionRepo.deleteByUserId = vi.fn().mockResolvedValue({ count: 1 });
@@ -77,6 +77,51 @@ describe('Auth Service Business Logic', () => {
     expect((res as any).refreshToken).toBeUndefined();
     expect(authRedisClient.set).toHaveBeenCalled();
     expect(mockOutboxRepo.stageEvent).toHaveBeenCalled();
+  });
+
+  it('should immediately reject registration when email already exists as DRIVER and attempting to register as RIDER without checking password', async () => {
+    const compareSpy = vi.spyOn(authService, 'comparePassword');
+    mockUserRepo.findByEmail.mockResolvedValue({
+      id: 'driver-123',
+      email: 'driver@urbanfleet.com',
+      passwordHash: 'some-hash',
+      firstName: 'Existing',
+      lastName: 'Driver',
+      roles: ['DRIVER'],
+    });
+
+    await expect(authService.register({
+      email: 'driver@urbanfleet.com',
+      password: 'AnyPassword123!',
+      firstName: 'Rider',
+      lastName: 'Candidate',
+      roles: ['RIDER'],
+      userAgent: 'Mozilla/5.0',
+      ipAddress: '127.0.0.1',
+    })).rejects.toThrow('Email already exists as a driver role. Please go log in as a rider with the correct credentials.');
+
+    expect(compareSpy).not.toHaveBeenCalled();
+  });
+
+  it('should reject registration when email already exists with same role', async () => {
+    mockUserRepo.findByEmail.mockResolvedValue({
+      id: 'rider-123',
+      email: 'rider@urbanfleet.com',
+      passwordHash: 'some-hash',
+      firstName: 'Existing',
+      lastName: 'Rider',
+      roles: ['RIDER'],
+    });
+
+    await expect(authService.register({
+      email: 'rider@urbanfleet.com',
+      password: 'AnyPassword123!',
+      firstName: 'Rider',
+      lastName: 'Candidate',
+      roles: ['RIDER'],
+      userAgent: 'Mozilla/5.0',
+      ipAddress: '127.0.0.1',
+    })).rejects.toThrow('Email already exists as a rider role. Please go log in with the correct credentials.');
   });
 
   it('should block login when user email is not verified', async () => {
@@ -235,6 +280,11 @@ describe('Auth Service Business Logic', () => {
     expect(res.sessions[1].isCurrent).toBe(false);
   });
 
+  it('should throw BadRequestError if currentSessionId is missing or empty when listing active sessions', async () => {
+    await expect(authService.listActiveSessions('u-123', '')).rejects.toThrow(BadRequestError);
+    await expect(authService.listActiveSessions('u-123', undefined as any)).rejects.toThrow(BadRequestError);
+  });
+
   it('should revoke a specific session and purge it from Redis', async () => {
     mockSessionRepo.findById.mockResolvedValue({ id: 'sess-target', userId: 'u-123' });
     mockSessionRepo.delete.mockResolvedValue({ id: 'sess-target' });
@@ -269,5 +319,107 @@ describe('Auth Service Business Logic', () => {
 
     await expect(authService.refreshAccessToken(oldToken)).rejects.toThrow(UnauthorizedError);
     expect(mockSessionRepo.delete).toHaveBeenCalledWith('sess-compromised');
+    expect(authRedisClient.del).toHaveBeenCalled();
+  });
+
+  it('should delete all cached refresh and access tokens from Redis when version mismatch occurs', async () => {
+    const { signRefreshToken } = await import('../src/crypto/keys.js');
+    const mismatchedToken = signRefreshToken({
+      userId: 'u-123',
+      sessionId: 'sess-mismatch',
+      sessionVersion: 2,
+    });
+
+    mockSessionRepo.findById.mockResolvedValue({
+      id: 'sess-mismatch',
+      userId: 'u-123',
+      version: 5,
+      expiresAt: new Date(Date.now() + 100000),
+    });
+
+    await expect(authService.refreshAccessToken(mismatchedToken)).rejects.toThrow('Security alert: Token reuse detected. Session terminated.');
+    expect(mockSessionRepo.delete).toHaveBeenCalledWith('sess-mismatch');
+    expect(authRedisClient.del).toHaveBeenCalledWith(expect.stringContaining('token:access:u-123'));
+    expect(authRedisClient.del).toHaveBeenCalledWith(expect.stringContaining('token:refresh:u-123'));
+  });
+
+  it('should reject refresh token with 401 when sessionId is missing from payload', async () => {
+    const privKey = Buffer.from(process.env.JWT_PRIVATE_KEY_BASE64!, 'base64').toString('utf-8');
+    const tokenWithoutSessionId = jwt.sign(
+      { userId: 'u-123', sessionVersion: 1, tokenType: 'REFRESH' },
+      privKey,
+      { algorithm: 'RS256', expiresIn: '7d', issuer: 'urbanfleet-auth', audience: 'urbanfleet-api' }
+    );
+
+    await expect(authService.refreshAccessToken(tokenWithoutSessionId)).rejects.toThrow('Invalid refresh token');
+  });
+
+  it('should reject refresh token with 401 when sessionVersion is missing from payload', async () => {
+    const privKey = Buffer.from(process.env.JWT_PRIVATE_KEY_BASE64!, 'base64').toString('utf-8');
+    const tokenWithoutVersion = jwt.sign(
+      { userId: 'u-123', sessionId: 'sess-123', tokenType: 'REFRESH' },
+      privKey,
+      { algorithm: 'RS256', expiresIn: '7d', issuer: 'urbanfleet-auth', audience: 'urbanfleet-api' }
+    );
+
+    await expect(authService.refreshAccessToken(tokenWithoutVersion)).rejects.toThrow('Invalid refresh token');
+  });
+
+  it('should reject refresh token with 401 when session in DB has invalid or missing version', async () => {
+    const { signRefreshToken } = await import('../src/crypto/keys.js');
+    const token = signRefreshToken({
+      userId: 'u-123',
+      sessionId: 'sess-corrupt',
+      sessionVersion: 1,
+    });
+
+    mockSessionRepo.findById.mockResolvedValue({
+      id: 'sess-corrupt',
+      userId: 'u-123',
+      version: null, // Corrupt/missing version in DB
+      expiresAt: new Date(Date.now() + 100000),
+    });
+
+    await expect(authService.refreshAccessToken(token)).rejects.toThrow('Session expired or invalid');
+  });
+
+  it('should accurately verify refresh token against claims and Postgres session by sessionId', async () => {
+    const { signRefreshToken } = await import('../src/crypto/keys.js');
+    const token = signRefreshToken({
+      userId: 'u-123',
+      sessionId: 'sess-verify-1',
+      sessionVersion: 1,
+    });
+
+    mockSessionRepo.findById.mockResolvedValue({
+      id: 'sess-verify-1',
+      userId: 'u-123',
+      version: 1,
+      expiresAt: new Date(Date.now() + 100000),
+    });
+
+    const result = await authService.verifyRefreshToken(token);
+    expect(result.valid).toBe(true);
+    expect(result.payload.userId).toBe('u-123');
+    expect(result.payload.sessionId).toBe('sess-verify-1');
+    expect(result.session.id).toBe('sess-verify-1');
+  });
+
+  it('should reject verifyRefreshToken when session version has changed', async () => {
+    const { signRefreshToken } = await import('../src/crypto/keys.js');
+    const token = signRefreshToken({
+      userId: 'u-123',
+      sessionId: 'sess-verify-2',
+      sessionVersion: 1,
+    });
+
+    mockSessionRepo.findById.mockResolvedValue({
+      id: 'sess-verify-2',
+      userId: 'u-123',
+      version: 2, // Rotated to 2!
+      expiresAt: new Date(Date.now() + 100000),
+    });
+
+    await expect(authService.verifyRefreshToken(token)).rejects.toThrow('Session version mismatch');
   });
 });

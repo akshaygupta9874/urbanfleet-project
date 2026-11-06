@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import axios from 'axios';
 import { AuthenticatedRequest, AppError, createLogger } from '@urbanfleet/common';
 
@@ -510,6 +510,10 @@ export class DriverController {
     return res.status(200).json({ success: true, data: result });
   });
 
+  uploadDocumentImage = asyncHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    return this.uploadImage(req, res, next);
+  });
+
   deleteImage = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { publicId } = req.body;
     if (!publicId) {
@@ -663,7 +667,7 @@ export class DriverController {
   });
 
   verifyDocument = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles: string[] = req.roles ?? [];
     const isVerifier = roles.includes('VERIFIER');
 
     if (!isVerifier) {
@@ -679,7 +683,7 @@ export class DriverController {
   });
 
   verifyDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles: string[] = req.roles ?? [];
     const isVerifier = roles.includes('VERIFIER');
 
     if (!isVerifier) {

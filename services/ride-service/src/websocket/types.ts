@@ -4,7 +4,8 @@ import type { Coordinates, LocationPoint, RideDto } from '@urbanfleet/common';
 export interface AuthenticatedSocketUser {
   userId: string;
   driverId?: string;
-  role: string[];
+  roles: string[];
+  role?: string[];
   sessionId?: string;
 }
 

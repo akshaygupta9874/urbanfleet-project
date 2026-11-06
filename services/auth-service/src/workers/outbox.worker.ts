@@ -1,7 +1,9 @@
 import { OutboxRepository } from '../repositories/outbox.repository.js';
 import { getAuthProducer } from '../events/auth.publisher.js';
 import { createLogger } from '@urbanfleet/common';
+import { KafkaEnvelope, DeadLetterEnvelope } from '@urbanfleet/contracts';
 import crypto from 'crypto';
+import type { OutboxEvent } from '../db/client.js';
 
 const logger = createLogger('auth-outbox-worker');
 
@@ -9,8 +11,8 @@ export class OutboxWorker {
   private isRunning = false;
   private isProcessing = false;
   private intervalId: NodeJS.Timeout | null = null;
-  private workerId = `auth-outbox-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
-  private outboxRepo: OutboxRepository;
+  private readonly workerId = `auth-outbox-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  private readonly outboxRepo: OutboxRepository;
 
   constructor(outboxRepo: OutboxRepository) {
     this.outboxRepo = outboxRepo;
@@ -22,7 +24,7 @@ export class OutboxWorker {
     logger.info(`Auth OutboxWorker started with polling interval ${intervalMs}ms [worker: ${this.workerId}]`);
 
     this.intervalId = setInterval(async () => {
-      if (this.isProcessing) return; // Prevent overlapping iterations
+      if (this.isProcessing) return;
       this.isProcessing = true;
       try {
         await this.processPendingEvents();
@@ -50,59 +52,42 @@ export class OutboxWorker {
   async processPendingEvents(): Promise<number> {
     const producer = getAuthProducer();
     if (!producer) {
-      return 0; // Kafka not connected yet; events remain safely staged in DB
+      return 0;
     }
 
-    const events = (this.outboxRepo && typeof this.outboxRepo.claimPendingEvents === 'function')
-      ? await this.outboxRepo.claimPendingEvents(this.workerId, 20)
-      : await this.outboxRepo.getPendingEvents(20);
-
+    const events: OutboxEvent[] = await this.outboxRepo.claimPendingEvents(this.workerId, 20);
     if (!events || events.length === 0) return 0;
     let processedCount = 0;
 
     for (const event of events) {
-      const evObj = event as unknown as Record<string, unknown>;
-      let envelopePayload: unknown = event.payload;
-      if (typeof envelopePayload === 'string') {
-        try {
-          envelopePayload = JSON.parse(envelopePayload);
-        } catch (parseErr: unknown) {
-          logger.debug('Outbox payload is not valid JSON string, keeping raw string', {
-            eventId: event.id,
-            error: parseErr instanceof Error ? parseErr.message : String(parseErr),
-          });
-        }
-      }
-      const eventType = String(event.eventType || evObj.event_type || '');
-      const partitionKey = String(event.partitionKey || evObj.partition_key || '');
-      const aggregateType = String(event.aggregateType || evObj.aggregate_type || 'USER');
-      const aggregateId = String(event.aggregateId || evObj.aggregate_id || '');
-      const aggregateSequence = Number(event.aggregateSequence || evObj.aggregate_sequence || 1);
+      // Direct domain payload (with graceful extraction if previously stored with legacy envelope wrapper)
+      const rawPayload = (typeof event.payload === 'object' && event.payload !== null)
+        ? (event.payload as Record<string, unknown>)
+        : {};
+      const domainPayload: Record<string, unknown> = (rawPayload.payload && typeof rawPayload.payload === 'object' && rawPayload.eventType)
+        ? (rawPayload.payload as Record<string, unknown>)
+        : rawPayload;
+
+      const envelope: KafkaEnvelope<Record<string, unknown>> = {
+        id: event.id,
+        version: 1,
+        eventType: event.eventType,
+        producer: 'auth-service',
+        timestamp: event.createdAt.toISOString(),
+        partitionKey: event.partitionKey,
+        aggregateType: event.aggregateType,
+        aggregateId: event.aggregateId,
+        aggregateSequence: event.aggregateSequence,
+        payload: domainPayload,
+      };
 
       try {
-        // Ensure payload is enveloped
-        const payloadObj = envelopePayload as Record<string, unknown> | null;
-        const envelope = (payloadObj && payloadObj.eventType && payloadObj.id)
-          ? envelopePayload
-          : {
-              id: event.id,
-              version: 1,
-              eventType,
-              producer: 'auth-service',
-              timestamp: event.createdAt ? new Date(event.createdAt).toISOString() : new Date().toISOString(),
-              partitionKey,
-              aggregateType,
-              aggregateId,
-              aggregateSequence,
-              payload: envelopePayload,
-            };
-
         await producer.send({
           acks: -1,
           topic: event.topic,
           messages: [
             {
-              key: partitionKey,
+              key: event.partitionKey,
               value: JSON.stringify(envelope),
             },
           ],
@@ -113,44 +98,37 @@ export class OutboxWorker {
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.error(`Failed to publish outbox event ${event.id}:`, err);
+
+        const nextRetry = event.retryCount + 1;
         let deadLettered = false;
-        if (((event.retryCount || 0) + 1) >= 5 && producer) {
+
+        if (nextRetry >= 5 && producer) {
           try {
             const dlqTopic = `${event.topic}.DLQ`;
-            const replayableEnvelope = {
-              id: event.id,
-              version: 1,
-              eventType,
-              producer: 'auth-service',
-              timestamp: event.createdAt ? new Date(event.createdAt).toISOString() : new Date().toISOString(),
-              partitionKey,
-              aggregateType,
-              aggregateId,
-              aggregateSequence,
-              payload: envelopePayload,
-            };
-            const dlqEnvelope = {
+            const dlqEnvelope: DeadLetterEnvelope<Record<string, unknown>> = {
               id: crypto.randomUUID(),
               originalEventId: event.id,
               originalTopic: event.topic,
               originalPartition: 0,
               originalOffset: '0',
-              originalKey: (event as any).partitionKey || event.id,
+              originalKey: event.partitionKey,
               consumerGroup: 'outbox-publisher',
               serviceName: 'auth-service',
               failedAt: new Date().toISOString(),
-              retryCount: (event.retryCount || 0) + 1,
+              retryCount: nextRetry,
               error: {
                 name: 'OutboxPublishExhaustionError',
                 message: errorMsg,
               },
-              payload: envelopePayload,
-              originalValue: JSON.stringify(replayableEnvelope),
-              originalEnvelope: replayableEnvelope,
+              payload: domainPayload,
+              originalValue: JSON.stringify(envelope),
+              originalEnvelope: envelope,
             };
+
             await producer.send({
+              acks: -1,
               topic: dlqTopic,
-              messages: [{ key: (event as any).partitionKey || event.id, value: JSON.stringify(dlqEnvelope) }],
+              messages: [{ key: event.partitionKey, value: JSON.stringify(dlqEnvelope) }],
             });
             deadLettered = true;
             logger.error(`[OUTBOX_DLQ] Event ${event.id} exhausted retries and was sent to DLQ topic ${dlqTopic}`);
@@ -158,6 +136,7 @@ export class OutboxWorker {
             logger.error(`Failed to dispatch exhausted outbox event ${event.id} to DLQ:`, dlqErr);
           }
         }
+
         if (deadLettered) {
           await this.outboxRepo.markFailed(event.id, errorMsg);
         } else {

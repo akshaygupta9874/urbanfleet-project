@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Users,
   ShieldCheck,
@@ -41,7 +41,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [hoveredDataPoint, setHoveredDataPoint] = useState<{ date: string; gross: number; net: number; rides: number } | null>(null);
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     try {
       setAnalyticsLoading(true);
       setAnalyticsError(null);
@@ -53,11 +53,11 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({
     } finally {
       setAnalyticsLoading(false);
     }
-  };
+  }, [period]);
 
   useEffect(() => {
     void loadAnalytics();
-  }, [period]);
+  }, [loadAnalytics]);
 
   const cards = [
     {
@@ -369,7 +369,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({
                 </h3>
               </div>
               <p className="text-xs text-stone-400 mt-0.5">
-                Live heartbeat monitoring from Auth, Driver, Ride, Payment, Notification, and Admin services
+                Live heartbeat monitoring from Auth, Driver, Ride, Payment, and Notification services
               </p>
             </div>
             <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300">

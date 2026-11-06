@@ -6,13 +6,15 @@ export class SocketRegistry {
   private readonly socketUsers = new Map<AuthenticatedSocket, AuthenticatedSocketUser>();
 
   register(socket: AuthenticatedSocket): void {
-    const { userId, driverId, role } = socket.user;
+    const { userId, driverId } = socket.user;
+    const rawRoles = socket.user.roles ?? (Array.isArray(socket.user.role) ? socket.user.role : socket.user.role ? [socket.user.role] : undefined);
+    const userRoles = Array.isArray(rawRoles) && rawRoles.length > 0 ? rawRoles : ['RIDER'];
+    socket.user.roles = userRoles;
 
     this.socketUsers.set(socket, socket.user);
 
-    const roles = Array.isArray(role) ? role : role ? [role] : ['RIDER'];
-    const hasRiderRole = roles.includes('RIDER') || !driverId;
-    const hasDriverRole = roles.includes('DRIVER') && Boolean(driverId);
+    const hasRiderRole = userRoles.includes('RIDER') || !driverId;
+    const hasDriverRole = userRoles.includes('DRIVER') && Boolean(driverId);
 
     // 1. Register in riderSockets if user has RIDER capability
     if (hasRiderRole) {
@@ -41,9 +43,10 @@ export class SocketRegistry {
 
     this.socketUsers.delete(socket);
 
-    const roles = Array.isArray(user.role) ? user.role : user.role ? [user.role] : ['RIDER'];
-    const hasRiderRole = roles.includes('RIDER') || !user.driverId;
-    const hasDriverRole = roles.includes('DRIVER') && Boolean(user.driverId);
+    const rawRoles = user.roles ?? (Array.isArray(user.role) ? user.role : user.role ? [user.role] : undefined);
+    const userRoles = Array.isArray(rawRoles) && rawRoles.length > 0 ? rawRoles : ['RIDER'];
+    const hasRiderRole = userRoles.includes('RIDER') || !user.driverId;
+    const hasDriverRole = userRoles.includes('DRIVER') && Boolean(user.driverId);
 
     // 1. Unregister from riderSockets
     if (hasRiderRole) {

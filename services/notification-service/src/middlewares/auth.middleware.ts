@@ -28,20 +28,19 @@ export interface NotificationUserRecord {
 export interface AuthenticatedRequest extends Request {
   userId?: string;
   roles?: string[];
-  role?: string[];
   driverId?: string;
   user?: NotificationUserContext;
 }
 
 export interface AuthPayload extends JwtPayload {
-  id?: string;
-  userId?: string;
-  sessionId?: string;
-  email?: string;
+  userId: string;
+  sessionId: string;
+  email: string;
+  roles: string[];
+  tokenType?: string;
   firstName?: string;
   lastName?: string;
-  roles?: string[];
-  role?: string;
+  driverId?: string;
 }
 
 export const authMiddleware: RequestHandler = asyncHandler(
@@ -150,10 +149,10 @@ export const authMiddleware: RequestHandler = asyncHandler(
       try {
         const authUser = await authClient.getUserById(userId);
         if (authUser) {
-          const rawRoles = (authUser as any).roles;
-          const userRoles = Array.isArray(rawRoles)
+          const rawRoles = (authUser as any).roles ?? ((authUser as any).role ? [(authUser as any).role] : undefined);
+          const userRoles = Array.isArray(rawRoles) && rawRoles.length > 0
             ? rawRoles
-            : (typeof authUser.role === 'string' ? [authUser.role] : ['RIDER']);
+            : ['RIDER'];
 
           user = {
             id: authUser.id,
@@ -192,7 +191,6 @@ export const authMiddleware: RequestHandler = asyncHandler(
     const userRoles = Array.isArray(activeUser.roles) ? activeUser.roles : ['RIDER'];
     request.userId = userId;
     request.roles = userRoles;
-    request.role = userRoles;
     request.driverId = activeUser.driverId;
     request.user = {
       userId,
@@ -212,7 +210,7 @@ export const requireRole = (...allowedRoles: string[]) => {
     if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles: string[] = req.roles ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

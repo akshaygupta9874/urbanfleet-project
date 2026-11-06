@@ -29,18 +29,21 @@ export interface AccessTokenPayloadInput {
   firstName: string;
   lastName: string;
   roles: string[];
+  sessionId: string;
+  sessionVersion?: number;
   driverId?: string;
-  sessionId?: string;
   tokenType?: string;
-  role?: string;
 }
 
 export function signAccessToken(payload: AccessTokenPayloadInput): string {
   if (!privateKey) initAsymmetricKeys();
 
+  if (!payload.sessionId || typeof payload.sessionId !== 'string' || payload.sessionId.trim() === '') {
+    throw new Error('sessionId is compulsory when signing an access token');
+  }
+
   const roles = payload.roles && payload.roles.length > 0 ? payload.roles : ['RIDER'];
-  const role = payload.role || roles[0] || 'RIDER';
-  return jwt.sign({ ...payload, role, roles, tokenType: 'ACCESS' }, privateKey, {
+  return jwt.sign({ ...payload, roles, tokenType: 'ACCESS' }, privateKey, {
     algorithm: 'RS256',
     expiresIn: '15m',
     issuer: 'urbanfleet-auth',
@@ -48,16 +51,39 @@ export function signAccessToken(payload: AccessTokenPayloadInput): string {
   });
 }
 
-export function signRefreshToken(payload: { userId: string; sessionId: string; sessionVersion?: number; tokenType?: string }): string {
+export interface RefreshTokenPayloadInput {
+  userId: string;
+  sessionId: string;
+  sessionVersion: number;
+  tokenType?: string;
+}
+
+export function signRefreshToken(payload: RefreshTokenPayloadInput): string {
   if (!privateKey) initAsymmetricKeys();
 
-  const sessionVersion = payload.sessionVersion ?? 1;
-  return jwt.sign({ ...payload, sessionVersion, tokenType: 'REFRESH' }, privateKey, {
-    algorithm: 'RS256',
-    expiresIn: '7d',
-    issuer: 'urbanfleet-auth',
-    audience: 'urbanfleet-api'
-  });
+  if (!payload.sessionId || typeof payload.sessionId !== 'string' || payload.sessionId.trim() === '') {
+    throw new Error('sessionId is compulsory when signing a refresh token');
+  }
+
+  if (typeof payload.sessionVersion !== 'number' || Number.isNaN(payload.sessionVersion)) {
+    throw new Error('sessionVersion is compulsory when signing a refresh token');
+  }
+
+  return jwt.sign(
+    {
+      userId: payload.userId,
+      sessionId: payload.sessionId,
+      sessionVersion: payload.sessionVersion,
+      tokenType: 'REFRESH',
+    },
+    privateKey,
+    {
+      algorithm: 'RS256',
+      expiresIn: '7d',
+      issuer: 'urbanfleet-auth',
+      audience: 'urbanfleet-api',
+    }
+  );
 }
 
 export function getPublicKey(): string {
@@ -66,14 +92,13 @@ export function getPublicKey(): string {
 }
 
 export interface AuthTokenPayload extends jwt.JwtPayload {
-  userId?: string;
+  userId: string;
+  sessionId: string;
   email?: string;
   firstName?: string;
   lastName?: string;
-  role?: string;
   roles?: string[];
   driverId?: string;
-  sessionId?: string;
   sessionVersion?: number;
   tokenType?: string;
 }

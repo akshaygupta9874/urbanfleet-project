@@ -84,7 +84,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       findById: vi.fn().mockImplementation((id) => Promise.resolve({ id, userId: 'usr-fix-1', version: 1, expiresAt: new Date(Date.now() + 100000) })),
       findByUserId: vi.fn().mockResolvedValue([]),
       updateVersion: vi.fn().mockImplementation((id, version) => Promise.resolve({ id, version, lastActiveAt: new Date() })),
-      findByToken: vi.fn(),
       delete: vi.fn().mockResolvedValue({}),
       deleteByIdAndUserId: vi.fn().mockResolvedValue({ count: 1 }),
       deleteByUserId: vi.fn().mockResolvedValue({}),
@@ -104,7 +103,12 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
     vi.spyOn(authRedisClient, 'set').mockResolvedValue('OK' as any);
     vi.spyOn(authRedisClient, 'setEx').mockResolvedValue('OK' as any);
-    vi.spyOn(authRedisClient, 'get').mockResolvedValue(null as any);
+    vi.spyOn(authRedisClient, 'get').mockImplementation(async (key: string) => {
+      if (key.includes('session:')) {
+        return JSON.stringify({ valid: true });
+      }
+      return null;
+    });
     vi.spyOn(authRedisClient, 'del').mockResolvedValue(1 as any);
     vi.spyOn(authRedisClient, 'sAdd').mockResolvedValue(1 as any);
     vi.spyOn(authRedisClient, 'sMembers').mockResolvedValue(['sess-fix-1'] as any);
@@ -197,6 +201,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         password: 'Password123!',
         firstName: 'Cookie',
         lastName: 'Tester',
+        roles: ['RIDER'],
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
         ipAddress: '127.0.0.1',
       }),
@@ -305,6 +310,9 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       password: 'Password123!',
       firstName: 'Outbox',
       lastName: 'User',
+      roles: [Role.RIDER],
+      ipAddress: '127.0.0.1',
+      userAgent: 'UrbanFleetTest/1.0',
     });
 
     expect(mockOutboxRepo.stageEvent).toHaveBeenCalledWith(null, expect.objectContaining({
@@ -346,7 +354,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
 
   // Issue 15: Token type distinction (ACCESS vs REFRESH)
   it('Issue 15: Auth middleware rejects REFRESH token passed as Bearer token', async () => {
-    const refreshToken = signRefreshToken({ userId: 'usr-1', sessionId: 'sess-1' });
+    const refreshToken = signRefreshToken({ userId: 'usr-1', sessionId: 'sess-1', sessionVersion: 1 });
 
     const req: any = {
       headers: { authorization: `Bearer ${refreshToken}` },
@@ -421,7 +429,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       }));
-      mockSessionRepo.create.mockResolvedValue({ id: 'sess-google-1' });
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-google-1', version: 1 });
 
       const res = await originalFetch(`${baseUrl}/google`, {
         method: 'POST',
@@ -466,7 +474,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         roles: ['RIDER'],
         isEmailVerified: true,
       });
-      mockSessionRepo.create.mockResolvedValue({ id: 'sess-existing-1' });
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-existing-1', version: 1 });
 
       const res = await originalFetch(`${baseUrl}/google`, {
         method: 'POST',
@@ -501,7 +509,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       }));
-      mockSessionRepo.create.mockResolvedValue({ id: 'sess-driver-1' });
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-driver-1', version: 1 });
 
       const res = await originalFetch(`${baseUrl}/google`, {
         method: 'POST',
@@ -553,7 +561,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         ...existingRider,
         roles: ['RIDER', 'DRIVER'],
       });
-      mockSessionRepo.create.mockResolvedValue({ id: 'sess-dual-1' });
+      mockSessionRepo.create.mockResolvedValue({ id: 'sess-dual-1', version: 1 });
 
       const res = await originalFetch(`${baseUrl}/google`, {
         method: 'POST',
@@ -624,6 +632,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         firstName: userA.firstName,
         lastName: userA.lastName,
         roles: ['RIDER'],
+        sessionId: 'sess-fix-1',
       });
 
       const res = await fetch(`${baseUrl}/users/${userB.id}`, {
@@ -645,6 +654,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         firstName: userA.firstName,
         lastName: userA.lastName,
         roles: ['RIDER'],
+        sessionId: 'sess-fix-1',
       });
 
       const res = await fetch(`${baseUrl}/users/${userA.id}`, {
@@ -761,6 +771,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const legitimateRefreshToken = signRefreshToken({
         userId: 'legit-user-1',
         sessionId: 'legit-session-1',
+        sessionVersion: 1,
       });
 
       const res = await fetch(`${baseUrl}/logout`, {
@@ -790,6 +801,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const legitRefreshToken = signRefreshToken({
         userId: 'cookie-user-1',
         sessionId: 'cookie-session-1',
+        sessionVersion: 1,
       });
 
       const res = await fetch(`${baseUrl}/logout`, {
@@ -837,6 +849,9 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         userId: 'regular-rider-1',
         roles: ['RIDER'],
         email: 'rider@urbanfleet.com',
+        firstName: 'Regular',
+        lastName: 'Rider',
+        sessionId: 'sess-fix-1',
       });
 
       const res = await fetch(`${baseUrl}/internal/users/target-user-123/driver-role`, {
@@ -873,6 +888,9 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         userId: 'admin-user-1',
         roles: ['ADMIN'],
         email: 'admin@urbanfleet.com',
+        firstName: 'Admin',
+        lastName: 'User',
+        sessionId: 'sess-fix-1',
       });
 
       const res = await fetch(`${baseUrl}/internal/users/target-user-123/driver-role`, {
@@ -1044,6 +1062,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
           password: 'SecurePassword123!',
           firstName: 'Spoofer',
           lastName: 'Tester',
+          roles: ['RIDER'],
           userAgent: 'MaliciousClientSpoofedUA',
           ipAddress: '198.51.100.99',
         }),
@@ -1092,11 +1111,11 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       expect(data.data.user.isEmailVerified).toBe(false);
     });
 
-    it('returns consistent data.user shape (NOT undefined) when existing user merges new role (200)', async () => {
+    it('rejects registration with 409 Conflict when user email already exists without checking password', async () => {
       const existingUser = {
         id: 'usr-existing-456',
         email: 'existing.rider@urbanfleet.com',
-        passwordHash: await authService.hashPassword('ExistingPassword123!'),
+        passwordHash: 'some-existing-hash',
         firstName: 'Existing',
         lastName: 'Rider',
         roles: ['RIDER'],
@@ -1104,10 +1123,6 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       };
 
       mockUserRepo.findByEmail.mockResolvedValue(existingUser);
-      mockUserRepo.update.mockResolvedValue({
-        ...existingUser,
-        roles: ['RIDER', 'DRIVER'],
-      });
 
       const res = await fetch(`${baseUrl}/register`, {
         method: 'POST',
@@ -1117,25 +1132,16 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         },
         body: JSON.stringify({
           email: 'existing.rider@urbanfleet.com',
-          password: 'ExistingPassword123!',
+          password: 'AnyPassword123!',
           firstName: 'Existing',
           lastName: 'Rider',
           roles: ['DRIVER'],
         }),
       });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(409);
       const data = await res.json() as any;
-      expect(data.success).toBe(true);
-      expect(data.message).toBe('Your account has been updated with the requested role. You can now log in.');
-
-      // Crucial: data.user must NOT be undefined
-      expect(data.data).toBeDefined();
-      expect(data.data.user).toBeDefined();
-      expect(data.data.user.id).toBe('usr-existing-456');
-      expect(data.data.user.email).toBe('existing.rider@urbanfleet.com');
-      expect(data.data.user.roles).toEqual(['RIDER', 'DRIVER']);
-      expect(data.data.user.isEmailVerified).toBe(true);
+      expect(data.error).toBe('Email already exists as a rider role. Please go log in as a driver with the correct credentials.');
     });
   });
 
@@ -1144,6 +1150,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
     const validRefreshToken = signRefreshToken({
       userId: 'usr-fix-1',
       sessionId: 'session-uuid-1',
+      sessionVersion: 1,
     });
 
     beforeEach(() => {
@@ -1318,6 +1325,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
         firstName: 'Admin',
         lastName: 'Boss',
         roles: ['ADMIN'],
+        sessionId: 'sess-fix-1',
       });
 
       const res = await fetch(`${baseUrl}/users/${userTarget.id}`, {
@@ -1371,6 +1379,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const legitToken = signRefreshToken({
         userId: 'usr-logout-cookie-1',
         sessionId: 'sess-logout-cookie-1',
+        sessionVersion: 1,
       });
 
       const res = await fetch(`${baseUrl}/logout`, {
@@ -1390,6 +1399,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       const legitToken = signRefreshToken({
         userId: 'usr-logout-body-1',
         sessionId: 'sess-logout-body-1',
+        sessionVersion: 1,
       });
 
       const res = await fetch(`${baseUrl}/logout`, {

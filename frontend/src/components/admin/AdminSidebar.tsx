@@ -159,7 +159,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
               <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#ffd88a]">
                 Admin Gateway
               </p>
-              <p className="text-xs font-semibold text-stone-300">Port 4006 / v1/admin</p>
+              <p className="text-xs font-semibold text-stone-300">Auth service / v1/admin</p>
             </div>
           </div>
         </div>

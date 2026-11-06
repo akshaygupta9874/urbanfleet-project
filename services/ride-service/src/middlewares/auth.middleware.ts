@@ -9,19 +9,19 @@ import { rideRedisClient } from '../redis/client.js';
 export interface AuthenticatedRequest extends Request {
   userId?: string;
   roles?: string[];
-  role?: string[];
   driverId?: string;
   user?: AuthUser;
 }
 
 export interface AuthPayload extends JwtPayload {
-  id?: string;
-  userId?: string;
-  sessionId?: string;
-  email?: string;
-  role?: string | string[];
-  roles?: string[];
+  userId: string;
+  sessionId: string;
+  email: string;
+  roles: string[];
   tokenType?: string;
+  firstName?: string;
+  lastName?: string;
+  driverId?: string;
 }
 
 export const authMiddleware: RequestHandler = asyncHandler(
@@ -149,7 +149,6 @@ export const authMiddleware: RequestHandler = asyncHandler(
     req.userId = userId;
     const userRoles = Array.isArray(user.roles) ? (user.roles as string[]) : ['RIDER'];
     req.roles = userRoles;
-    req.role = userRoles;
     const userDriver = user.driver as Record<string, unknown> | undefined;
     const driverId = (userDriver?.id as string | undefined) || (user.driverId as string | undefined);
     req.driverId = driverId;
@@ -174,7 +173,7 @@ export const requireRole = (...allowedRoles: string[]): RequestHandler => {
     if (!req.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles: string[] = req.roles ?? [];
     const hasRole = roles.some((r) => allowedRoles.includes(r));
     if (!hasRole) {
       return next(

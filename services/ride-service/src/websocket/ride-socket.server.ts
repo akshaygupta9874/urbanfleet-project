@@ -16,14 +16,14 @@ const logger = createLogger('ride-websocket-server');
 
 let globalWss: WebSocketServer | null = null;
 
-export function getSocketRoles(userPayload: Pick<AuthPayload, 'role' | 'roles'>): string[] {
-  const tokenRoles = Array.isArray(userPayload.roles)
+export function getSocketRoles(userPayload: { roles?: string[]; role?: string | string[] }): string[] {
+  const tokenRoles = Array.isArray(userPayload.roles) && userPayload.roles.length > 0
     ? userPayload.roles
-    : Array.isArray(userPayload.role)
-    ? userPayload.role
-    : userPayload.role
-    ? [userPayload.role]
-    : ['RIDER'];
+    : typeof userPayload.role === 'string'
+      ? [userPayload.role]
+      : Array.isArray(userPayload.role) && userPayload.role.length > 0
+        ? userPayload.role
+        : ['RIDER'];
   return tokenRoles.includes('DRIVER') && !tokenRoles.includes('RIDER')
     ? [...tokenRoles, 'RIDER']
     : tokenRoles;
@@ -105,13 +105,13 @@ export function initRideWebSocketServer(
     const user: AuthenticatedSocketUser = {
       userId: userPayload.userId || '',
       driverId: roles.includes('DRIVER') ? (userPayload.driverId || userPayload.userId) : undefined,
-      role: roles,
+      roles,
       sessionId: userPayload.sessionId,
     };
 
     authenticatedSocket.user = user;
     logger.info(
-      `WebSocket client connected: ${user.userId} (${user.role.join(', ')}) [driverId: ${user.driverId}]`
+      `WebSocket client connected: ${user.userId} (${user.roles.join(', ')}) [driverId: ${user.driverId}]`
     );
 
     // 1. Register in in-memory dual-indexed socket registry
@@ -125,7 +125,7 @@ export function initRideWebSocketServer(
       logger.info(`WebSocket client disconnected: ${user.userId}`);
       socketRegistry.unregister(authenticatedSocket);
 
-      if (user.role.includes('DRIVER') && user.driverId) {
+      if (user.roles.includes('DRIVER') && user.driverId) {
         if (!socketRegistry.isDriverOnline(user.driverId)) {
           try {
             await presence.setDriverOffline(user.driverId);

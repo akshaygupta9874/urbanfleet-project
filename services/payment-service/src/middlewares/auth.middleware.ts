@@ -27,11 +27,14 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export interface AuthPayload extends JwtPayload {
-  id?: string;
-  userId?: string;
-  sessionId?: string;
-  email?: string;
-  roles?: string[];
+  userId: string;
+  sessionId: string;
+  email: string;
+  roles: string[];
+  tokenType?: string;
+  firstName?: string;
+  lastName?: string;
+  driverId?: string;
 }
 
 export const authMiddleware: RequestHandler = asyncHandler(

@@ -9,7 +9,7 @@ export const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters long')
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
     .regex(/[0-9]/, 'Password must contain at least one number'),
-  roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional().default(['RIDER']),
+  roles: z.array(z.enum(['RIDER', 'DRIVER'])).min(1, 'At least one role is required'),
 });
 
 export const loginSchema = z.object({
@@ -21,7 +21,6 @@ export const verifyOtpSchema = z.object({
   email: z.string().email('Invalid email address format'),
   otp: z.string().min(4, 'OTP must be at least 4 digits').max(8, 'OTP must be at most 8 digits'),
   roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional(),
-  role: z.enum(['RIDER', 'DRIVER']).optional(),
 });
 
 export const refreshTokenCookieSchema = z.object({
@@ -67,5 +66,4 @@ export const resendVerificationSchema = z.object({
 export const googleAuthSchema = z.object({
   credential: z.string().min(10, 'A valid Google credential token is required'),
   roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional(),
-  role: z.enum(['RIDER', 'DRIVER']).optional(),
 });

@@ -191,7 +191,7 @@ export function createDriverRouter(controller: DriverController): Router {
 
   // Standalone Cloudinary Media Upload & Management
   router.post('/upload', authMiddleware, uploadLimiter, uploadSingleImage('image'), controller.uploadImage);
-  router.post('/documents/upload', authMiddleware, uploadLimiter, uploadSingleImage('document'), controller.uploadImage);
+  router.post('/documents/upload', authMiddleware, uploadLimiter, uploadSingleImage('document'), controller.uploadDocumentImage);
   router.delete('/images', authMiddleware, controller.deleteImage);
 
   // Profile & Vehicle Management

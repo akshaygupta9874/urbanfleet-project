@@ -1,4 +1,4 @@
-import { PrismaClient, User, Role } from '../db/client.js';
+import { PrismaClient, User, Role, Prisma } from '../db/client.js';
 import { NotFoundError } from '@urbanfleet/common';
 
 export interface CreateUserData {
@@ -9,6 +9,33 @@ export interface CreateUserData {
   roles?: Role[];
   avatarUrl?: string;
   isEmailVerified?: boolean;
+}
+
+export interface ListUsersParams {
+  page: number;
+  limit: number;
+  search?: string;
+  role?: Role;
+}
+
+export interface UserListItem {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  roles: Role[];
+  isEmailVerified: boolean;
+  isSuspended: boolean;
+  suspendedAt: Date | null;
+  suspensionReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  _count: { sessions: number };
+}
+
+export interface ListUsersResult {
+  items: UserListItem[];
+  total: number;
 }
 
 export class UserRepository {
@@ -54,22 +81,30 @@ export class UserRepository {
     return this.prisma.user.count();
   }
 
-  async list(params: { page: number; limit: number; search?: string; role?: Role }) {
-    const where = {
-      ...(params.search
-        ? {
-            OR: [
-              { email: { contains: params.search, mode: 'insensitive' as const } },
-              { firstName: { contains: params.search, mode: 'insensitive' as const } },
-              { lastName: { contains: params.search, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
-      ...(params.role ? { roles: { has: params.role } } : {}),
-    };
-    const [items, total] = await this.prisma.$transaction([
+  async list(params: ListUsersParams): Promise<ListUsersResult> {
+    const { page, limit, search, role } = params;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = {};
+
+    if (search) {
+      where.OR = [
+        { email: { contains: search, mode: 'insensitive' } },
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (role) {
+      where.roles = { has: role };
+    }
+
+    const [items, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           email: true,
@@ -84,12 +119,10 @@ export class UserRepository {
           updatedAt: true,
           _count: { select: { sessions: true } },
         },
-        orderBy: { createdAt: 'desc' },
-        skip: (params.page - 1) * params.limit,
-        take: params.limit,
       }),
       this.prisma.user.count({ where }),
     ]);
+
     return { items, total };
   }
 

@@ -156,7 +156,7 @@ export class RideService {
     return this.otpService.getRideOtp(rideId);
   }
 
-  async getRideById(id: string, requestingUserId?: string, userRole?: string | string[]): Promise<RideWithOtp> {
+  async getRideById(id: string, requestingUserId?: string, roles?: string[]): Promise<RideWithOtp> {
     const ride = await this.rideRepo.findById(id);
     if (!ride) throw new NotFoundError('Ride not found');
 

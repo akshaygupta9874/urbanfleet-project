@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { RidePaymentStatus } from '../db/client.js';
 import { RideService, CreateRideInput } from '../services/ride.service.js';
 import { FareService } from '../services/fare.service.js';
@@ -59,7 +59,7 @@ export class RideController {
 
   requestRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
-    const roles: string[] = req.roles ?? req.role ?? [];
+    const roles: string[] = req.roles ?? [];
     if (!roles.includes('RIDER')) {
       throw new ForbiddenError('Only accounts with the RIDER role can request rides');
     }
@@ -133,9 +133,8 @@ export class RideController {
   getRideById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const rideId = getRideId(req);
     const userId = req.userId;
-    const roles = req.roles ?? req.role ?? [];
-    const userRole = roles[0] || 'RIDER';
-    const ride = await this.rideService.getRideById(rideId, userId, userRole);
+    const roles = req.roles ?? [];
+    const ride = await this.rideService.getRideById(rideId, userId, roles);
     if (!ride) {
       throw new AppError('Ride not found', 404, 'NOT_FOUND');
     }
@@ -145,6 +144,10 @@ export class RideController {
       success: true,
       data: isRider ? { ...formatted, otp: ride.otp } : { ...formatted, otp: null },
     });
+  });
+
+  getRideFarePreview = asyncHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    return this.getRideById(req, res, next);
   });
 
   getRiderHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -181,7 +184,7 @@ export class RideController {
 
   getActiveRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = getUserId(req);
-    const roles = req.roles ?? req.role ?? [];
+    const roles = req.roles ?? [];
     let activeRide = await this.rideService.getActiveRideForUser(userId, false);
     let isDriverView = false;
     if (!activeRide) {

@@ -19,10 +19,11 @@ import {
   ServiceUnavailableError,
   InternalServerError,
 } from "@urbanfleet/common";
-import { Role } from "../db/client.js";
+import { Role, Session } from "../db/client.js";
 import {
   cacheTokens,
   revokeCachedTokens,
+  revokeAllUserTokens,
   cacheUser,
   revokeOtherSessions,
   getCachedRefreshToken,
@@ -61,49 +62,22 @@ export class AuthService {
     password: string;
     firstName: string;
     lastName: string;
-    roles?: Array<Role | "RIDER" | "DRIVER">;
-    ipAddress?: string;
-    userAgent?: string;
+    roles: Role[];
+    ipAddress: string;
+    userAgent: string;
   }) {
     const existing = await this.userRepo.findByEmail(input.email);
     if (existing) {
-      const isValidPassword = await this.comparePassword(
-        input.password,
-        existing.passwordHash,
-      );
-      if (!isValidPassword) {
-        throw new ConflictError("A user with this email address already exists. Please log in or check your credentials.");
-      }
+      const existingRoles = existing.roles && existing.roles.length > 0
+        ? existing.roles.map((r) => r.toLowerCase()).join('/')
+        : 'user';
+      const requestedRoles = input.roles.map((r) => r.toLowerCase()).join('/');
 
-      const newRoles = input.roles?.filter((role) => role !== Role.ADMIN) as Role[] | undefined;
-      const requestedRoles = newRoles && newRoles.length > 0 ? newRoles : [Role.RIDER];
-      const mergedRoles = Array.from(new Set([...existing.roles, ...requestedRoles])) as Role[];
-      if (mergedRoles.length === existing.roles.length) {
-        throw new ConflictError("A user with this email address and role already exists. Please log in.");
-      }
+      const message = existingRoles === requestedRoles
+        ? `Email already exists as a ${existingRoles} role. Please go log in with the correct credentials.`
+        : `Email already exists as a ${existingRoles} role. Please go log in as a ${requestedRoles} with the correct credentials.`;
 
-      const updated = await this.userRepo.update(existing.id, { roles: mergedRoles });
-      await cacheUser({
-        id: updated.id,
-        email: updated.email,
-        roles: updated.roles,
-        firstName: updated.firstName,
-        lastName: updated.lastName,
-      });
-
-      return {
-        user: {
-          id: updated.id,
-          email: updated.email,
-          firstName: updated.firstName,
-          lastName: updated.lastName,
-          roles: updated.roles,
-          isEmailVerified: updated.isEmailVerified,
-        },
-        userId: updated.id,
-        message: "Your account has been updated with the requested role. You can now log in.",
-        isExistingUser: true,
-      };
+      throw new ConflictError(message);
     }
 
     const passwordHash = await this.hashPassword(input.password);
@@ -112,7 +86,7 @@ export class AuthService {
       passwordHash,
       firstName: input.firstName,
       lastName: input.lastName,
-      roles: input.roles?.filter((role) => role !== Role.ADMIN) as Role[] | undefined,
+      roles: input.roles.filter((role) => role !== Role.ADMIN),
       isEmailVerified: false,
     });
 
@@ -160,12 +134,6 @@ export class AuthService {
           aggregateId: user.id,
           aggregateSequence: 1,
           payload: {
-            id: registrationEventId,
-            version: 1,
-            eventType: "USER_REGISTERED",
-            producer: "auth-service",
-            timestamp: new Date().toISOString(),
-            payload: {
               userId: user.id,
               email: user.email,
               firstName: user.firstName,
@@ -173,7 +141,6 @@ export class AuthService {
               roles: user.roles,
               verifyToken,
             },
-          },
         });
 
         // Stage email verification requested event for notification-service
@@ -185,17 +152,10 @@ export class AuthService {
           aggregateId: user.id,
           aggregateSequence: 2,
           payload: {
-            id: crypto.randomUUID(),
-            version: 1,
-            eventType: "USER_EMAIL_VERIFICATION_REQUESTED",
-            producer: "auth-service",
-            timestamp: new Date().toISOString(),
-            payload: {
               userId: user.id,
               email: user.email,
               verifyToken,
             },
-          },
         });
       } catch (err: unknown) {
         logger.error("Failed to stage outbox event for registration:", {
@@ -286,17 +246,10 @@ export class AuthService {
           aggregateId: user.id,
           aggregateSequence: 1,
           payload: {
-            id: crypto.randomUUID(),
-            version: 1,
-            eventType: "USER_LOGIN_OTP_REQUESTED",
-            producer: "auth-service",
-            timestamp: new Date().toISOString(),
-            payload: {
               userId: user.id,
               email: user.email,
               otp,
             },
-          },
         });
       } catch (err: unknown) {
         logger.error("Failed to stage outbox event for login OTP:", {
@@ -405,37 +358,18 @@ export class AuthService {
     const firstName = activeUser.firstName;
     const lastName = activeUser.lastName;
 
-    const sessionId = crypto.randomUUID();
     const clientInfo = parseClientInfo(input.userAgent, input.ipAddress);
-    const accessToken = signAccessToken({
-      userId: activeUser.id,
-      email: activeUser.email,
-      roles: activeUser.roles,
-      firstName,
-      lastName,
-      sessionId,
-      tokenType: "ACCESS",
-    });
-    const refreshToken = signRefreshToken({
-      userId: user.id,
-      sessionId,
-      sessionVersion: 1,
-      tokenType: "REFRESH",
-    });
-
-    let session;
+    let session: Session;
     try {
       session = await this.sessionRepo.create({
-        id: sessionId,
         userId: user.id,
         version: 1,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         ipAddress: input.ipAddress,
-        userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : undefined,
+        userAgent: input.userAgent ? input.userAgent.slice(0, 1000) : "Unknown",
         deviceType: clientInfo.deviceType,
         browser: clientInfo.browser,
         os: clientInfo.os,
-        lastActiveAt: new Date(),
       });
     } catch (err: unknown) {
       logger.error(
@@ -449,6 +383,23 @@ export class AuthService {
         "Failed to establish user session. Please try logging in again.",
       );
     }
+
+    const accessToken = signAccessToken({
+      userId: activeUser.id,
+      email: activeUser.email,
+      roles: activeUser.roles,
+      firstName,
+      lastName,
+      sessionId: session.id,
+      sessionVersion: session.version ?? 1,
+      tokenType: "ACCESS",
+    });
+    const refreshToken = signRefreshToken({
+      userId: user.id,
+      sessionId: session.id,
+      sessionVersion: session.version ?? 1,
+      tokenType: "REFRESH",
+    });
 
     // Cache tokens in Redis (non-blocking performance layer)
     try {
@@ -527,26 +478,44 @@ export class AuthService {
       !decoded ||
       decoded.tokenType !== "REFRESH" ||
       !decoded.userId ||
-      !decoded.sessionId
+      !decoded.sessionId ||
+      typeof decoded.sessionId !== "string" ||
+      decoded.sessionId.trim() === "" ||
+      typeof decoded.sessionVersion !== "number" ||
+      Number.isNaN(decoded.sessionVersion)
     ) {
       throw new UnauthorizedError("Invalid refresh token");
     }
 
-    const { userId, sessionId } = decoded;
-    const tokenSessionVersion = decoded.sessionVersion ?? 1;
+    const { userId, sessionId, sessionVersion: tokenSessionVersion } = decoded;
 
     // Check Redis for active refresh token
     const cachedToken = await getCachedRefreshToken(userId, sessionId);
     const session = await this.sessionRepo.findById(sessionId);
 
+    if (
+      !session ||
+      typeof session.version !== "number" ||
+      Number.isNaN(session.version) ||
+      new Date() > session.expiresAt
+    ) {
+      if (session) {
+        await Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {});
+      }
+      await revokeCachedTokens(userId, sessionId).catch(() => {});
+      await revokeAllUserTokens(userId).catch(() => {});
+      throw new UnauthorizedError("Session expired or invalid");
+    }
+
     // Replay / Reuse detection:
-    if (session && tokenSessionVersion < session.version) {
+    if (tokenSessionVersion < session.version) {
       // Security Alert: An old rotated token was replayed!
       await Promise.all([
         Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {}),
         revokeCachedTokens(userId, sessionId),
+        revokeAllUserTokens(userId),
       ]);
-      logger.warn("Refresh token reuse detected! Revoked session.", {
+      logger.warn("Refresh token reuse detected! Revoked session and all cached tokens.", {
         userId,
         sessionId,
       });
@@ -555,15 +524,11 @@ export class AuthService {
       );
     }
 
-    if (!session || new Date() > session.expiresAt) {
-      await revokeCachedTokens(userId, sessionId).catch(() => {});
-      throw new UnauthorizedError("Session expired or invalid");
-    }
-
     if (tokenSessionVersion !== session.version) {
       await Promise.all([
         Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {}),
         revokeCachedTokens(userId, sessionId),
+        revokeAllUserTokens(userId),
       ]);
       throw new UnauthorizedError(
         "Session version mismatch. Please log in again.",
@@ -571,6 +536,11 @@ export class AuthService {
     }
 
     if (cachedToken && cachedToken !== refreshToken) {
+      await Promise.all([
+        Promise.resolve(this.sessionRepo.delete(sessionId)).catch(() => {}),
+        revokeCachedTokens(userId, sessionId),
+        revokeAllUserTokens(userId),
+      ]);
       throw new UnauthorizedError(
         "Refresh token has already been rotated or invalidated",
       );
@@ -594,6 +564,7 @@ export class AuthService {
       firstName,
       lastName,
       sessionId: session.id,
+      sessionVersion: nextVersion,
       tokenType: "ACCESS",
     });
 
@@ -628,24 +599,30 @@ export class AuthService {
     };
   }
 
-  async listActiveSessions(userId: string, currentSessionId?: string) {
+  async listActiveSessions(userId: string, currentSessionId: string) {
+    if (!currentSessionId || typeof currentSessionId !== "string" || currentSessionId.trim() === "") {
+      throw new BadRequestError("Current session ID is required");
+    }
+
     const sessions = await this.sessionRepo.findByUserId(userId);
     const now = new Date();
-    const active = sessions
-      .filter((s) => s.expiresAt > now)
-      .map((s) => ({
-        id: s.id,
-        browser: s.browser || "Unknown Browser",
-        os: s.os || "Unknown OS",
-        deviceType: s.deviceType || "Desktop",
-        ipAddress: s.ipAddress || "Unknown IP",
-        lastActiveAt: s.lastActiveAt,
-        createdAt: s.createdAt,
-        isCurrent: Boolean(currentSessionId && s.id === currentSessionId),
+
+    const activeSessions = sessions
+      .filter((session) => session.expiresAt > now)
+      .map((session) => ({
+        id: session.id,
+        browser: session.browser || "Unknown Browser",
+        os: session.os || "Unknown OS",
+        deviceType: session.deviceType || "Desktop",
+        ipAddress: session.ipAddress || "Unknown IP",
+        lastActiveAt: session.lastActiveAt,
+        createdAt: session.createdAt,
+        isCurrent: session.id === currentSessionId,
       }));
+
     return {
-      currentSessionId: currentSessionId || null,
-      sessions: active,
+      currentSessionId,
+      sessions: activeSessions,
     };
   }
 
@@ -742,17 +719,10 @@ export class AuthService {
           aggregateId: user.id,
           aggregateSequence: 1,
           payload: {
-            id: crypto.randomUUID(),
-            version: 1,
-            eventType: "USER_PASSWORD_RESET_REQUESTED",
-            producer: "auth-service",
-            timestamp: new Date().toISOString(),
-            payload: {
               userId: user.id,
               email: user.email,
               resetToken,
             },
-          },
         });
       } catch (err: unknown) {
         logger.error("Failed to stage outbox event for password reset:", {
@@ -941,17 +911,10 @@ export class AuthService {
           aggregateId: user.id,
           aggregateSequence: 1,
           payload: {
-            id: crypto.randomUUID(),
-            version: 1,
-            eventType: "USER_EMAIL_VERIFICATION_REQUESTED",
-            producer: "auth-service",
-            timestamp: new Date().toISOString(),
-            payload: {
               userId: user.id,
               email: user.email,
               verifyToken,
             },
-          },
         });
       } catch (err: unknown) {
         logger.error("Failed to stage outbox event for email verification:", {
@@ -982,18 +945,56 @@ export class AuthService {
     }
   }
 
-  async verifyRefreshToken(token: string) {
+  async verifyRefreshToken(refreshToken: string) {
+    let decoded;
     try {
-      const decoded = verifyToken(token);
-      const session = await this.sessionRepo.findByToken(token);
-      if (!session || new Date() > session.expiresAt) {
-        throw new UnauthorizedError("Session has expired or was revoked");
-      }
-      return { valid: true, payload: decoded, session };
+      decoded = verifyToken(refreshToken);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new UnauthorizedError(`Invalid refresh token: ${msg}`);
     }
+
+    if (
+      !decoded ||
+      decoded.tokenType !== "REFRESH" ||
+      !decoded.userId ||
+      !decoded.sessionId ||
+      typeof decoded.sessionId !== "string" ||
+      decoded.sessionId.trim() === "" ||
+      typeof decoded.sessionVersion !== "number" ||
+      Number.isNaN(decoded.sessionVersion)
+    ) {
+      throw new UnauthorizedError("Invalid refresh token");
+    }
+
+    const { userId, sessionId, sessionVersion: tokenSessionVersion } = decoded;
+
+    // Check active cached token in Redis
+    const cachedToken = await getCachedRefreshToken(userId, sessionId);
+    if (cachedToken && cachedToken !== refreshToken) {
+      throw new UnauthorizedError("Refresh token has already been rotated or invalidated");
+    }
+
+    // Check session in PostgreSQL by sessionId
+    const session = await this.sessionRepo.findById(sessionId);
+    if (
+      !session ||
+      typeof session.version !== "number" ||
+      Number.isNaN(session.version) ||
+      new Date() > session.expiresAt
+    ) {
+      throw new UnauthorizedError("Session has expired or was revoked");
+    }
+
+    if (session.userId !== userId) {
+      throw new UnauthorizedError("Session user mismatch");
+    }
+
+    if (tokenSessionVersion !== session.version) {
+      throw new UnauthorizedError("Session version mismatch");
+    }
+
+    return { valid: true, payload: decoded, session };
   }
 
   async googleAuth(credential: string, ipAddress: string, userAgent: string, requestedRoles?: Role[]) {
@@ -1119,19 +1120,12 @@ export class AuthService {
             aggregateId: user.id,
             aggregateSequence: 1,
             payload: {
-              id: registrationEventId,
-              version: 1,
-              eventType: "USER_REGISTERED",
-              producer: "auth-service",
-              timestamp: new Date().toISOString(),
-              payload: {
                 userId: user.id,
                 email: user.email,
                 firstName: user.firstName,
                 lastName: user.lastName,
                 roles: user.roles,
               },
-            },
           });
         } catch (err: unknown) {
           logger.error(
@@ -1180,37 +1174,19 @@ export class AuthService {
     const lastName = user.lastName;
 
     // 4. Session & Token generation
-    const sessionId = crypto.randomUUID();
     const clientInfo = parseClientInfo(userAgent, ipAddress);
-    const accessToken = signAccessToken({
-      userId: user.id,
-      email: user.email,
-      roles: user.roles,
-      firstName,
-      lastName,
-      sessionId,
-      tokenType: "ACCESS",
-    });
-    const refreshToken = signRefreshToken({
-      userId: user.id,
-      sessionId,
-      sessionVersion: 1,
-      tokenType: "REFRESH",
-    });
 
-    let session;
+    let session: Session;
     try {
       session = await this.sessionRepo.create({
-        id: sessionId,
         userId: user.id,
         version: 1,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         ipAddress,
-        userAgent: userAgent ? userAgent.slice(0, 1000) : undefined,
+        userAgent: userAgent ? userAgent.slice(0, 1000) : "Unknown",
         deviceType: clientInfo.deviceType,
         browser: clientInfo.browser,
         os: clientInfo.os,
-        lastActiveAt: new Date(),
       });
     } catch (err: unknown) {
       logger.error("Failed to create session for Google login:", {
@@ -1221,6 +1197,23 @@ export class AuthService {
         "Failed to create session for Google authentication",
       );
     }
+
+    const accessToken = signAccessToken({
+      userId: user.id,
+      email: user.email,
+      roles: user.roles,
+      firstName,
+      lastName,
+      sessionId: session.id,
+      sessionVersion: session.version ?? 1,
+      tokenType: "ACCESS",
+    });
+    const refreshToken = signRefreshToken({
+      userId: user.id,
+      sessionId: session.id,
+      sessionVersion: session.version ?? 1,
+      tokenType: "REFRESH",
+    });
 
     // Cache tokens in Redis
     try {
@@ -1253,7 +1246,7 @@ export class AuthService {
       user: userPayload,
       accessToken,
       refreshToken,
-      sessionId,
+      sessionId: session.id,
     };
   }
 }

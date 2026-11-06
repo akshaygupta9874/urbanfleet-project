@@ -1,4 +1,39 @@
-import { PrismaClient, Session } from '../db/client.js';
+import { PrismaClient, Session, Prisma } from '../db/client.js';
+
+export interface CreateSessionData {
+  userId: string;
+  version: number;
+  userAgent: string;
+  ipAddress: string;
+  deviceType: string;
+  browser: string;
+  os: string;
+  expiresAt: Date;
+}
+
+export interface ListSessionsParams {
+  page: number;
+  limit: number;
+  userId?: string;
+}
+
+export interface SessionListItem {
+  id: string;
+  userId: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  deviceType: string | null;
+  browser: string | null;
+  os: string | null;
+  lastActiveAt: Date;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
+export interface ListSessionsResult {
+  items: SessionListItem[];
+  total: number;
+}
 
 export class SessionRepository {
   private prisma: PrismaClient;
@@ -7,18 +42,7 @@ export class SessionRepository {
     this.prisma = prisma;
   }
 
-  async create(data: {
-    id?: string;
-    userId: string;
-    version?: number;
-    userAgent?: string;
-    ipAddress?: string;
-    deviceType?: string;
-    browser?: string;
-    os?: string;
-    lastActiveAt?: Date;
-    expiresAt: Date;
-  }): Promise<Session> {
+  async create(data: CreateSessionData): Promise<Session> {
     return this.prisma.session.create({ data });
   }
 
@@ -62,11 +86,29 @@ export class SessionRepository {
     });
   }
 
-  async list(params: { page: number; limit: number; userId?: string }) {
-    const where = params.userId ? { userId: params.userId } : {};
-    const [items, total] = await this.prisma.$transaction([
+  async deleteExpired(): Promise<{ count: number }> {
+    return this.prisma.session.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() },
+      },
+    });
+  }
+
+  async list(params: ListSessionsParams): Promise<ListSessionsResult> {
+    const { page, limit, userId } = params;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.SessionWhereInput = {};
+    if (userId) {
+      where.userId = userId;
+    }
+
+    const [items, total] = await Promise.all([
       this.prisma.session.findMany({
         where,
+        skip,
+        take: limit,
+        orderBy: { lastActiveAt: 'desc' },
         select: {
           id: true,
           userId: true,
@@ -79,19 +121,10 @@ export class SessionRepository {
           expiresAt: true,
           createdAt: true,
         },
-        orderBy: { lastActiveAt: 'desc' },
-        skip: (params.page - 1) * params.limit,
-        take: params.limit,
       }),
       this.prisma.session.count({ where }),
     ]);
-    return { items, total };
-  }
 
-  /**
-   * Deprecated backward compatibility helper
-   */
-  async findByToken(_refreshToken: string): Promise<Session | null> {
-    return null;
+    return { items, total };
   }
 }

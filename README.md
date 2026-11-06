@@ -77,7 +77,6 @@ flowchart LR
   Kong --> Notify["Notification Service<br/>:4003"]
   Kong --> Ride["Ride Service<br/>:4004"]
   Kong --> Payment["Payment Service<br/>:4005"]
-  Kong --> Admin["Admin Service<br/>:4006"]
   Ride -->|WebSocket /ws/ride| Browser
 
   Auth --> AuthDB[(Auth PostgreSQL)]
@@ -144,7 +143,6 @@ urbanfleet-project/
 │   ├── ride-service/                 ride lifecycle, dispatch, WebSockets
 │   ├── payment-service/              Razorpay integration and ledger
 │   ├── notification-service/         durable email notification processing
-│   └── admin-service/                protected operations aggregation API
 ├── infra/
 │   ├── init-databases.sql            database and least-privilege role setup
 │   ├── kafka-init.sh                 Kafka topic and DLQ creation
@@ -174,10 +172,9 @@ installations reproducible.
 | Frontend | container `5173` | browser UI | calls Kong `/v1` |
 | Auth | `4001` | users, roles, sessions, verification, audit records | HTTP, Redis, Kafka |
 | Driver | `4002` | driver profile, documents, vehicles, driver state | HTTP, Redis, Kafka |
-| Notification | `4003` | notification inbox and delivery state | Kafka, SendGrid |
+| Notification | `4003` | notification inbox and delivery state | Kafka, Nodemailer (SMTP) |
 | Ride | `4004` | ride aggregate, lifecycle, dispatch, location | HTTP, Redis, Kafka, WebSocket |
 | Payment | `4005` | orders, captures, refunds, ledger | HTTP, Razorpay, Kafka |
-| Admin | `4006` | admin aggregation and controlled operations | HTTP to domain services |
 | PostgreSQL | external or CI service | one database per domain | Prisma |
 | Redis | external or CI service | sessions, cache, GEO/ephemeral state | Redis clients |
 | Kafka | container `kafka:29092` | event transport and DLQs | KafkaJS/shared client |
@@ -415,7 +412,7 @@ flowchart LR
   Kafka --> Consumer["Notification consumer"]
   Consumer --> Inbox["Notification PostgreSQL inbox"]
   Inbox --> Worker["Bounded dispatcher worker"]
-  Worker --> SendGrid["SendGrid"]
+  Worker --> SMTP[\"SMTP Mail Server\"]
   Worker -->|failure + retry count| Inbox
   Kafka --> DLQ["Topic DLQ after terminal failure"]
 ```
@@ -423,7 +420,7 @@ flowchart LR
 The notification service deliberately does not send email inside the original
 HTTP request. Its consumer stages a durable notification record, then a
 separate dispatcher polls a bounded batch of pending records. This isolates
-SendGrid latency and outages from login, ride, and payment APIs.
+Nodemailer (SMTP) latency and outages from login, ride, and payment APIs.
 
 Deduplication uses two barriers:
 
@@ -435,19 +432,20 @@ Deduplication uses two barriers:
 ## Administrator flow
 
 The protected admin UI is `/admin`. The API is `/v1/admin` through Kong.
-`admin-service` aggregates data from auth, driver, ride, and payment services,
+`auth-service` now owns the protected admin aggregation API alongside identity,
+session, and audit data. It aggregates data from driver, ride, and payment services,
 but domain services retain ownership of mutations.
 
 ```mermaid
 flowchart TD
   AdminUser["Admin browser"] --> Guard["ProtectedRoutes + ADMIN role"]
   Guard --> AdminAPI["Kong /v1/admin"]
-  AdminAPI --> AdminService["Admin service"]
-  AdminService --> Auth["Auth: users, sessions, suspensions, audit"]
-  AdminService --> Driver["Driver: profiles and verification"]
-  AdminService --> Ride["Ride: operational list"]
-  AdminService --> Payment["Payment: payments and refunds"]
-  AdminService --> Health["Service health aggregation"]
+  AdminAPI --> AuthAdmin["Auth service admin API"]
+  AuthAdmin --> Auth["Auth: users, sessions, suspensions, audit"]
+  AuthAdmin --> Driver["Driver: profiles and verification"]
+  AuthAdmin --> Ride["Ride: operational list"]
+  AuthAdmin --> Payment["Payment: payments and refunds"]
+  AuthAdmin --> Health["Service health aggregation"]
 ```
 
 Stage 1 surfaces include:
@@ -614,7 +612,7 @@ story:
 | `scripts/generate-keys.js` | Generates the RS256 key material used by auth and token verifiers. |
 | `scripts/seed-all.js` | Coordinates seed execution when preparing service databases. |
 | `scripts/wait-for-dependencies.cjs` | Prevents a service from running migrations before required dependencies are reachable. |
-| `services/*/Dockerfile` | Builds each service from the monorepo context, compiles TypeScript, and creates the runtime image. This includes `admin-service`. |
+| `services/*/Dockerfile` | Builds each service from the monorepo context and compiles TypeScript. |
 | `services/*/prisma/migrations/` | Versioned schema changes applied with `prisma migrate deploy` during container startup. |
 | `services/*/.env.example` | Service-specific configuration examples; root `.env.example` is the Compose-level template. |
 | `frontend/.env.example` | Frontend-only Vite variables such as API and WebSocket URLs. |
@@ -831,7 +829,7 @@ both Kong and ride-service logs.
 ### Email is delayed
 
 This is expected when the notification inbox is retrying. Inspect notification
-records, SendGrid credentials, Kafka consumer logs, and retry counts rather
+records, Nodemailer (SMTP) credentials, Kafka consumer logs, and retry counts rather
 than blocking the original ride or auth request.
 
 ## Known boundaries and future improvements

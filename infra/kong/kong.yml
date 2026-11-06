@@ -10,6 +10,7 @@ services:
       - name: auth-routes
         paths:
           - /v1/auth
+          - /v1/admin
         strip_path: false
         protocols:
           - http
@@ -86,17 +87,6 @@ services:
       - name: notification-routes
         paths:
           - /v1/notifications
-        strip_path: false
-        protocols:
-          - http
-          - https
-
-  - name: admin-service
-    url: http://admin-service:4006
-    routes:
-      - name: admin-routes
-        paths:
-          - /v1/admin
         strip_path: false
         protocols:
           - http

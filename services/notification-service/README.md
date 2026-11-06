@@ -36,9 +36,9 @@
 In a distributed ride-hailing architecture like UrbanFleet, customer actions (e.g. signing up, requesting login OTPs, resetting passwords, and completing rides) trigger critical notifications. 
 
 ### Why a Dedicated Notification Microservice?
-If individual microservices (`auth-service`, `payment-service`, `ride-service`) directly made synchronous HTTP calls to an external email provider (SendGrid):
-1. **Network Latency & Thread Blocking**: SendGrid API calls take 200ms–2000ms. If `auth-service` waits for an email to send before returning an HTTP response to a user registering or logging in, API throughput drops drastically, and connection pools deplete.
-2. **Cascading Failures**: If SendGrid experiences downtime, latency spikes, or HTTP 500 errors, user registration, OTP generation, and ride checkouts would fail entirely.
+If individual microservices (`auth-service`, `payment-service`, `ride-service`) directly made synchronous HTTP calls to an external email provider (Nodemailer):
+1. **Network Latency & Thread Blocking**: Nodemailer API calls take 200ms–2000ms. If `auth-service` waits for an email to send before returning an HTTP response to a user registering or logging in, API throughput drops drastically, and connection pools deplete.
+2. **Cascading Failures**: If Nodemailer experiences downtime, latency spikes, or HTTP 500 errors, user registration, OTP generation, and ride checkouts would fail entirely.
 3. **Data Loss on Pod Restarts**: If an application crashes mid-request, transient notification data in memory is lost forever.
 4. **Third-Party Rate Limits**: Upstream providers enforce strict rate limits (e.g. 100 requests/second). Uncontrolled burst traffic during rush hours causes massive 429 Too Many Requests drops.
 
@@ -50,7 +50,7 @@ If individual microservices (`auth-service`, `payment-service`, `ride-service`) 
 
 ### 2.1 Temporal Decoupling & Fault Isolation
 - **Temporal Decoupling**: The producer (e.g. `payment-service`) does not need to know *when* or *how* the email is sent. It simply writes an event to Kafka. The Notification Service consumes it asynchronously at its own pace.
-- **Fault Isolation**: If SendGrid is down for 3 hours, UrbanFleet riders can still register, login with OTP, book rides, and pay. The notifications are safely staged in PostgreSQL (`status: PENDING`) and dispatched automatically the moment SendGrid recovers.
+- **Fault Isolation**: If Nodemailer is down for 3 hours, UrbanFleet riders can still register, login with OTP, book rides, and pay. The notifications are safely staged in PostgreSQL (`status: PENDING`) and dispatched automatically the moment Nodemailer recovers.
 
 ### 2.2 Messaging Semantics: Achieving Effectively-Once Delivery
 In distributed systems, networks are unreliable. Kafka guarantees **At-Least-Once** delivery by default. Under network partitions or consumer rebalancing, Kafka may deliver the exact same event envelope multiple times.
@@ -83,7 +83,7 @@ To prevent sending a rider multiple identical receipts or duplicate OTP codes, t
 Rather than dispatching emails directly inside the Kafka message handler, UrbanFleet utilizes the **Transactional Inbox Pattern**:
 - The Kafka consumer writes the notification to `notification_records` with `status: 'PENDING'`.
 - A separate, asynchronous worker (`NotificationDispatcher`) polls this table and dispatches emails.
-- **Advantage**: The Kafka consumer commits offsets in milliseconds without waiting for third-party network I/O. If SendGrid takes 5 seconds to reply, it does not block the Kafka partition consumer lag.
+- **Advantage**: The Kafka consumer commits offsets in milliseconds without waiting for third-party network I/O. If Nodemailer takes 5 seconds to reply, it does not block the Kafka partition consumer lag.
 
 ### 2.4 Bounded Queue Polling vs. Push Workers
 Instead of unbounded querying or naive in-memory queues that risk Out-Of-Memory (OOM) crashes:
@@ -154,8 +154,8 @@ flowchart TD
 
     DISPATCHER -->|3. Poll PENDING FIFO| NR
     DISPATCHER -->|4. Compile HTML| TEMPLATES
-    DISPATCHER -->|5. HTTP POST /v3/mail/send| SENDGRID["SendGrid Cloud API"]
-    SENDGRID -->|6. Return x-message-id| DISPATCHER
+    DISPATCHER -->|5. HTTP SMTP sendMail()| Nodemailer["SMTP Mail Server"]
+    Nodemailer -->|6. Return x-message-id| DISPATCHER
     DISPATCHER -->|7. Mark DISPATCHED| NR
 
     CLIENT["Mobile / Web Frontend"] -->|HTTPS via Kong (Port 3001)| AUTH_MW
@@ -213,12 +213,12 @@ stateDiagram-v2
         Queued --> InFlight: Dispatcher fetches batch (take: 20, retryCount < 5)
     }
 
-    InFlight --> DISPATCHED: SendGrid returns HTTP 200/202 (x-message-id stored)
+    InFlight --> DISPATCHED: Nodemailer returns HTTP 200/202 (x-message-id stored)
     InFlight --> PENDING: Transient Network / 5xx Error (retryCount < 5, exponential backoff)
     InFlight --> FAILED: Terminal Failure (retryCount >= 5, Dead-Lettered)
 
-    DISPATCHED --> SENT: SendGrid Event Webhook (Provider delivered to MTA)
-    DISPATCHED --> DELIVERED: SendGrid Event Webhook (User inbox accepted)
+    DISPATCHED --> SENT: Nodemailer Event Webhook (Provider delivered to MTA)
+    DISPATCHED --> DELIVERED: Nodemailer Event Webhook (User inbox accepted)
     DISPATCHED --> [*]
     FAILED --> [*]
 ```
@@ -267,7 +267,7 @@ sequenceDiagram
     participant DB as PostgreSQL (urbanfleet_notification)
     participant AC as Auth Service (HTTP API)
     participant ND as Notification Dispatcher
-    participant SG as SendGrid REST API
+    participant SMTP as SMTP Mail Server
     participant Rider as Rider Email Inbox
 
     PS->>KB: Publish PAYMENT_CAPTURED (payload: rideId, paymentId, fare, riderId)
@@ -297,8 +297,8 @@ sequenceDiagram
         ND->>DB: findPending(limit: 20, retryCount < 5)
         DB-->>ND: [ { id: "notif-uuid", template: "RIDE_RECEIPT", payload: {...} } ]
         ND->>ND: Render getRideReceiptHtml(fare, addresses, driverName)
-        ND->>SG: POST https://api.sendgrid.com/v3/mail/send (Bearer API_KEY)
-        alt SendGrid Accepted (202 Accepted)
+        ND->>SMTP: SMTP TLS / AUTH (sendMail)
+        alt SMTP Accepted (250 OK)
             SG-->>ND: HTTP 202 (header: x-message-id: "sg_msg_98765")
             ND->>DB: UPDATE notification_records SET status = 'DISPATCHED', gateway_message_id = 'sg_msg_98765'
             SG->>Rider: Deliver HTML Receipt Email
@@ -315,7 +315,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    POLL["Dispatcher Polls Record (retry_count: N)"] --> ATTEMPT["Attempt SendGrid Dispatch (5000ms timeout)"]
+    POLL["Dispatcher Polls Record (retry_count: N)"] --> ATTEMPT["Attempt Nodemailer Dispatch (5000ms timeout)"]
     ATTEMPT --> RESULT{"Delivery Result?"}
     
     RESULT -- 202 Accepted --> SUCCESS["Mark status = 'DISPATCHED'<br/>Store gateway_message_id"]
@@ -426,7 +426,7 @@ flowchart TD
 | 1  | Kafka Message Redelivery       | User receives duplicate emails/OTPs. | Atomic transaction check in                 |
 |    | (At-Least-Once Replay)         |                                      | processed_events (eventId + consumerGroup)  |
 +----+--------------------------------+--------------------------------------+---------------------------------------------+
-| 2  | SendGrid API Down (5xx / 504)  | Worker loop crashes; delivery stalls.| Axios timeout (5000ms); try/catch logs      |
+| 2  | Nodemailer API Down (5xx / 504)  | Worker loop crashes; delivery stalls.| Axios timeout (5000ms); try/catch logs      |
 |    |                                |                                      | failure, increments retryCount, non-blocking|
 +----+--------------------------------+--------------------------------------+---------------------------------------------+
 | 3  | Upstream Rate Limit (HTTP 429) | Mass drops during traffic spikes.    | Staged status remains PENDING; retried      |
@@ -471,14 +471,14 @@ flowchart TD
 | **Transactional Deduplication** | Reliability | **100% Implemented** | `test/notification-fixes.test.ts` |
 | **PostgreSQL Schema & Migrations**| Persistence | **100% Implemented** | Prisma Engine verified |
 | **Dispatcher Background Worker** | Delivery Engine | **100% Implemented** | `test/notification.service.test.ts` |
-| **SendGrid v3 Email Driver** | External Delivery | **100% Implemented** | `test/notification-fixes.test.ts` |
+| **Nodemailer v3 Email Driver** | External Delivery | **100% Implemented** | `test/notification-fixes.test.ts` |
 | **Responsive HTML Templates** | Presentation | **100% Implemented** | `test/notification.service.test.ts` |
 | **REST Routing & IDOR Prevention** | API Security | **100% Implemented** | `test/notification-fixes.test.ts` |
 | **RS256 JWT & Session Middleware** | Authentication | **100% Implemented** | `test/auth.middleware.test.ts` |
 | **Containerization & Health Checks**| Infrastructure | **100% Implemented** | Docker Desktop Build verified |
 | **SMS Gateway Driver (Twilio/SNS)**| Channel Expansion | ⏳ *Schema Defined* | Planned Scope |
 | **Push Gateway Driver (FCM)** | Channel Expansion | ⏳ *Schema Defined* | Planned Scope |
-| **SendGrid Delivery Webhook** | Status Callbacks | ⏳ *Schema Defined* | Planned Scope |
+| **Nodemailer Delivery Webhook** | Status Callbacks | ⏳ *Schema Defined* | Planned Scope |
 
 ---
 

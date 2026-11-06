@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { authRedisClient, authRedisKey } from '../redis/client.js';
 import { getCsrfCookieOptions, clearCookieOptions } from '../utils/cookie.js';
 import { ForbiddenError, UnauthorizedError, AuthenticatedRequest, createLogger } from '@urbanfleet/common';
@@ -45,14 +45,15 @@ export const generateCSRFToken = async (userId: string, response: Response): Pro
  * Express middleware to verify CSRF token on state-changing requests (POST, PUT, PATCH, DELETE).
  * Safe HTTP methods (GET, HEAD, OPTIONS) skip CSRF checks.
  */
-export const verifyCsrfToken = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+export const verifyCsrfToken: RequestHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   // 1. Skip safe HTTP methods
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase())) {
     return next();
   }
 
   // 2. Resolve user ID from authenticated request or session
-  const userId = req.userId;
+  const authReq = req as unknown as AuthenticatedRequest;
+  const userId = authReq.userId;
   if (!userId) {
     return next(new UnauthorizedError('User unauthenticated for CSRF verification'));
   }

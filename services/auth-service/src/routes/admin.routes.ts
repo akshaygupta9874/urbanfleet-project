@@ -79,7 +79,8 @@ export function createAdminRouter(userService: UserService, sessionRepository: S
 
   router.patch('/users/:id/suspension', async (req, res, next) => {
     try {
-      const callerId = (req as unknown as AuthenticatedRequest).userId;
+      const authReq = req as unknown as AuthenticatedRequest;
+      const callerId = authReq.userId;
       if (callerId === req.params.id) {
         return res.status(400).json({
           success: false,

@@ -1,10 +1,24 @@
 import { PrismaClient } from '../db/client.js';
-import { Kafka, Producer } from 'kafkajs';
+import { Producer } from 'kafkajs';
 import { createKafkaClient, createDurableProducer, createLogger } from '@urbanfleet/common';
+import { KafkaEnvelope, DeadLetterEnvelope } from '@urbanfleet/contracts';
 import crypto from 'crypto';
 
 const logger = createLogger('payment-outbox-worker');
 const workerId = `worker-${process.pid}-${Math.random().toString(36).substring(7)}`;
+
+export interface PaymentOutboxRecord {
+  id: string;
+  topic: string;
+  partitionKey: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  aggregateSequence: number;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+  retryCount: number;
+}
 
 export class OutboxWorker {
   private isRunning = false;
@@ -36,19 +50,8 @@ export class OutboxWorker {
     }
   }
 
-  private async processPendingEvents() {
-    const candidateEvents = await this.prisma.$queryRaw<Array<{
-      id: string;
-      topic: string;
-      partition_key: string;
-      event_type: string;
-      aggregate_type: string;
-      aggregate_id: string;
-      aggregate_sequence: number;
-      payload: unknown;
-      created_at: Date;
-      retry_count: number;
-    }>>`
+  async processPendingEvents() {
+    const candidateEvents = await this.prisma.$queryRaw<PaymentOutboxRecord[]>`
       WITH active_partitions AS (
         SELECT DISTINCT partition_key
         FROM outbox_events
@@ -75,7 +78,17 @@ export class OutboxWorker {
           locked_by = ${workerId},
           lease_expires_at = NOW() + INTERVAL '30 seconds'
       WHERE id IN (SELECT id FROM eligible_events)
-      RETURNING id, topic, partition_key, event_type, aggregate_type, aggregate_id, aggregate_sequence, payload, created_at, retry_count;
+      RETURNING
+        id,
+        topic,
+        partition_key AS "partitionKey",
+        event_type AS "eventType",
+        aggregate_type AS "aggregateType",
+        aggregate_id AS "aggregateId",
+        aggregate_sequence AS "aggregateSequence",
+        payload,
+        created_at AS "createdAt",
+        retry_count AS "retryCount";
     `;
 
     if (!candidateEvents || candidateEvents.length === 0) return;
@@ -86,23 +99,23 @@ export class OutboxWorker {
           throw new Error('Kafka producer not connected');
         }
 
-        const envelope = {
+        const envelope: KafkaEnvelope<Record<string, unknown>> = {
           id: event.id,
           version: 1,
-          eventType: event.event_type || 'PAYMENT_EVENT',
+          eventType: event.eventType,
           producer: 'payment-service',
-          timestamp: event.created_at ? new Date(event.created_at).toISOString() : new Date().toISOString(),
-          partitionKey: event.partition_key,
-          aggregateType: event.aggregate_type || 'PAYMENT',
-          aggregateId: event.aggregate_id,
-          aggregateSequence: Number(event.aggregate_sequence || 1),
-          payload: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload,
+          timestamp: event.createdAt.toISOString(),
+          partitionKey: event.partitionKey,
+          aggregateType: event.aggregateType,
+          aggregateId: event.aggregateId,
+          aggregateSequence: event.aggregateSequence,
+          payload: event.payload,
         };
 
         await this.producer.send({
           acks: -1,
           topic: event.topic,
-          messages: [{ key: event.partition_key, value: JSON.stringify(envelope) }]
+          messages: [{ key: event.partitionKey, value: JSON.stringify(envelope) }]
         });
 
         await this.prisma.$executeRaw`
@@ -114,46 +127,46 @@ export class OutboxWorker {
       } catch (publishErr: unknown) {
         const errorMessage = publishErr instanceof Error ? publishErr.message : String(publishErr);
         logger.error(`Failed to publish payment event ${event.id}:`, publishErr);
+
+        const nextRetry = event.retryCount + 1;
         let deadLettered = false;
-        if (((event.retry_count || 0) + 1) >= 5 && this.producer) {
+
+        if (nextRetry >= 5 && this.producer) {
           try {
             const dlqTopic = `${event.topic}.DLQ`;
-            const eventPayload = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
-            const replayableEnvelope = {
-              id: event.id,
-              version: 1,
-              eventType: event.event_type || 'PAYMENT_EVENT',
-              producer: 'payment-service',
-              timestamp: event.created_at ? new Date(event.created_at).toISOString() : new Date().toISOString(),
-              partitionKey: event.partition_key,
-              aggregateType: event.aggregate_type || 'PAYMENT',
-              aggregateId: event.aggregate_id,
-              aggregateSequence: Number(event.aggregate_sequence || 1),
-              payload: eventPayload,
-            };
-            const dlqEnvelope = {
+            const dlqEnvelope: DeadLetterEnvelope<Record<string, unknown>> = {
               id: crypto.randomUUID(),
               originalEventId: event.id,
               originalTopic: event.topic,
               originalPartition: 0,
               originalOffset: '0',
-              originalKey: event.partition_key,
+              originalKey: event.partitionKey,
               consumerGroup: 'outbox-publisher',
               serviceName: 'payment-service',
               failedAt: new Date().toISOString(),
-              retryCount: (event.retry_count || 0) + 1,
+              retryCount: nextRetry,
               error: {
                 name: 'OutboxPublishExhaustionError',
                 message: errorMessage,
               },
-              payload: eventPayload,
-              originalValue: JSON.stringify(replayableEnvelope),
-              originalEnvelope: replayableEnvelope,
+              payload: event.payload,
+              originalValue: JSON.stringify({
+                id: event.id,
+                version: 1,
+                eventType: event.eventType,
+                producer: 'payment-service',
+                timestamp: event.createdAt.toISOString(),
+                partitionKey: event.partitionKey,
+                aggregateType: event.aggregateType,
+                aggregateId: event.aggregateId,
+                aggregateSequence: event.aggregateSequence,
+                payload: event.payload,
+              }),
             };
             await this.producer.send({
               acks: -1,
               topic: dlqTopic,
-              messages: [{ key: event.partition_key, value: JSON.stringify(dlqEnvelope) }],
+              messages: [{ key: event.partitionKey, value: JSON.stringify(dlqEnvelope) }],
             });
             deadLettered = true;
             logger.error(`[OUTBOX_DLQ] Event ${event.id} exhausted retries and was sent to DLQ topic ${dlqTopic}`);
@@ -161,7 +174,7 @@ export class OutboxWorker {
             logger.error(`Failed to dispatch exhausted outbox event ${event.id} to DLQ:`, dlqErr);
           }
         }
-        const nextRetry = (event.retry_count || 0) + 1;
+
         const persistedRetryCount = deadLettered ? nextRetry : Math.min(nextRetry, 4);
         const newStatus = deadLettered ? 'FAILED' : 'PENDING';
 
@@ -185,5 +198,9 @@ export class OutboxWorker {
         logger.error('Error disconnecting payment outbox producer:', err);
       }
     }
+  }
+
+  isHealthy(): boolean {
+    return this.isRunning;
   }
 }

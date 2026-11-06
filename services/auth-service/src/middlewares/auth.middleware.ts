@@ -1,9 +1,8 @@
-import { NextFunction, Request, Response } from 'express';
+import { NextFunction, Request, Response, RequestHandler } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { AppError, ServiceUnavailableError, createLogger } from '@urbanfleet/common';
+import { AppError, ServiceUnavailableError, asyncHandler, createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('auth-middleware');
-import asyncHandler from './asyncHandler.js';
 import { prisma, Role } from '../db/client.js';
 import { getPublicKey } from '../crypto/keys.js';
 import { validateSessionInRedis, getCachedUser, cacheUser, CachedUser } from '../redis/token-cache.js';
@@ -22,18 +21,21 @@ export interface UserPayloadContext {
 export interface AuthenticatedRequest extends Request {
   userId: string;
   roles: string[];
+  sessionId: string;
+  bearer?: string;
   driverId?: string;
-  sessionId?: string;
   user: UserPayloadContext;
 }
 
 export interface AuthPayload extends JwtPayload {
-  id?: string;
-  userId?: string;
-  sessionId?: string;
-  email?: string;
-  roles?: string[];
-  tokenType?: string;
+  userId: string;
+  sessionId: string;
+  email: string;
+  roles: string[];
+  tokenType: string;
+  firstName?: string;
+  lastName?: string;
+  driverId?: string;
 }
 
 export const authMiddleware = asyncHandler(
@@ -95,29 +97,31 @@ export const authMiddleware = asyncHandler(
     const userId = decodedData.userId;
     const sessionId = decodedData.sessionId;
 
-    if (!userId) {
+    if (!userId || !sessionId) {
       throw new AppError('Your session is invalid. Please sign in again.', 401, 'INVALID_SESSION');
     }
 
     // 3. Validate Session (Fail-closed Redis check)
-    if (sessionId) {
-      const sessionCheck = await validateSessionInRedis(userId, sessionId);
-      if (!sessionCheck.valid) {
-        if (sessionCheck.reason === 'REDIS_UNAVAILABLE') {
-          throw new ServiceUnavailableError(
-            'Session validation service is temporarily unavailable',
-            'SESSION_VALIDATION_UNAVAILABLE'
-          );
-        }
-        if (sessionCheck.reason === 'SESSION_MISMATCH') {
-          throw new AppError('Session mismatch. Please sign in again.', 401, 'SESSION_MISMATCH');
-        }
-        throw new AppError('Your session is no longer valid. Please sign in again.', 401, 'SESSION_EXPIRED');
+    const sessionCheck = await validateSessionInRedis(userId, sessionId);
+    if (!sessionCheck.valid) {
+      if (sessionCheck.reason === 'REDIS_UNAVAILABLE') {
+        throw new ServiceUnavailableError(
+          'Session validation service is temporarily unavailable',
+          'SESSION_VALIDATION_UNAVAILABLE'
+        );
       }
+      if (sessionCheck.reason === 'SESSION_MISMATCH') {
+        throw new AppError('Session mismatch. Please sign in again.', 401, 'SESSION_MISMATCH');
+      }
+      throw new AppError('Your session is no longer valid. Please sign in again.', 401, 'SESSION_EXPIRED');
     }
 
     // 4. Fetch User Data (Cache first, then PostgreSQL)
     let user = await getCachedUser(userId);
+
+    if (user?.isSuspended) {
+      throw new AppError('This account is suspended.', 403, 'ACCOUNT_SUSPENDED');
+    }
 
     if (!user) {
       try {
@@ -138,6 +142,7 @@ export const authMiddleware = asyncHandler(
           };
         }
       } catch (err: unknown) {
+        if (err instanceof AppError) throw err;
         logger.warn('Failed to fetch user from database in auth middleware', {
           userId,
           error: err instanceof Error ? err.message : String(err),
@@ -146,7 +151,7 @@ export const authMiddleware = asyncHandler(
 
       if (!user) {
         // Fallback to token payload if user not in local DB during unit tests
-        const roles = decodedData.roles || (Array.isArray(decodedData.role) ? decodedData.role : [typeof decodedData.role === 'string' ? decodedData.role : 'RIDER']);
+        const roles = decodedData.roles && decodedData.roles.length > 0 ? decodedData.roles : ['RIDER'];
         user = {
           id: userId,
           email: decodedData.email || '',
@@ -155,10 +160,14 @@ export const authMiddleware = asyncHandler(
           lastName: '',
         };
       } else {
-        if (user?.isSuspended) {
+        if (user.isSuspended) {
           throw new AppError('This account is suspended.', 403, 'ACCOUNT_SUSPENDED');
         }
         await cacheUser(user);
+      }
+    } else {
+      if (user.isSuspended) {
+        throw new AppError('This account is suspended.', 403, 'ACCOUNT_SUSPENDED');
       }
     }
 
@@ -167,9 +176,8 @@ export const authMiddleware = asyncHandler(
     const userRoles = Array.isArray(currentUser.roles) ? currentUser.roles : ['RIDER'];
     request.userId = currentUser.id;
     request.roles = userRoles;
-    if (sessionId) {
-      request.sessionId = sessionId;
-    }
+    request.sessionId = sessionId;
+    request.bearer = token;
     if (currentUser.driverId) {
       request.driverId = currentUser.driverId;
     }
@@ -192,16 +200,16 @@ export const authMiddleware = asyncHandler(
 export type AllowedRole = Role | `${Role}`;
 
 export const hasRole = (
-  req: AuthenticatedRequest | Request,
+  req: AuthenticatedRequest,
   ...allowedRoles: AllowedRole[]
 ): boolean => {
-  const roles = (req as AuthenticatedRequest).roles || [];
+  const roles = req.roles || [];
   return roles.some((r) => allowedRoles.includes(r as AllowedRole));
 };
 
-export const requireRole = (...allowedRoles: AllowedRole[]) => {
+export const requireRole = (...allowedRoles: AllowedRole[]): RequestHandler => {
   return (req: Request, _res: Response, next: NextFunction) => {
-    const authReq = req as AuthenticatedRequest;
+    const authReq = req as unknown as AuthenticatedRequest;
     if (!authReq.userId) {
       return next(new AppError('User unauthenticated', 401, 'UNAUTHORIZED'));
     }
@@ -215,46 +223,30 @@ export const requireRole = (...allowedRoles: AllowedRole[]) => {
 };
 
 /**
- * Route-level authorization guard for internal service endpoints.
- * Authoritative boundary: allows either verified internal service or authenticated ADMIN.
+ * Authoritative boundary guard allowing verified internal cluster services,
+ * or delegating to authMiddleware (with an optional required role).
  */
-export const requireAdminOrInternalService = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const internalKey =
-    process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
-  const providedKey = req.headers['x-internal-service-key'];
-  if (providedKey && providedKey === internalKey) {
-    (req as any).userId = (req as any).userId || 'internal-service';
-    (req as any).roles = ['ADMIN'];
-    return next();
-  }
-  return authMiddleware(req as AuthenticatedRequest, res, (err?: unknown) => {
-    if (err) return next(err);
-    return requireRole(Role.ADMIN)(req, res, next);
-  });
+export const requireInternalOrAuth = (requiredRole?: AllowedRole) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const internalKey =
+      process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
+    const providedKey = req.headers['x-internal-service-key'];
+    if (providedKey && providedKey === internalKey) {
+      (req as any).userId = (req as any).userId || 'internal-service';
+      (req as any).roles = ['ADMIN'];
+      return next();
+    }
+    return authMiddleware(req as AuthenticatedRequest, res, (err?: unknown) => {
+      if (err) return next(err);
+      if (requiredRole) {
+        return requireRole(requiredRole)(req as AuthenticatedRequest, res, next);
+      }
+      return next();
+    });
+  };
 };
 
-/**
- * Route-level guard for user profile lookups.
- * Authoritative boundary: allows internal services, authenticated self-access, or ADMIN.
- */
-export const requireSelfOrAdminOrInternalService = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const internalKey =
-    process.env.INTERNAL_SERVICE_KEY || 'urbanfleet-internal-service-secret';
-  const providedKey = req.headers['x-internal-service-key'];
-  if (providedKey && providedKey === internalKey) {
-    (req as any).userId = (req as any).userId || 'internal-service';
-    (req as any).roles = ['ADMIN'];
-    return next();
-  }
-  return authMiddleware(req as AuthenticatedRequest, res, next);
-};
+export const requireAdminOrInternalService = requireInternalOrAuth(Role.ADMIN);
+export const requireSelfOrAdminOrInternalService = requireInternalOrAuth();
 
 export default authMiddleware;

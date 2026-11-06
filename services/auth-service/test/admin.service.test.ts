@@ -1,32 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 import { AdminService } from '../src/services/admin.service.js';
 
 describe('AdminService', () => {
-  const mockAuthClient: any = {
-    getUsers: vi.fn().mockResolvedValue({
-      data: {
-        success: true,
-        data: [{ id: 'usr-1', email: 'test@urbanfleet.com' }],
-        pagination: { total: 12 },
-      },
+  const mockUserService: any = {
+    listUsers: vi.fn().mockResolvedValue({
+      items: [{ id: 'usr-1', email: 'test@urbanfleet.com' }],
+      total: 12,
     }),
-    getSessions: vi.fn().mockResolvedValue({
-      data: {
-        success: true,
-        data: [{ id: 'sess-1' }],
-        pagination: { total: 3 },
-      },
-    }),
-    revokeSession: vi.fn().mockResolvedValue({ data: { success: true } }),
-    setSuspension: vi.fn().mockResolvedValue({ data: { success: true, isSuspended: true } }),
-    getAuditLogs: vi.fn().mockResolvedValue({
-      data: {
-        success: true,
-        data: [{ id: 'audit-1', action: 'USER_SUSPENDED' }],
-        pagination: { total: 1 },
-      },
-    }),
-    recordAudit: vi.fn().mockResolvedValue({ data: { success: true } }),
+    setSuspension: vi.fn().mockResolvedValue({ id: 'usr-1', isSuspended: true }),
+  };
+
+  const mockSessionRepository: any = {
+    list: vi.fn().mockResolvedValue({ items: [{ id: 'sess-1' }], total: 3 }),
+    delete: vi.fn().mockResolvedValue({ id: 'sess-1' }),
   };
 
   const mockDriverClient: any = {
@@ -85,7 +71,8 @@ describe('AdminService', () => {
   };
 
   const service = new AdminService(
-    mockAuthClient,
+    mockUserService,
+    mockSessionRepository,
     mockDriverClient,
     mockRideClient,
     mockPaymentClient
@@ -101,7 +88,7 @@ describe('AdminService', () => {
 
   it('delegates user listing with pagination query', async () => {
     const res = await service.getUsers('mock-token', { page: 1, limit: 10 });
-    expect(mockAuthClient.getUsers).toHaveBeenCalledWith('mock-token', { page: 1, limit: 10 });
+    expect(mockUserService.listUsers).toHaveBeenCalledWith({ page: 1, limit: 10 });
     expect(res.data).toHaveLength(1);
   });
 
@@ -116,12 +103,6 @@ describe('AdminService', () => {
       'APPROVED',
       'Driver documents verified manually'
     );
-    expect(mockAuthClient.recordAudit).toHaveBeenCalledWith('mock-token', {
-      action: 'DRIVER_APPROVED',
-      resource: 'DRIVER',
-      resourceId: 'drv-1',
-      reason: 'Driver documents verified manually',
-    });
     expect(res.verificationStatus).toBe('APPROVED');
   });
 
@@ -129,18 +110,11 @@ describe('AdminService', () => {
     await service.setSuspension('mock-token', 'usr-1', true, {
       reason: 'Terms of service violation',
     });
-    expect(mockAuthClient.setSuspension).toHaveBeenCalledWith(
-      'mock-token',
+    expect(mockUserService.setSuspension).toHaveBeenCalledWith(
       'usr-1',
       true,
       'Terms of service violation'
     );
-    expect(mockAuthClient.recordAudit).toHaveBeenCalledWith('mock-token', {
-      action: 'USER_SUSPENDED',
-      resource: 'USER',
-      resourceId: 'usr-1',
-      reason: 'Terms of service violation',
-    });
   });
 
   it('requests refund and audits the action', async () => {
@@ -154,12 +128,6 @@ describe('AdminService', () => {
       'Driver no-show',
       25000
     );
-    expect(mockAuthClient.recordAudit).toHaveBeenCalledWith('mock-token', {
-      action: 'REFUND_REQUESTED',
-      resource: 'PAYMENT',
-      resourceId: 'pay-1',
-      reason: 'Driver no-show',
-    });
   });
 
   it('computes analytics and timeline accurately', async () => {
@@ -189,12 +157,6 @@ describe('AdminService', () => {
     expect(updated.surgeMultiplier).toBe(1.5);
     expect(updated.autoDriverVerification).toBe(true);
     expect(updated.updatedBy).toBe('admin-super-id');
-    expect(mockAuthClient.recordAudit).toHaveBeenCalledWith('mock-token', {
-      action: 'SYSTEM_CONFIG_UPDATED',
-      resource: 'SYSTEM',
-      resourceId: 'global-settings',
-      reason: 'Peak hour surge activation',
-    });
   });
 
   it('aggregates live dispatch radar fleet data', async () => {

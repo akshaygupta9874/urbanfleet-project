@@ -70,15 +70,13 @@ export class AuthController {
   });
 
   verifyOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { email, otp, roles, role } = req.body;
+    const { email, otp, roles } = req.body;
     const { userAgent, ipAddress } = extractClientMetadata(req);
 
     const requestedRoles: Role[] | undefined =
       Array.isArray(roles) && roles.length > 0
         ? (roles as Role[])
-        : role
-          ? [role as Role]
-          : undefined;
+        : undefined;
 
     const result = await this.authService.verifyLoginOtp({
       email,
@@ -103,7 +101,7 @@ export class AuthController {
   });
 
   googleAuth = asyncHandler(async (req: Request, res: Response) => {
-    const { credential, roles, role } = req.body;
+    const { credential, roles } = req.body;
     const { userAgent, ipAddress } = extractClientMetadata(req, {
       required: false,
     });
@@ -111,9 +109,7 @@ export class AuthController {
     const requestedRoles: Role[] | undefined =
       Array.isArray(roles) && roles.length > 0
         ? (roles as Role[])
-        : role
-          ? [role as Role]
-          : undefined;
+        : undefined;
 
     const result = await this.authService.googleAuth(
       credential,
@@ -197,10 +193,12 @@ export class AuthController {
   listSessions = asyncHandler(
     async (req: AuthenticatedRequest, res: Response) => {
       const userId = req.userId;
-      if (!userId) {
-        throw new UnauthorizedError("User unauthenticated");
-      }
       const currentSessionId = req.sessionId;
+      if (!userId || !currentSessionId) {
+        throw new UnauthorizedError(
+          "User unauthenticated or session not identified",
+        );
+      }
       const result = await this.authService.listActiveSessions(
         userId,
         currentSessionId,
@@ -251,7 +249,7 @@ export class AuthController {
   );
 
   changePassword = asyncHandler(
-    async (req: AuthenticatedRequest, res: Response) => {
+    async (req: any, res: Response) => {
       const { oldPassword, newPassword } = req.body;
       const userId = req.userId;
       if (!userId) {

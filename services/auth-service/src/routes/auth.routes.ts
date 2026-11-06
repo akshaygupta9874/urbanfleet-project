@@ -77,7 +77,6 @@ export function createAuthRouter(controller: AuthController): Router {
   }
   router.post('/verify-otp', otpLimiter, validateRequest({ body: verifyOtpSchema }), controller.verifyOtp);
   router.post('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
-  router.get('/verify/:token', validateRequest({ params: verifyTokenParamSchema }), controller.verifyEmail);
   // Refresh Token & Session Revocation (Canonical transport: HttpOnly Cookie)
   router.post('/refresh', controller.refreshToken);
   router.post('/logout', controller.logout);
@@ -100,7 +99,6 @@ export function createAuthRouter(controller: AuthController): Router {
   router.get('/me', authMiddleware, controller.getProfile);
   if (controller.getUserById) {
     router.get('/users/:id', requireSelfOrAdminOrInternalService, controller.getUserById);
-    router.get('/internal/users/:id', requireAdminOrInternalService, controller.getUserById);
   }
   if (controller.changePassword) {
     router.post('/change-password', authMiddleware, passwordChangeLimiter, verifyCsrfToken, validateRequest({ body: changePasswordSchema }), controller.changePassword);

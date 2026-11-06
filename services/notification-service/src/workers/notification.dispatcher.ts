@@ -1,6 +1,6 @@
 import { NotificationRepository } from '../repositories/notification.repository.js';
 import { createLogger } from '@urbanfleet/common';
-import { sendSendGridEmail } from '../config/sendgrid.config.js';
+import { sendMail } from '../config/mail.config.js';
 import {
   getOtpHtml,
   getVerifyEmailHtml,
@@ -74,18 +74,18 @@ export class NotificationDispatcher {
               html = `<p>${payload.message || 'You have a new update on your UrbanFleet account.'}</p>`;
             }
 
-            const response = await sendSendGridEmail({
+            const response = await sendMail({
               to: item.recipient,
               subject,
               html,
             });
 
-            const responseHeaders = (response && 'headers' in response && response.headers)
-              ? (response.headers as Record<string, unknown>)
-              : {};
-            const rawHeader = responseHeaders['x-message-id'];
-            const messageId = typeof rawHeader === 'string' ? rawHeader : `sg_${item.id}`;
-            logger.info(`Dispatched notification ${item.id} [${item.template}] to ${item.recipient} via SendGrid (${messageId})`);
+
+
+
+
+            const messageId = response.messageId || `mail_${item.id}`;
+            logger.info(`Dispatched notification ${item.id} [${item.template}] to ${item.recipient} via Nodemailer (${messageId})`);
             await this.notifRepo.markDispatched(item.id, messageId);
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);

@@ -15,7 +15,10 @@ export class InternalHttpClient {
     });
   }
 
-  protected async request<T = unknown>(bearer: string | undefined, reqConfig: AxiosRequestConfig): Promise<{ data: T }> {
+  protected async request<T = unknown>(
+    bearer: string | undefined,
+    reqConfig: AxiosRequestConfig
+  ): Promise<{ data: T }> {
     return this.client.request<T>({
       ...reqConfig,
       headers: {

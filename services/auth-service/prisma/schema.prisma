@@ -75,6 +75,7 @@ model Session {
   createdAt    DateTime  @default(now()) @map("created_at")
 
   @@index([userId])
+  @@index([expiresAt])
   @@map("sessions")
 }
 

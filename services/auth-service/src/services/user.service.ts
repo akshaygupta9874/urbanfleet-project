@@ -1,4 +1,4 @@
-import { UserRepository } from '../repositories/user.repository.js';
+import { UserRepository, type ListUsersParams, type ListUsersResult } from '../repositories/user.repository.js';
 import { SessionRepository } from '../repositories/session.repository.js';
 import { NotFoundError } from '@urbanfleet/common';
 import { User } from '../db/client.js';
@@ -59,8 +59,8 @@ export class UserService {
     return { success: true };
   }
 
-  async listUsers(params: { page: number; limit: number; search?: string; role?: 'RIDER' | 'DRIVER' | 'ADMIN' }) {
-    return this.userRepo.list(params as Parameters<UserRepository['list']>[0]);
+  async listUsers(params: ListUsersParams): Promise<ListUsersResult> {
+    return this.userRepo.list(params);
   }
 
   async setSuspension(id: string, suspended: boolean, reason?: string) {
@@ -70,15 +70,16 @@ export class UserService {
         await this.sessionRepo.deleteByUserId(id).catch(() => {});
       }
       await revokeCachedTokens(id).catch(() => {});
+    } else {
+      await cacheUser({
+        id: updated.id,
+        email: updated.email,
+        roles: updated.roles,
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        isSuspended: false,
+      });
     }
-    await cacheUser({
-      id: updated.id,
-      email: updated.email,
-      roles: updated.roles,
-      firstName: updated.firstName,
-      lastName: updated.lastName,
-      isSuspended: updated.isSuspended,
-    });
     return sanitizeUser(updated);
   }
 }

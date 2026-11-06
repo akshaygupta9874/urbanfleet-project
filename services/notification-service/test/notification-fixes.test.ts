@@ -246,12 +246,12 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
         retryCount: 4,
       });
 
-      await repo.recordFailure('notif-retry-1', 'SendGrid rate limit exceeded');
+      await repo.recordFailure('notif-retry-1', 'SMTP connection timeout');
 
       const updated = stagedNotifications.find((n) => n.id === 'notif-retry-1');
       expect(updated.retryCount).toBe(5);
       expect(updated.status).toBe('FAILED');
-      expect(updated.lastError).toBe('SendGrid rate limit exceeded');
+      expect(updated.lastError).toBe('SMTP connection timeout');
     });
   });
 
@@ -300,6 +300,7 @@ describe('Notification Service End-to-End Fixes & Integration Suite', () => {
           email,
           firstName: 'Test',
           lastName: 'User',
+          roles: [role],
           role,
           isEmailVerified: true,
         };

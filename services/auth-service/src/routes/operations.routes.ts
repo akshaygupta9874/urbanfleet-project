@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import { requireAdmin } from '../middlewares/auth.middleware.js';
-import { adminController, AdminController } from '../controllers/admin.controller.js';
+import { authMiddleware, requireRole } from '../middlewares/auth.middleware.js';
+import { AdminController } from '../controllers/admin.controller.js';
 
-export function createAdminRouter(controller: AdminController = adminController): Router {
+export function createAdminRouter(controller: AdminController): Router {
   const router = Router();
 
   // All endpoints require verified administrator authentication
-  router.use(requireAdmin);
+  router.use(authMiddleware, requireRole('ADMIN'));
 
   // Overview metrics & real-time analytics
   router.get('/overview', controller.getOverview);

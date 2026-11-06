@@ -1,4 +1,4 @@
-import { APP_NAME, FRONTEND_URL, sendSendGridEmail } from "../config/sendgrid.config.js";
+import { APP_NAME, FRONTEND_URL, sendMail } from "../config/mail.config.js";
 
 interface OtpEmailParams {
   email: string;
@@ -173,7 +173,7 @@ export const getResetPasswordHtml = ({ email, token }: ResetPasswordEmailParams)
 };
 
 export const sendOtpEmail = async (params: OtpEmailParams) => {
-  return sendSendGridEmail({
+  return sendMail({
     to: params.email,
     subject: `${params.otp} is your ${APP_NAME} verification code`,
     html: getOtpHtml(params),
@@ -181,7 +181,7 @@ export const sendOtpEmail = async (params: OtpEmailParams) => {
 };
 
 export const sendVerifyEmail = async (params: VerifyEmailParams) => {
-  return sendSendGridEmail({
+  return sendMail({
     to: params.email,
     subject: `Verify your ${APP_NAME} account`,
     html: getVerifyEmailHtml(params),
@@ -189,7 +189,7 @@ export const sendVerifyEmail = async (params: VerifyEmailParams) => {
 };
 
 export const sendResetPasswordEmail = async (params: ResetPasswordEmailParams) => {
-  return sendSendGridEmail({
+  return sendMail({
     to: params.email,
     subject: `Reset your ${APP_NAME} password`,
     html: getResetPasswordHtml(params),

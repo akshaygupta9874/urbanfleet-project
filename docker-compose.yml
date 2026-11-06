@@ -1,7 +1,7 @@
 networks:
   urbanfleet_internal:
     driver: bridge
-    internal: false # Permits outbound container requests (Razorpay, SendGrid)
+    internal: false # Permits outbound container requests (Razorpay, SMTP)
 
 services:
   # ========================================================
@@ -105,8 +105,6 @@ services:
       payment-service:
         condition: service_healthy
       notification-service:
-        condition: service_healthy
-      admin-service:
         condition: service_healthy
       frontend:
         condition: service_healthy
@@ -286,8 +284,13 @@ services:
       AUTH_SERVICE_URL: "http://auth-service:4001"
       JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:-}
       FRONTEND_URL: ${FRONTEND_URL:-https://urbanfleet.duckdns.org}
-      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
-      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-no-reply@urbanfleet.com}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM:-"UrbanFleet" <akshaygupta9874@gmail.com>}
+
       NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
     volumes:
       - ./scripts/wait-for-dependencies.cjs:/app/scripts/wait-for-dependencies.cjs:ro
@@ -304,37 +307,6 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-
-  admin-service:
-    build:
-      context: .
-      dockerfile: services/admin-service/Dockerfile
-    container_name: urbanfleet-admin-service
-    restart: always
-    expose:
-      - "4006"
-    environment:
-      NODE_ENV: production
-      PORT: 4006
-      AUTH_SERVICE_URL: "http://auth-service:4001"
-      DRIVER_SERVICE_URL: "http://driver-service:4002"
-      RIDE_SERVICE_URL: "http://ride-service:4004"
-      PAYMENT_SERVICE_URL: "http://payment-service:4005"
-      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-urbanfleet-internal-service-secret}
-      JWT_PUBLIC_KEY_BASE64: ${JWT_PUBLIC_KEY_BASE64:?Set JWT_PUBLIC_KEY_BASE64 in .env}
-      FRONTEND_URL: ${FRONTEND_URL:-https://urbanfleet.duckdns.org}
-    depends_on:
-      auth-service:
-        condition: service_healthy
-    networks:
-      - urbanfleet_internal
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4006/v1/admin/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   # ========================================================
   # 4. FRONTEND

@@ -70,6 +70,24 @@ describe('Redis Token Caching for Fast Access', () => {
     expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:access:usr-100'));
     expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:refresh:usr-100'));
     expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:refresh:usr-100:sess-1'));
+    expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:access:usr-100:sess-1'));
+
+    delSpy.mockRestore();
+  });
+
+  it('revokes all cached tokens and session keys for user when sessionId is omitted', async () => {
+    vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    const delSpy = vi.spyOn(authRedisClient, 'del').mockResolvedValue(1 as any);
+    vi.spyOn(authRedisClient, 'sMembers').mockResolvedValue(['sess-a', 'sess-b'] as any);
+
+    await revokeCachedTokens('usr-100');
+
+    expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:access:usr-100'));
+    expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:refresh:usr-100'));
+    expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:refresh:usr-100:sess-a'));
+    expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:refresh:usr-100:sess-b'));
+    expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:access:usr-100:sess-a'));
+    expect(delSpy).toHaveBeenCalledWith(authRedisKey('token:access:usr-100:sess-b'));
 
     delSpy.mockRestore();
   });

@@ -125,8 +125,8 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       const req: any = {
         params: { id: 'doc-2' },
         body: { status: 'REJECTED', rejectionReason: 'Blurry photo' },
-        user: { id: 'verifier-1', role: 'VERIFIER' },
-        role: 'VERIFIER',
+        user: { id: 'verifier-1', roles: ['VERIFIER'] },
+        roles: ['VERIFIER'],
         headers: {},
       };
       const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };

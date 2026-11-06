@@ -881,7 +881,9 @@ export default function DriverDashboard() {
             if (user?.id) {
               try {
                 localStorage.setItem(`urbanfleet_driver_available_${user.id}`, "true");
-              } catch {}
+              } catch (err) {
+                console.warn("Failed to save driver availability to localStorage:", err);
+              }
             }
           }
         }
@@ -1082,7 +1084,9 @@ export default function DriverDashboard() {
                       `urbanfleet_driver_available_${user.id}`,
                       data.status === "AVAILABLE" ? "true" : "false"
                     );
-                  } catch {}
+                  } catch (err) {
+                console.warn("Failed to save driver availability to localStorage:", err);
+              }
                 }
               }
             }
@@ -1200,7 +1204,7 @@ export default function DriverDashboard() {
       hasEmittedOnlineRef.current = false;
       driverSocket.close();
     };
-  }, [applyCompletedRideStats, profile]);
+  }, [applyCompletedRideStats, loadDriverHistory, loadDriverRatings, profile, syncWalletBalance, user?.id]);
 
   const currentRideStatus = currentRide?.status;
 
@@ -1300,7 +1304,9 @@ export default function DriverDashboard() {
           `urbanfleet_driver_available_${user.id}`,
           nextIsAvailable ? "true" : "false"
         );
-      } catch {}
+      } catch (err) {
+        console.warn("Failed to set driver availability in localStorage:", err);
+      }
     }
 
     // 3. Persist in driver-service database
@@ -1313,7 +1319,9 @@ export default function DriverDashboard() {
         .catch((err) => {
           console.warn("Could not persist driver availability to API:", err);
         });
-    } catch {}
+    } catch (err) {
+      console.warn("Failed to dispatch driver availability request:", err);
+    }
 
     // 4. Send socket event to ride-service
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {

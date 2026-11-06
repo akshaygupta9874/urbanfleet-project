@@ -100,7 +100,7 @@ export function AdminFleetRadarTab({ onSelectRide }: AdminFleetRadarTabProps) {
       markersLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
     }
-  }, []);
+  }, [selectedCity.lat, selectedCity.lng, selectedCity.zoom]);
 
   // Update map center when city changes
   useEffect(() => {

@@ -3,6 +3,7 @@ import http from 'node:http';
 import express from 'express';
 import { createAuthRouter } from '../src/routes/auth.routes.js';
 import { signAccessToken } from '../src/crypto/keys.js';
+import { authRedisClient } from '../src/redis/client.js';
 
 describe('Auth Service Validation & Route Flow Integration Suite', () => {
   let app: express.Express;
@@ -62,6 +63,27 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
     app = express();
     app.use(express.json());
     app.use('/v1/auth', createAuthRouter(mockAuthController));
+    app.use((err: any, _req: any, res: any, _next: any) => {
+      res.status(err.statusCode || 500).json({ success: false, code: err.code || 'INTERNAL_ERROR', message: err.message });
+    });
+
+    vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(authRedisClient, 'get').mockImplementation(async (key: string) => {
+      if (key.includes('session:')) {
+        return JSON.stringify({ userId: 'usr-1' });
+      }
+      if (key.includes('user:')) {
+        return JSON.stringify({
+          id: 'usr-1',
+          email: 'test@example.com',
+          roles: ['RIDER'],
+          firstName: 'Test',
+          lastName: 'User',
+        });
+      }
+      return null;
+    });
+    vi.spyOn(authRedisClient, 'sMembers').mockResolvedValue(['sess-flow-1'] as any);
 
     server = http.createServer(app);
     await new Promise<void>((resolve) => {
@@ -137,6 +159,23 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
       expect(body.errors.firstName).toBeDefined();
     });
 
+    it('rejects registration when roles is missing from request body', async () => {
+      const res = await fetch(`${baseUrl}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'john.doe@example.com',
+          password: 'Password123!',
+          firstName: 'John',
+          lastName: 'Doe',
+        }),
+      });
+
+      const body = await res.json() as any;
+      expect(res.status).toBe(422);
+      expect(body.errors.roles).toBeDefined();
+    });
+
     it('accepts registration without userAgent or ipAddress in request body', async () => {
       const res = await fetch(`${baseUrl}/register`, {
         method: 'POST',
@@ -146,6 +185,7 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
           password: 'Password123!',
           firstName: 'John',
           lastName: 'Doe',
+          roles: ['RIDER'],
         }),
       });
 
@@ -272,7 +312,7 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
     });
 
     it('fetches authenticated user profile when Bearer token is provided', async () => {
-      const validToken = signAccessToken({ userId: 'usr-1', email: 'test@example.com', firstName: 'Test', lastName: 'User', roles: ['RIDER'] });
+      const validToken = signAccessToken({ userId: 'usr-1', email: 'test@example.com', firstName: 'Test', lastName: 'User', roles: ['RIDER'], sessionId: 'sess-flow-1' });
       const res = await fetch(`${baseUrl}/me`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${validToken}` },

@@ -1,8 +1,8 @@
-import { type Response } from 'express';
+import { type Request, type Response } from 'express';
 import axios from 'axios';
 import { ZodError } from 'zod';
-import { type AdminRequest } from '../middlewares/auth.middleware.js';
-import { adminService, AdminService } from '../services/admin.service.js';
+import { type AuthenticatedRequest } from '../middlewares/auth.middleware.js';
+import { AdminService } from '../services/admin.service.js';
 import {
   analyticsQuerySchema,
   driverVerificationSchema,
@@ -12,6 +12,8 @@ import {
   systemSettingsSchema,
   userSuspensionSchema,
 } from '../validation/admin.validation.js';
+
+type AdminRequest = Request & Partial<Pick<AuthenticatedRequest, 'userId' | 'bearer' | 'roles'>>;
 
 function handleControllerError(error: unknown, res: Response) {
   if (error instanceof ZodError) {
@@ -34,7 +36,7 @@ function handleControllerError(error: unknown, res: Response) {
 }
 
 export class AdminController {
-  constructor(private readonly service: AdminService = adminService) {}
+  constructor(private readonly service: AdminService) {}
 
   getOverview = async (req: AdminRequest, res: Response) => {
     try {
@@ -68,7 +70,7 @@ export class AdminController {
   revokeSession = async (req: AdminRequest, res: Response) => {
     try {
       const { id } = idParamSchema.parse(req.params);
-      const result = await this.service.revokeSession(req.bearer, id);
+      const result = await this.service.revokeSession(req.bearer, id, req.userId);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -78,7 +80,7 @@ export class AdminController {
   setSuspension = async (req: AdminRequest, res: Response) => {
     try {
       const { id } = idParamSchema.parse(req.params);
-      if (req.adminUserId && req.adminUserId === id) {
+      if (req.userId === id) {
         return res.status(400).json({
           success: false,
           message: 'Administrators cannot suspend their own account',
@@ -86,7 +88,7 @@ export class AdminController {
       }
       const suspended = req.query.suspended === 'true';
       const input = userSuspensionSchema.parse(req.body);
-      const result = await this.service.setSuspension(req.bearer, id, suspended, input);
+      const result = await this.service.setSuspension(req.bearer, id, suspended, input, req.userId);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -107,7 +109,7 @@ export class AdminController {
     try {
       const { id } = idParamSchema.parse(req.params);
       const input = driverVerificationSchema.parse(req.body);
-      const result = await this.service.verifyDriver(req.bearer, id, input);
+      const result = await this.service.verifyDriver(req.bearer, id, input, req.userId);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -139,7 +141,7 @@ export class AdminController {
       const { id } = idParamSchema.parse(req.params);
       const input = refundRequestSchema.parse(req.body);
       const idempotencyKey = (req.headers['idempotency-key'] as string) || undefined;
-      const result = await this.service.refundPayment(req.bearer, id, input, idempotencyKey);
+      const result = await this.service.refundPayment(req.bearer, id, input, idempotencyKey, req.userId);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -187,7 +189,7 @@ export class AdminController {
   updateSettings = async (req: AdminRequest, res: Response) => {
     try {
       const input = systemSettingsSchema.parse(req.body);
-      const data = await this.service.updateSettings(req.bearer, input, req.adminUserId);
+      const data = await this.service.updateSettings(req.bearer, input, req.userId);
       res.json({ success: true, data });
     } catch (error) {
       handleControllerError(error, res);
@@ -203,5 +205,3 @@ export class AdminController {
     }
   };
 }
-
-export const adminController = new AdminController();

@@ -19,6 +19,7 @@ export async function cacheTokens(
     if (authRedisClient && authRedisClient.isOpen) {
       await Promise.all([
         authRedisClient.setEx(authRedisKey(`token:access:${userId}`), ACCESS_TOKEN_TTL_SECONDS, accessToken),
+        authRedisClient.setEx(authRedisKey(`token:access:${userId}:${sessionId}`), ACCESS_TOKEN_TTL_SECONDS, accessToken),
         authRedisClient.setEx(authRedisKey(`token:refresh:${userId}`), REFRESH_TOKEN_TTL_SECONDS, refreshToken),
         authRedisClient.setEx(authRedisKey(`token:refresh:${userId}:${sessionId}`), REFRESH_TOKEN_TTL_SECONDS, refreshToken),
         cacheSession(userId, sessionId),
@@ -133,6 +134,9 @@ export interface CachedUser {
  * Stores user profile in Redis under auth:user:${userId} with 15-minute TTL.
  */
 export async function cacheUser(user: CachedUser): Promise<void> {
+  if (user?.isSuspended) {
+    return;
+  }
   try {
     if (authRedisClient && authRedisClient.isOpen && user?.id) {
       const userStr = JSON.stringify(user);
@@ -206,20 +210,25 @@ export async function getCachedRefreshToken(userId: string, sessionId?: string):
 }
 
 /**
- * Evicts cached tokens and active sessions from Redis during logout or token rotation.
+ * Evicts cached tokens and active sessions from Redis during logout, token rotation, or version mismatch.
  */
 export async function revokeCachedTokens(userId: string, sessionId?: string): Promise<void> {
   try {
     if (authRedisClient && authRedisClient.isOpen) {
-      const keysToDelete = [
+      const keysToDelete: string[] = [
         authRedisKey(`token:access:${userId}`),
+        `token:access:${userId}`,
         authRedisKey(`token:refresh:${userId}`),
+        `token:refresh:${userId}`,
         authRedisKey(`user:${userId}`),
         `user:${userId}`,
       ];
       if (sessionId) {
         keysToDelete.push(
+          authRedisKey(`token:access:${userId}:${sessionId}`),
+          `token:access:${userId}:${sessionId}`,
           authRedisKey(`token:refresh:${userId}:${sessionId}`),
+          `token:refresh:${userId}:${sessionId}`,
           authRedisKey(`session:${sessionId}`),
           `session:${sessionId}`
         );
@@ -228,9 +237,23 @@ export async function revokeCachedTokens(userId: string, sessionId?: string): Pr
           typeof authRedisClient.sRem === 'function' ? authRedisClient.sRem(`user-sessions:${userId}`, sessionId).catch(() => {}) : Promise.resolve(),
         ]);
       } else {
-        const sessions = typeof authRedisClient.sMembers === 'function' ? await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)).catch(() => []) : [];
+        let sessions: string[] = [];
+        if (typeof authRedisClient.sMembers === 'function') {
+          const [prefixedSessions, rawSessions] = await Promise.all([
+            authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)).catch(() => []),
+            authRedisClient.sMembers(`user-sessions:${userId}`).catch(() => []),
+          ]);
+          sessions = Array.from(new Set([...(prefixedSessions || []), ...(rawSessions || [])]));
+        }
         for (const s of sessions) {
-          keysToDelete.push(authRedisKey(`session:${s}`), `session:${s}`);
+          keysToDelete.push(
+            authRedisKey(`session:${s}`),
+            `session:${s}`,
+            authRedisKey(`token:refresh:${userId}:${s}`),
+            `token:refresh:${userId}:${s}`,
+            authRedisKey(`token:access:${userId}:${s}`),
+            `token:access:${userId}:${s}`
+          );
         }
         keysToDelete.push(authRedisKey(`user-sessions:${userId}`), `user-sessions:${userId}`);
       }
@@ -243,6 +266,13 @@ export async function revokeCachedTokens(userId: string, sessionId?: string): Pr
       sessionId,
     });
   }
+}
+
+/**
+ * Evicts all cached tokens (both access tokens and refresh tokens) and all sessions for a user from Redis.
+ */
+export async function revokeAllUserTokens(userId: string): Promise<void> {
+  await revokeCachedTokens(userId);
 }
 
 /**

@@ -64,7 +64,7 @@ export class OutboxRepository {
             locked_by = ${workerId},
             lease_expires_at = NOW() + INTERVAL '30 seconds'
         WHERE id IN (SELECT id FROM eligible_events)
-        RETURNING id, topic, partition_key, event_type, aggregate_type, aggregate_id, aggregate_sequence, payload, status, retry_count, last_error, locked_at, locked_by, lease_expires_at, published_at, created_at;
+        RETURNING id, topic, partition_key AS "partitionKey", event_type AS "eventType", aggregate_type AS "aggregateType", aggregate_id AS "aggregateId", aggregate_sequence AS "aggregateSequence", payload, status, retry_count AS "retryCount", last_error AS "lastError", locked_at AS "lockedAt", locked_by AS "lockedBy", lease_expires_at AS "leaseExpiresAt", published_at AS "publishedAt", created_at AS "createdAt";
       `;
       return rows || [];
     } catch (err) {

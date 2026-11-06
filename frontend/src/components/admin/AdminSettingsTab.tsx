@@ -44,8 +44,9 @@ export function AdminSettingsTab({ onNotify }: AdminSettingsTabProps) {
       const data = await adminApi.getSettings();
       setSettings(data);
       setInitialSettings(data);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to fetch system policies');
+    } catch (err: unknown) {
+      const errObj = err as { response?: { data?: { message?: string } }; message?: string };
+      setError(errObj?.response?.data?.message || errObj?.message || 'Failed to fetch system policies');
     } finally {
       setLoading(false);
     }
@@ -79,8 +80,9 @@ export function AdminSettingsTab({ onNotify }: AdminSettingsTabProps) {
       setConfirmModalOpen(false);
       setJustification('');
       if (onNotify) onNotify('System settings and dispatch policies updated successfully', 'success');
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to apply system policy update');
+    } catch (err: unknown) {
+      const errObj = err as { response?: { data?: { message?: string } }; message?: string };
+      setError(errObj?.response?.data?.message || errObj?.message || 'Failed to apply system policy update');
       if (onNotify) onNotify('Failed to apply system policies', 'error');
     } finally {
       setSaving(false);

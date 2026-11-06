@@ -1,17 +1,39 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { authMiddleware } from '../src/middlewares/auth.middleware.js';
-import { signAccessToken } from '../src/crypto/keys.js';
+import { signAccessToken, signRefreshToken } from '../src/crypto/keys.js';
+import { authRedisClient } from '../src/redis/client.js';
 
 describe('RS256 Asymmetric JWT Verification in authMiddleware', () => {
-  it('should authenticate a valid RS256 token with pinned issuer and audience', async () => {
+  beforeEach(() => {
+    vi.spyOn(authRedisClient, 'isOpen', 'get').mockReturnValue(true);
+    vi.spyOn(authRedisClient, 'get').mockImplementation(async (key: string) => {
+      if (key.includes('session:')) {
+        return JSON.stringify({ userId: 'u-1' });
+      }
+      if (key.includes('user:')) {
+        return JSON.stringify({
+          id: 'u-1',
+          email: 'test@example.com',
+          roles: ['RIDER'],
+          firstName: 'Test',
+          lastName: 'User',
+        });
+      }
+      return null;
+    });
+    vi.spyOn(authRedisClient, 'sMembers').mockResolvedValue(['sess-jwt-1'] as any);
+  });
+
+  it('should authenticate a valid RS256 token with pinned issuer, audience, and sessionId', async () => {
     const token = signAccessToken({
       userId: 'u-1',
       email: 'test@example.com',
       firstName: 'Test',
       lastName: 'User',
       roles: ['RIDER'],
+      sessionId: 'sess-jwt-1',
     });
 
     const req: any = { headers: { authorization: `Bearer ${token}` } };
@@ -20,10 +42,15 @@ describe('RS256 Asymmetric JWT Verification in authMiddleware', () => {
       json: vi.fn().mockReturnThis(),
     };
     let nextCalled = false;
+    let nextErr: any;
 
-    await authMiddleware(req, res, () => {
+    await authMiddleware(req, res, ((err: any) => {
       nextCalled = true;
-    });
+      nextErr = err;
+    }) as any);
+
+    if (nextErr) console.error('AUTH_MIDDLEWARE_ERR:', nextErr);
+    expect(nextErr).toBeUndefined();
 
     expect(nextCalled).toBe(true);
     expect(req.user.userId).toBe('u-1');
@@ -49,10 +76,15 @@ describe('RS256 Asymmetric JWT Verification in authMiddleware', () => {
       json: vi.fn().mockReturnThis(),
     };
     let nextCalled = false;
+    let nextErr: any;
 
-    await authMiddleware(req, res, () => {
+    await authMiddleware(req, res, ((err: any) => {
       nextCalled = true;
-    });
+      nextErr = err;
+    }) as any);
+
+    if (nextErr) console.error('AUTH_MIDDLEWARE_ERR:', nextErr);
+    expect(nextErr).toBeUndefined();
 
     expect(nextCalled).toBe(false);
     expect(res.status).toHaveBeenCalledWith(401);
@@ -78,10 +110,15 @@ describe('RS256 Asymmetric JWT Verification in authMiddleware', () => {
       json: vi.fn().mockReturnThis(),
     };
     let nextCalled = false;
+    let nextErr: any;
 
-    await authMiddleware(req, res, () => {
+    await authMiddleware(req, res, ((err: any) => {
       nextCalled = true;
-    });
+      nextErr = err;
+    }) as any);
+
+    if (nextErr) console.error('AUTH_MIDDLEWARE_ERR:', nextErr);
+    expect(nextErr).toBeUndefined();
 
     expect(nextCalled).toBe(false);
     expect(res.status).toHaveBeenCalledWith(401);
@@ -91,5 +128,37 @@ describe('RS256 Asymmetric JWT Verification in authMiddleware', () => {
         code: 'TOKEN_EXPIRED',
       })
     );
+  });
+
+  it('should require sessionId as compulsory when signing access token', () => {
+    expect(() =>
+      signAccessToken({
+        userId: 'u-test',
+        email: 'test@example.com',
+        firstName: 'Test',
+        lastName: 'User',
+        roles: ['RIDER'],
+        sessionId: '',
+      } as any)
+    ).toThrow(/sessionId is compulsory/);
+  });
+
+  it('should require sessionId as compulsory when signing refresh token', () => {
+    expect(() =>
+      signRefreshToken({
+        userId: 'u-test',
+        sessionId: '',
+        sessionVersion: 1,
+      } as any)
+    ).toThrow(/sessionId is compulsory/);
+  });
+
+  it('should require sessionVersion as compulsory when signing refresh token', () => {
+    expect(() =>
+      signRefreshToken({
+        userId: 'u-test',
+        sessionId: 'sess-1',
+      } as any)
+    ).toThrow(/sessionVersion is compulsory/);
   });
 });

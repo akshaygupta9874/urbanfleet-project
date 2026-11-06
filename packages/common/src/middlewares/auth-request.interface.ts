@@ -11,19 +11,14 @@ export interface AuthUser {
 }
 
 export interface AuthenticatedRequest extends Request {
-  userId?: string;
-  roles?: string[];
-  role?: string[];
+  userId: string;
+  roles: string[];
   driverId?: string;
-  sessionId?: string;
-  user?: AuthUser;
+  sessionId: string;
+  user: AuthUser;
   cookies: Record<string, string | undefined>;
 }
 
 export function getAuthenticatedUserId(req: AuthenticatedRequest): string {
-  const userId = req.userId;
-  if (!userId) {
-    throw new AppError('Unauthorized: User identity not found on request', 401, 'UNAUTHORIZED');
-  }
-  return userId;
+  return req.userId;
 }

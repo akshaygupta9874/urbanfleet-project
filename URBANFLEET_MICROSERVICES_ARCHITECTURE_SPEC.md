@@ -363,8 +363,8 @@ export class RideSocketClient {
 
 #### The Problem:
 Labeling `notification-service` as stateless and relying on a 24-hour Redis key for deduplication fails distributed systems reliability:
-- If the worker marks the Redis key before transmitting to SendGrid and crashes, the email is permanently lost.
-- If the worker transmits to SendGrid and crashes before marking the Redis key, redelivery duplicates the email.
+- If the worker marks the Redis key before transmitting to Nodemailer (SMTP) and crashes, the email is permanently lost.
+- If the worker transmits to Nodemailer (SMTP) and crashes before marking the Redis key, redelivery duplicates the email.
 - Redis key evictions or restarts lose deduplication state completely.
 
 #### The Complete Solution:
@@ -410,7 +410,7 @@ Labeling `notification-service` as stateless and relying on a 24-hour Redis key 
    }
    ```
 3. **External Provider Idempotency & Failure Trade-Off:**
-   A background dispatch worker queries `PENDING` notifications, attaches SendGrid's idempotency header (`X-Entity-ID: notification.idempotencyKey`), and updates the status to `DISPATCHED` upon a `200/202` response. If SendGrid returns a `5xx`, exponential backoff retries up to 5 times before transitioning the record to `FAILED`.
+   A background dispatch worker queries `PENDING` notifications, attaches Nodemailer (SMTP)'s idempotency header (`X-Entity-ID: notification.idempotencyKey`), and updates the status to `DISPATCHED` upon a `200/202` response. If Nodemailer (SMTP) returns a `5xx`, exponential backoff retries up to 5 times before transitioning the record to `FAILED`.
 
 ---
 
@@ -819,7 +819,7 @@ UrbanFleet/
 │   │   ├── prisma/schema.prisma              # urbanfleet_payment (includes OutboxEvent & Refund)
 │   │   └── src/
 │   │
-│   └── notification-service/                 # Durable inbox, SendGrid worker
+│   └── notification-service/                 # Durable inbox, Nodemailer (SMTP) worker
 │       ├── Dockerfile
 │       ├── package.json
 │       ├── prisma/schema.prisma              # urbanfleet_notification (Durable Inbox)
@@ -1537,7 +1537,7 @@ version: "3.9"
 networks:
   urbanfleet_internal:
     driver: bridge
-    internal: false # Permits outbound container requests (e.g. Razorpay, SendGrid)
+    internal: false # Permits outbound container requests (e.g. Razorpay, Nodemailer (SMTP))
 
 services:
   # ========================================================
@@ -1729,7 +1729,7 @@ services:
     environment:
       DATABASE_URL: "postgresql://notification_user:${NOTIFICATION_DB_PASSWORD:-notif_pass_local}@postgres:5432/urbanfleet_notification?schema=public"
       KAFKA_BROKERS: "kafka:29092"
-      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      Nodemailer (SMTP)_API_KEY: ${Nodemailer (SMTP)_API_KEY}
     networks:
       - urbanfleet_internal
     depends_on:
@@ -1797,6 +1797,6 @@ To avoid the anti-pattern of launching 5 microservices, Kafka, Redis Pub/Sub, an
 
 ### 🎯 Stage 5: Hardening, Observability & Chaos Recovery
 * Enable Kong `correlation-id` plugin and verify `X-Request-ID` propagation across HTTP headers and Kafka event headers.
-* Deploy durable `notification-service` inbox worker with SendGrid idempotency keys.
+* Deploy durable `notification-service` inbox worker with Nodemailer (SMTP) idempotency keys.
 * Implement nightly reconciliation sweeps comparing PostgreSQL ledger entries with Razorpay settlement reports.
 * **Failure Verification Test:** Execute chaos test: simulate network partitions between Kafka and microservices during peak ride completions; verify that outbox events queue safely in PostgreSQL and flush cleanly upon partition resolution without financial drift.
