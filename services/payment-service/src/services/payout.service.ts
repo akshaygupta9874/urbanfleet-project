@@ -344,8 +344,11 @@ export class PayoutService {
         if (byUser?.id) ids.add(byUser.id);
         const byId = await driverClient.getDriverById(driverId);
         if (byId?.userId) ids.add(byId.userId);
-      } catch {
-        // Continue with available ID
+      } catch (err: unknown) {
+        paymentLog.warn("payout.resolve_driver_ids_failed", {
+          driverId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

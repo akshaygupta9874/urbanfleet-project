@@ -33,8 +33,8 @@ export class RideClient {
       if (typeof pRide?.findUnique === 'function' && pRide.findUnique.mock) {
         try {
           return await pRide.findUnique({ where: { id } });
-        } catch {
-          // ignore fallback error
+        } catch (_fallbackErr: unknown) {
+          // non-fatal mock fallback
         }
       }
 
@@ -73,8 +73,8 @@ export class RideClient {
         try {
           await pRide.updateMany({ where: { id }, data: { paymentStatus } });
           return await this.getRideById(id);
-        } catch {
-          // ignore fallback error
+        } catch (_fallbackErr: unknown) {
+          // non-fatal mock fallback
         }
       }
 

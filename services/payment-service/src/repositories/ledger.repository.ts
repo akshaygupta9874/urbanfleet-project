@@ -1,4 +1,4 @@
-import { prisma, type Prisma } from '../db/client.js';
+import { prisma, LedgerEntry, type Prisma } from '../db/client.js';
 import { ClientSession } from "../types/database.types.js";
 import { ILedgerEntry } from "../types/payment.models.js";
 import {
@@ -35,23 +35,24 @@ export interface UnbalancedTransaction {
     creditPaise: Paise;
 }
 
-function formatLedgerEntry(row: Record<string, unknown>): ILedgerEntry {
+function formatLedgerEntry(row: LedgerEntry | Record<string, unknown>): ILedgerEntry {
+    const raw = row as Record<string, unknown>;
     return {
-        id: String(row.id),
-        transactionId: String(row.transactionId),
-        account: row.account as LedgerAccount,
-        ownerId: (row.ownerId as string | null) ?? null,
-        entryType: row.entryType as LedgerEntryType,
-        amountPaise: Number(row.amountPaise),
-        currency: (row.currency as CurrencyType) || "INR",
-        referenceType: row.referenceType as LedgerReferenceType,
-        referenceId: (row.referenceId as string | null) ?? null,
-        idempotencyKey: (row.idempotencyKey as string | undefined) ?? undefined,
-        legIndex: (row.legIndex as number | undefined) ?? undefined,
-        description: (row.description as string | undefined) ?? "",
-        metadata: (row.metadata as Record<string, unknown>) ?? {},
-        createdAt: row.createdAt as Date,
-    } as unknown as ILedgerEntry;
+        id: String(raw.id),
+        transactionId: String(raw.transactionId),
+        account: raw.account as LedgerAccount,
+        ownerId: (raw.ownerId as string | undefined) ?? undefined,
+        entryType: raw.entryType as LedgerEntryType,
+        amountPaise: Number(raw.amountPaise),
+        currency: (raw.currency as CurrencyType) || "INR",
+        referenceType: raw.referenceType as LedgerReferenceType,
+        referenceId: String(raw.referenceId || ""),
+        idempotencyKey: (raw.idempotencyKey as string | undefined) ?? undefined,
+        legIndex: (raw.legIndex as number | undefined) ?? undefined,
+        description: (raw.description as string | undefined) ?? "",
+        metadata: (raw.metadata as Record<string, unknown>) ?? {},
+        createdAt: raw.createdAt as Date,
+    };
 }
 
 class LedgerRepository {

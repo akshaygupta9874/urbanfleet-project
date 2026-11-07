@@ -1,6 +1,25 @@
-import { DriverRepository } from '../repositories/driver.repository.js';
+import {
+  DriverRepository,
+  CreateFullProfileInput,
+  ListDriversParams,
+  ListDriversResult,
+  DriverMetricsResult,
+} from '../repositories/driver.repository.js';
 import { NotFoundError, ConflictError } from '@urbanfleet/common';
-import { DriverProfile, Vehicle, Prisma } from '../db/client.js';
+import { DriverProfile, Vehicle, Prisma, VerificationStatus } from '../db/client.js';
+
+export interface UserDetailsInput {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  user?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+  };
+}
 
 export class DriverService {
   private driverRepo: DriverRepository;
@@ -9,7 +28,7 @@ export class DriverService {
     this.driverRepo = driverRepo;
   }
 
-  async createDriverProfile(userId: string, licenseNumber: string) {
+  async createDriverProfile(userId: string, licenseNumber: string): Promise<DriverProfile> {
     const existing = await this.driverRepo.findByUserId(userId);
     if (existing) {
       throw new ConflictError('Driver profile already exists for this account');
@@ -44,7 +63,26 @@ export class DriverService {
     return profile;
   }
 
-  sanitizePublicProfile(profile: (DriverProfile & { vehicles?: Vehicle[] }) | null, userDetails?: any) {
+  async listDrivers(params: ListDriversParams = {}): Promise<ListDriversResult> {
+    return this.driverRepo.list(params);
+  }
+
+  async getDriverMetrics(): Promise<DriverMetricsResult> {
+    return this.driverRepo.getMetrics();
+  }
+
+  async updateVerificationStatus(
+    id: string,
+    status: VerificationStatus,
+    isVerified: boolean
+  ) {
+    return this.driverRepo.updateVerification(id, status, isVerified);
+  }
+
+  sanitizePublicProfile(
+    profile: (DriverProfile & { vehicles?: Vehicle[] }) | null,
+    userDetails?: UserDetailsInput | null
+  ) {
     if (!profile) return null;
     const activeVehicle = (profile.vehicles || []).find((v) => v.isActive) || (profile.vehicles || [])[0];
     const sanitizedVehicles = (profile.vehicles || []).map((v) => {
@@ -83,7 +121,7 @@ export class DriverService {
     if (typeof profile.profilePhoto === 'string') {
       photoUrl = profile.profilePhoto;
     } else if (profile.profilePhoto && typeof profile.profilePhoto === 'object') {
-      const p = profile.profilePhoto as any;
+      const p = profile.profilePhoto as { secure_url?: string; url?: string };
       photoUrl = p.secure_url || p.url || null;
     }
 
@@ -176,37 +214,11 @@ export class DriverService {
       driverId: profile.id,
       totalEarningsPaise: Number(profile.totalEarningsPaise),
       totalTrips: profile.totalTrips,
-      rating: Number(profile.rating)
+      rating: Number(profile.rating),
     };
   }
 
-  async registerFullDriver(data: {
-    userId: string;
-    licenseNumber: string;
-    profilePhoto?: Prisma.InputJsonValue;
-    accountHolderName?: string | null;
-    accountNumber?: string | null;
-    ifscCode?: string | null;
-    bankName?: string | null;
-    upiId?: string | null;
-    passbookPhoto?: Prisma.InputJsonValue;
-    vehicle: {
-      type: string;
-      brand: string;
-      model: string;
-      color: string;
-      registrationNumber: string;
-      registrationYear: number;
-      images?: Prisma.InputJsonValue;
-    };
-    documents: Array<{
-      type: string;
-      number: string;
-      expiryDate?: Date;
-      frontImage: string;
-      backImage?: string;
-    }>;
-  }) {
+  async registerFullDriver(data: CreateFullProfileInput) {
     const existing = await this.driverRepo.findByUserId(data.userId);
     if (existing) {
       throw new ConflictError('Driver application already exists for this account');

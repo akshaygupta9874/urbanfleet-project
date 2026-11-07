@@ -1,4 +1,25 @@
-import { PrismaClient, Ride, Prisma } from '../db/client.js';
+import { PrismaClient, Ride, Rating, RideStatus, RidePaymentStatus, Prisma } from '../db/client.js';
+
+export interface ListRidesParams {
+  page?: number;
+  limit?: number;
+  status?: RideStatus;
+  paymentStatus?: RidePaymentStatus;
+  search?: string;
+}
+
+export interface ListRidesResult {
+  items: Array<Ride & { ratings: Rating[] }>;
+  total: number;
+}
+
+export interface RideAnalyticsResult {
+  period: string;
+  totalRides: number;
+  completedRides: number;
+  totalFarePaise: number;
+  statusBreakdown: Record<string, number>;
+}
 
 export class RideRepository {
   private prisma: PrismaClient;
@@ -7,7 +28,7 @@ export class RideRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string, tx?: Prisma.TransactionClient): Promise<Ride | null> {
+  async findById(id: string, tx?: Prisma.TransactionClient): Promise<(Ride & { ratings: Rating[] }) | null> {
     const client = tx || this.prisma;
     return client.ride.findUnique({ where: { id }, include: { ratings: true } });
   }
@@ -16,9 +37,9 @@ export class RideRepository {
     return this.prisma.ride.findFirst({
       where: {
         riderId,
-        status: { in: ['SEARCHING', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] }
+        status: { in: ['SEARCHING', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -26,28 +47,111 @@ export class RideRepository {
     return this.prisma.ride.findFirst({
       where: {
         driverId,
-        status: { in: ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] }
+        status: { in: ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findHistoryByRiderId(riderId: string): Promise<Ride[]> {
+  async findHistoryByRiderId(riderId: string): Promise<Array<Ride & { ratings: Rating[] }>> {
     return this.prisma.ride.findMany({
       where: { riderId },
       include: { ratings: true },
       orderBy: { createdAt: 'desc' },
-      take: 20
+      take: 20,
     });
   }
 
-  async findHistoryByDriverId(driverId: string): Promise<Ride[]> {
+  async findHistoryByDriverId(driverId: string): Promise<Array<Ride & { ratings: Rating[] }>> {
     return this.prisma.ride.findMany({
       where: { driverId },
       include: { ratings: true },
       orderBy: { createdAt: 'desc' },
-      take: 100
+      take: 100,
     });
+  }
+
+  async list(params: ListRidesParams = {}): Promise<ListRidesResult> {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.min(100, Math.max(1, params.limit || 25));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.RideWhereInput = {};
+
+    if (params.status) {
+      where.status = params.status;
+    }
+
+    if (params.paymentStatus) {
+      where.paymentStatus = params.paymentStatus;
+    }
+
+    if (params.search && params.search.trim().length > 0) {
+      const search = params.search.trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search);
+      where.OR = [
+        { pickupAddress: { contains: search, mode: 'insensitive' } },
+        { destinationAddress: { contains: search, mode: 'insensitive' } },
+        ...(isUuid ? [{ id: search }, { riderId: search }, { driverId: search }] : []),
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.ride.findMany({
+        where,
+        include: { ratings: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.ride.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  async getAnalytics(period = 'today'): Promise<RideAnalyticsResult> {
+    const now = new Date();
+    let startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (period === 'week') startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    else if (period === 'month') startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    else if (period === 'all') startDate = new Date(0);
+
+    const [statusCounts, completedStats, totalCount] = await Promise.all([
+      this.prisma.ride.groupBy({
+        by: ['status'],
+        _count: true,
+        where: { createdAt: { gte: startDate } },
+      }),
+      this.prisma.ride.aggregate({
+        _sum: { totalFarePaise: true },
+        _count: true,
+        where: { status: 'COMPLETED', createdAt: { gte: startDate } },
+      }),
+      this.prisma.ride.count({ where: { createdAt: { gte: startDate } } }),
+    ]);
+
+    const breakdown: Record<string, number> = {
+      SEARCHING: 0,
+      DRIVER_ASSIGNED: 0,
+      DRIVER_ARRIVING: 0,
+      RIDE_STARTED: 0,
+      ARRIVED_AT_DESTINATION: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+    };
+
+    for (const item of statusCounts) {
+      breakdown[item.status] = item._count;
+    }
+
+    return {
+      period,
+      totalRides: totalCount,
+      completedRides: completedStats._count,
+      totalFarePaise: completedStats._sum.totalFarePaise || 0,
+      statusBreakdown: breakdown,
+    };
   }
 
   async getDriverRideAggregates(driverId: string) {

@@ -80,10 +80,6 @@ export class NotificationDispatcher {
               html,
             });
 
-
-
-
-
             const messageId = response.messageId || `mail_${item.id}`;
             logger.info(`Dispatched notification ${item.id} [${item.template}] to ${item.recipient} via Nodemailer (${messageId})`);
             await this.notifRepo.markDispatched(item.id, messageId);

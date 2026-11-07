@@ -1,4 +1,17 @@
-import { Prisma, PrismaClient, NotificationRecord } from '../db/client.js';
+import { Prisma, PrismaClient, NotificationRecord, NotificationChannel, NotificationStatus } from '../db/client.js';
+
+export interface ListNotificationsParams {
+  page?: number;
+  limit?: number;
+  recipient?: string;
+  channel?: NotificationChannel;
+  status?: NotificationStatus;
+}
+
+export interface ListNotificationsResult {
+  items: NotificationRecord[];
+  total: number;
+}
 
 export class NotificationRepository {
   private prisma: PrismaClient;
@@ -25,11 +38,40 @@ export class NotificationRepository {
     });
   }
 
+  async list(params: ListNotificationsParams = {}): Promise<ListNotificationsResult> {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.min(100, Math.max(1, params.limit || 25));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.NotificationRecordWhereInput = {};
+    if (params.recipient) {
+      where.recipient = params.recipient;
+    }
+    if (params.channel) {
+      where.channel = params.channel;
+    }
+    if (params.status) {
+      where.status = params.status;
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.notificationRecord.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.notificationRecord.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
   async findPending(limit = 20): Promise<NotificationRecord[]> {
     return this.prisma.notificationRecord.findMany({
       where: { status: 'PENDING', retryCount: { lt: 5 } },
       orderBy: { createdAt: 'asc' },
-      take: limit
+      take: limit,
     });
   }
 
@@ -39,8 +81,8 @@ export class NotificationRepository {
       data: {
         status: 'DISPATCHED',
         gatewayMessageId,
-        dispatchedAt: new Date()
-      }
+        dispatchedAt: new Date(),
+      },
     });
   }
 

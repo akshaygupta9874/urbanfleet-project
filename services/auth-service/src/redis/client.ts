@@ -3,11 +3,10 @@ import { createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('auth-redis');
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-const isUpstash = redisUrl.includes('upstash.io') || redisUrl.startsWith('rediss://');
 
 /**
- * Single Redis database connection with service-level 'auth:' namespace.
- * Resilient for Upstash Serverless TLS and long-lived connection stability.
+ * Upstash Redis client with service-level 'auth:' namespace.
+ * Configured directly for Upstash Serverless TLS and persistent keep-alive.
  */
 export const authRedisClient: RedisClientType = createClient({
   url: redisUrl,
@@ -22,7 +21,7 @@ export const authRedisClient: RedisClientType = createClient({
       return Math.min(retries * 100, 3000);
     },
   },
-  pingInterval: isUpstash ? 25000 : undefined,
+  pingInterval: 25000,
 });
 
 authRedisClient.on('error', (err: unknown) => {

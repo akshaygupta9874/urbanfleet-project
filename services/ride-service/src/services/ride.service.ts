@@ -1,5 +1,10 @@
 import { Ride, RideStatus, RidePaymentStatus, Rating } from '../db/client.js';
-import { RideRepository } from '../repositories/ride.repository.js';
+import {
+  RideRepository,
+  ListRidesParams,
+  ListRidesResult,
+  RideAnalyticsResult,
+} from '../repositories/ride.repository.js';
 import { RatingRepository } from '../repositories/rating.repository.js';
 import { OutboxRepository } from '../repositories/outbox.repository.js';
 import { FareService } from './fare.service.js';
@@ -617,6 +622,14 @@ export class RideService {
       throw new AppError('Failed to save rating', 500, 'INTERNAL_SERVER_ERROR');
     }
     return rating;
+  }
+
+  async listRides(params: ListRidesParams = {}): Promise<ListRidesResult> {
+    return this.rideRepo.list(params);
+  }
+
+  async getRideAnalytics(period = 'today'): Promise<RideAnalyticsResult> {
+    return this.rideRepo.getAnalytics(period);
   }
 }
 

@@ -1,36 +1,56 @@
 import { ClientSession } from "../types/database.types.js";
-import { prisma, type Prisma } from '../db/client.js';
+import { prisma, Payout, type Prisma } from '../db/client.js';
 import { IPayout } from "../types/payment.models.js";
 import { PayoutMode, PayoutStatus } from "../types/payment.types.js";
 import { LIVE_PAYOUT_STATUSES } from "../constants/payment.constants.js";
 import { AppError } from '../utils/AppError.js';
 
-function formatPayout(row: Record<string, unknown> | null | undefined): IPayout {
-    if (!row) return null as unknown as IPayout;
+export interface CreatePayoutInput {
+    driver?: string;
+    driverId?: string;
+    payment?: string;
+    paymentId?: string;
+    ride?: string;
+    rideId?: string;
+    amountPaise: number;
+    currency?: "INR";
+    status?: PayoutStatus;
+    mode?: PayoutMode;
+    gatewayPayoutId?: string | null;
+    utr?: string | null;
+    ledgerTransactionId?: string | null;
+    reversalLedgerTransactionId?: string | null;
+    failureReason?: string | null;
+    metadata?: Record<string, unknown>;
+}
+
+function formatPayout(row: Payout | Record<string, unknown>): IPayout {
+    const raw = row as Record<string, unknown>;
+    const paymentId = String(raw.paymentId || raw.payment || "");
+    const rideId = String(raw.rideId || raw.ride || "");
+    const driverId = String(raw.driverId || raw.driver || "");
+
     return {
-        id: String(row.id),
-        payment: row.paymentId ? String(row.paymentId) : undefined,
-        paymentId: row.paymentId ? String(row.paymentId) : undefined,
-        ride: row.rideId ? String(row.rideId) : undefined,
-        rideId: row.rideId ? String(row.rideId) : undefined,
-        driver: row.driverId ? String(row.driverId) : undefined,
-        driverId: row.driverId ? String(row.driverId) : undefined,
-        amountPaise: row.amountPaise !== undefined && row.amountPaise !== null ? Number(row.amountPaise) : 0,
-        currency: (row.currency as "INR") || "INR",
-        status: row.status as PayoutStatus,
-        mode: row.mode as PayoutMode,
-        gatewayPayoutId: (row.gatewayPayoutId as string | undefined) ?? undefined,
-        utr: (row.utr as string | undefined) ?? undefined,
-        ledgerTransactionId: (row.ledgerTransactionId as string | undefined) ?? undefined,
-        reversalLedgerTransactionId: (row.reversalLedgerTransactionId as string | undefined) ?? undefined,
-        processedAt: (row.processedAt as Date | undefined) ?? undefined,
-        failedAt: (row.failedAt as Date | undefined) ?? undefined,
-        reversedAt: (row.reversedAt as Date | undefined) ?? undefined,
-        failureReason: (row.failureReason as string | undefined) ?? undefined,
-        metadata: (row.metadata as Record<string, unknown>) ?? {},
-        createdAt: row.createdAt as Date,
-        updatedAt: row.updatedAt as Date,
-    } as unknown as IPayout;
+        id: String(raw.id),
+        payment: paymentId,
+        ride: rideId,
+        driver: driverId,
+        amountPaise: raw.amountPaise !== undefined && raw.amountPaise !== null ? Number(raw.amountPaise) : 0,
+        currency: (raw.currency as "INR") || "INR",
+        status: raw.status as PayoutStatus,
+        mode: raw.mode as PayoutMode,
+        gatewayPayoutId: (raw.gatewayPayoutId as string | undefined) ?? undefined,
+        utr: (raw.utr as string | undefined) ?? undefined,
+        ledgerTransactionId: (raw.ledgerTransactionId as string | undefined) ?? undefined,
+        reversalLedgerTransactionId: (raw.reversalLedgerTransactionId as string | undefined) ?? undefined,
+        processedAt: (raw.processedAt as Date | undefined) ?? undefined,
+        failedAt: (raw.failedAt as Date | undefined) ?? undefined,
+        reversedAt: (raw.reversedAt as Date | undefined) ?? undefined,
+        failureReason: (raw.failureReason as string | undefined) ?? undefined,
+        metadata: (raw.metadata as Record<string, unknown>) ?? {},
+        createdAt: raw.createdAt as Date,
+        updatedAt: raw.updatedAt as Date,
+    };
 }
 
 function getClient(session?: ClientSession) {
@@ -42,15 +62,15 @@ function getClient(session?: ClientSession) {
 
 class PayoutRepository {
     async create(
-        data: Partial<IPayout>,
+        data: CreatePayoutInput,
         session?: ClientSession
     ): Promise<IPayout> {
         const client = getClient(session);
         const created = await client.payout.create({
             data: {
-                driverId: data.driver ? data.driver.toString() : "",
-                paymentId: data.payment ? data.payment.toString() : null,
-                rideId: data.ride ? data.ride.toString() : null,
+                driverId: String(data.driverId || data.driver || ""),
+                paymentId: data.paymentId ? String(data.paymentId) : data.payment ? String(data.payment) : null,
+                rideId: data.rideId ? String(data.rideId) : data.ride ? String(data.ride) : null,
                 amountPaise: data.amountPaise ?? 0,
                 currency: data.currency ?? "INR",
                 status: (data.status ?? "PENDING") as unknown as Prisma.EnumPayoutStatusFilter["equals"],

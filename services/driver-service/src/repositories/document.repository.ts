@@ -4,12 +4,12 @@ export interface CreateDocumentInput {
   driverProfileId: string;
   type: string;
   documentUrl: string;
-  number: string | null | undefined;
-  frontImage: string | null | undefined;
-  backImage: string | null | undefined;
-  expiresAt: Date | null | undefined;
-  status: VerificationStatus;
-  isVerified: boolean;
+  number?: string | null;
+  frontImage?: string | null;
+  backImage?: string | null;
+  expiresAt?: Date | null;
+  status?: VerificationStatus;
+  isVerified?: boolean;
 }
 
 export class DocumentRepository {

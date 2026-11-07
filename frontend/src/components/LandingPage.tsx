@@ -7,7 +7,6 @@ import {
   ChevronDown,
   Circle,
   Square,
-  Navigation,
   Sparkles,
   Car,
   Star,
@@ -89,7 +88,7 @@ function formatRupee(amount: number): string {
 
 
 // ---------- Rotating tagline ----------
-const taglines = ["anywhere", "anytime", "in style", "with Aura"];
+const taglines = ["anywhere", "anytime"];
 function RotatingWord() {
   const [i, setI] = useState(0);
   useEffect(() => {
@@ -111,30 +110,6 @@ function RotatingWord() {
         </motion.span>
       </AnimatePresence>
     </span>
-  );
-}
-
-// ---------- Floating live stats chip ----------
-function LiveChip() {
-  const [eta, setEta] = useState(3);
-  useEffect(() => {
-    const t = setInterval(() => setEta((e) => (e <= 1 ? 6 : e - 1)), 1800);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.4, duration: 0.6 }}
-      className="inline-flex items-center gap-2 rounded-full border border-[#7a4416]/25 bg-[#fffaf0]/90 px-4 py-2 text-xs font-semibold text-[#3a1f0a] shadow-sm backdrop-blur-md"
-    >
-      <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-      </span>
-      <Navigation size={12} className="text-[#b8722c]" />
-      <span>Drivers nearby · {eta} min away</span>
-    </motion.div>
   );
 }
 
@@ -381,7 +356,6 @@ export default function LandingPage() {
         {/* Left */}
         <motion.div className="flex-1" variants={containerVariants} initial="hidden" animate="visible">
           <motion.div variants={itemVariants} className="mb-5 flex flex-wrap items-center gap-3">
-            <LiveChip />
             <div className="inline-flex items-center gap-2 rounded-full border border-[#7a4416]/25 bg-[#fffaf0]/90 px-3.5 py-1.5 text-xs font-semibold text-[#3a1f0a] shadow-sm backdrop-blur-md">
               <Sparkles size={12} className="text-[#b8722c]" />
               New · Schedule rides up to 30 days ahead

@@ -1,4 +1,8 @@
-import { NotificationRepository } from '../repositories/notification.repository.js';
+import {
+  NotificationRepository,
+  ListNotificationsParams,
+  ListNotificationsResult,
+} from '../repositories/notification.repository.js';
 import { createLogger } from '@urbanfleet/common';
 import { Prisma } from '../db/client.js';
 
@@ -22,6 +26,10 @@ export class NotificationService {
     this.notifRepo = notifRepo;
   }
 
+  async listNotifications(params: ListNotificationsParams = {}): Promise<ListNotificationsResult> {
+    return this.notifRepo.list(params);
+  }
+
   async sendEmail(to: string, subject: string, html: string, idempotencyKey: string) {
     logger.info(`Staging email to ${to}: ${subject} [Key: ${idempotencyKey}]`);
     return this.notifRepo.create({
@@ -30,7 +38,7 @@ export class NotificationService {
       template: 'GENERIC',
       idempotencyKey,
       payload: { subject, html },
-      status: 'PENDING'
+      status: 'PENDING',
     });
   }
 
@@ -42,7 +50,7 @@ export class NotificationService {
       template: 'RIDE_RECEIPT',
       idempotencyKey,
       payload: rideDetails as unknown as Prisma.InputJsonValue,
-      status: 'PENDING'
+      status: 'PENDING',
     });
   }
 
@@ -54,7 +62,7 @@ export class NotificationService {
       template: 'EMAIL_VERIFICATION',
       idempotencyKey,
       payload: { token },
-      status: 'PENDING'
+      status: 'PENDING',
     });
   }
 }

@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import axios from 'axios';
+import { z } from 'zod';
 import { AuthenticatedRequest, AppError, createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('driver-controller');
 import { DriverService } from '../services/driver.service.js';
 import { DocumentService } from '../services/document.service.js';
+import { VerificationStatus } from '../db/client.js';
 import {
   CloudinaryService,
   cloudinaryService as defaultCloudinaryService,
@@ -492,9 +494,10 @@ export class DriverController {
           isVerified: freshProfile.isVerified ?? false,
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       await rollbackUploads();
-      if (err?.code === 'ETIMEDOUT' || err?.name === 'AggregateError' || (typeof err?.message === 'string' && err.message.includes('timeout'))) {
+      const errObj = typeof err === 'object' && err !== null ? (err as Record<string, unknown>) : {};
+      if (errObj.code === 'ETIMEDOUT' || errObj.name === 'AggregateError' || (typeof errObj.message === 'string' && errObj.message.includes('timeout'))) {
         throw new AppError('Image upload service temporarily timed out. Please check network connection and try again.', 504, 'GATEWAY_TIMEOUT');
       }
       throw err;
@@ -548,8 +551,11 @@ export class DriverController {
           totalEarnings: resp.data.data.totalEarningsPaise,
         };
       }
-    } catch {
+    } catch (err: unknown) {
       // Non-blocking fallback if ride-service is unavailable
+      logger.warn('Failed to retrieve driver metrics from ride-service for profile', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     const formatted = formatDriverProfileForFrontend(profile, extraStats);
@@ -702,17 +708,14 @@ export class DriverController {
 
     const { status = 'VERIFIED' } = req.body;
     const isVerified = status === 'VERIFIED' || status === 'APPROVED';
-    const verificationStatus = isVerified ? 'VERIFIED' : 'REJECTED';
+    const targetStatus = isVerified ? VerificationStatus.VERIFIED : VerificationStatus.REJECTED;
 
-    await this.driverService.updateProfile(profile.userId, {
-      verificationStatus,
-      isVerified,
-    } as any);
+    await this.driverService.updateVerificationStatus(profile.id, targetStatus, isVerified);
 
     if (isVerified) {
       const docs = await this.documentService.getDocumentsByDriverId(profile.id);
       for (const doc of docs) {
-        await this.documentService.verifyDocument(doc.id, 'VERIFIED' as any);
+        await this.documentService.verifyDocument(doc.id, VerificationStatus.VERIFIED);
       }
       await this.grantDriverRoleIfApproved(profile.id);
     }
@@ -749,8 +752,11 @@ export class DriverController {
         },
       });
       rideMetrics = resp.data?.data;
-    } catch {
-      // Non-blocking
+    } catch (err: unknown) {
+      // Non-blocking fallback if ride-service is unavailable
+      logger.warn('Failed to retrieve ride metrics for earnings from ride-service', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     const totalEarningsPaise = Math.max(
@@ -784,8 +790,11 @@ export class DriverController {
     let userDetails = null;
     try {
       userDetails = await this.authServiceClient.getUserById(profile.userId);
-    } catch {
-      // Continue without userDetails if auth service is down or unreachable
+    } catch (err: unknown) {
+      logger.warn('Failed to fetch user details from auth-service in getDriverById', {
+        userId: profile.userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     const data = isPrivileged
@@ -811,8 +820,11 @@ export class DriverController {
     let userDetails = null;
     try {
       userDetails = await this.authServiceClient.getUserById(profile.userId);
-    } catch {
-      // Continue without userDetails if auth service is down or unreachable
+    } catch (err: unknown) {
+      logger.warn('Failed to fetch user details from auth-service in getDriverByUserId', {
+        userId: profile.userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     const data = isPrivileged
@@ -825,6 +837,92 @@ export class DriverController {
         }
       : this.driverService.sanitizePublicProfile(profile, userDetails);
     res.status(200).json({ success: true, data });
+  });
+
+  getAdminMetrics = asyncHandler(async (_req: Request, res: Response) => {
+    const summary = await this.driverService.getDriverMetrics();
+    res.status(200).json({ success: true, data: summary });
+  });
+
+  listDriversAdmin = asyncHandler(async (req: Request, res: Response) => {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const status = typeof req.query.status === 'string' ? (req.query.status as VerificationStatus) : undefined;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+
+    const result = await this.driverService.listDrivers({ page, limit, status, search });
+    res.status(200).json({
+      success: true,
+      data: result.items,
+      pagination: { page, limit, total: result.total },
+    });
+  });
+
+  updateVerificationAdmin = asyncHandler(async (req: Request, res: Response) => {
+    const idParam = z.string().uuid().safeParse(req.params.id);
+    if (!idParam.success) {
+      throw new AppError('Invalid driver ID format: must be a valid UUID', 400, 'BAD_REQUEST');
+    }
+
+    const body = z.object({
+      status: z.enum(['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED', 'APPROVED', 'SUSPENDED']),
+      reason: z.string().trim().min(3).max(500),
+    }).parse(req.body);
+
+    const existing = await this.driverService.getDriverById(req.params.id);
+
+    const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+      PENDING: ['UNDER_REVIEW', 'APPROVED', 'VERIFIED', 'REJECTED'],
+      UNDER_REVIEW: ['APPROVED', 'VERIFIED', 'REJECTED', 'PENDING'],
+      VERIFIED: ['APPROVED', 'SUSPENDED', 'UNDER_REVIEW'],
+      APPROVED: ['SUSPENDED', 'UNDER_REVIEW'],
+      SUSPENDED: ['APPROVED', 'VERIFIED', 'UNDER_REVIEW', 'REJECTED'],
+      REJECTED: ['UNDER_REVIEW', 'PENDING'],
+    };
+
+    const currentStatus = existing.verificationStatus as string;
+    const targetStatus = body.status;
+    if (currentStatus !== targetStatus && !ALLOWED_TRANSITIONS[currentStatus]?.includes(targetStatus)) {
+      throw new AppError(
+        `Invalid driver status transition from ${currentStatus} to ${targetStatus}`,
+        400,
+        'BAD_REQUEST'
+      );
+    }
+
+    const isApprovedOrVerified = targetStatus === 'APPROVED' || targetStatus === 'VERIFIED';
+    const isRejected = targetStatus === 'REJECTED';
+
+    if (isApprovedOrVerified) {
+      const docs = await this.documentService.getDocumentsByDriverId(existing.id);
+      for (const doc of docs) {
+        if (doc.status === VerificationStatus.PENDING) {
+          await this.documentService.verifyDocument(doc.id, VerificationStatus.VERIFIED);
+        }
+      }
+
+      try {
+        await this.authServiceClient.grantDriverRole(existing.userId);
+      } catch (grantErr: unknown) {
+        const errorMsg = grantErr instanceof Error ? grantErr.message : String(grantErr);
+        logger.warn('Failed to grant DRIVER role in auth-service', { userId: existing.userId, error: errorMsg });
+      }
+    } else if (isRejected) {
+      const docs = await this.documentService.getDocumentsByDriverId(existing.id);
+      for (const doc of docs) {
+        if (doc.status === VerificationStatus.PENDING) {
+          await this.documentService.verifyDocument(doc.id, VerificationStatus.REJECTED, body.reason);
+        }
+      }
+    }
+
+    const profile = await this.driverService.updateVerificationStatus(
+      req.params.id,
+      body.status as VerificationStatus,
+      isApprovedOrVerified
+    );
+
+    res.status(200).json({ success: true, data: profile, reason: body.reason });
   });
 }
 export default DriverController;

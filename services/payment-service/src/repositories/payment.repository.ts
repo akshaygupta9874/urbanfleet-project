@@ -1,5 +1,5 @@
 import { ClientSession } from "../types/database.types.js";
-import { prisma, UserRole, type Prisma } from '../db/client.js';
+import { prisma, Payment, UserRole, type Prisma } from '../db/client.js';
 import { IPayment, IRefundRecord } from "../types/payment.models.js";
 import {
     Paise,
@@ -27,49 +27,78 @@ export interface FailureInfo {
     failureCode?: string | undefined;
 }
 
-function formatPayment(row: Record<string, unknown> | null | undefined): IPayment {
-    if (!row) return null as unknown as IPayment;
+export interface CreatePaymentInput {
+    ride?: string;
+    rideId?: string;
+    rider?: string;
+    riderId?: string;
+    driver?: string;
+    driverId?: string;
+    gateway?: PaymentGateway;
+    gatewayOrderId?: string | null;
+    gatewayPaymentId?: string | null;
+    amountPaise: number;
+    currency?: "INR";
+    status?: PaymentStatus;
+    method?: PaymentMethod | null;
+    fareBreakdown?: IFareBreakdown;
+    idempotencyKey?: string | null;
+    attemptNumber?: number;
+    failureReason?: string | null;
+    failureCode?: string | null;
+    lastFailedGatewayPaymentId?: string | null;
+    refundedAmountPaise?: number;
+    refunds?: IRefundRecord[];
+    ledgerTransactionId?: string | null;
+    metadata?: Record<string, unknown>;
+}
+
+function formatPayment(row: Payment | Record<string, unknown>): IPayment {
+    const raw = row as Record<string, unknown>;
     let refunds: IRefundRecord[] = [];
-    if (Array.isArray(row.refunds)) {
-        refunds = row.refunds as IRefundRecord[];
-    } else if (typeof row.refunds === "string") {
+    if (Array.isArray(raw.refunds)) {
+        refunds = raw.refunds as unknown as IRefundRecord[];
+    } else if (typeof raw.refunds === "string") {
         try {
-            refunds = JSON.parse(row.refunds) as IRefundRecord[];
+            refunds = JSON.parse(raw.refunds) as IRefundRecord[];
         } catch {
             refunds = [];
         }
     }
 
+    const rideId = String(raw.rideId || raw.ride || "");
+    const riderId = String(raw.riderId || raw.rider || "");
+    const driverId = raw.driverId ? String(raw.driverId) : raw.driver ? String(raw.driver) : "";
+
     return {
-        id: String(row.id),
-        ride: String(row.rideId),
-        rideId: String(row.rideId),
-        rider: String(row.riderId),
-        riderId: String(row.riderId),
-        driver: row.driverId ? String(row.driverId) : undefined,
-        driverId: row.driverId ? String(row.driverId) : undefined,
-        gateway: (row.gateway as PaymentGateway) || PaymentGateway.RAZORPAY,
-        gatewayOrderId: (row.gatewayOrderId as string | null) ?? null,
-        gatewayPaymentId: (row.gatewayPaymentId as string | undefined) ?? undefined,
-        amountPaise: Number(row.amountPaise),
-        currency: (row.currency as "INR") || "INR",
-        status: row.status as PaymentStatus,
-        method: (row.method as PaymentMethod | undefined) ?? undefined,
-        fareBreakdown: row.fareBreakdown as IFareBreakdown,
-        idempotencyKey: (row.idempotencyKey as string | null) ?? null,
-        attemptNumber: Number(row.attemptNumber ?? 1),
-        failureReason: (row.failureReason as string | undefined) ?? undefined,
-        failureCode: (row.failureCode as string | undefined) ?? undefined,
-        lastFailedGatewayPaymentId: (row.lastFailedGatewayPaymentId as string | undefined) ?? undefined,
-        refundedAmountPaise: Number(row.refundedAmountPaise ?? 0),
+        id: String(raw.id),
+        ride: rideId,
+        rider: riderId,
+        driver: driverId,
+        riderId,
+        driverId: driverId || undefined,
+        gateway: (raw.gateway as PaymentGateway) || PaymentGateway.RAZORPAY,
+        gatewayOrderId: String(raw.gatewayOrderId || ""),
+        gatewayPaymentId: (raw.gatewayPaymentId as string | undefined) ?? undefined,
+        amountPaise: Number(raw.amountPaise),
+        currency: (raw.currency as "INR") || "INR",
+        status: raw.status as PaymentStatus,
+        method: (raw.method as PaymentMethod | undefined) ?? undefined,
+        fareBreakdown: raw.fareBreakdown as IFareBreakdown,
+        idempotencyKey: String(raw.idempotencyKey || ""),
+        attemptNumber: Number(raw.attemptNumber ?? 1),
+        failureReason: (raw.failureReason as string | undefined) ?? undefined,
+        failureCode: (raw.failureCode as string | undefined) ?? undefined,
+        lastFailedGatewayPaymentId: (raw.lastFailedGatewayPaymentId as string | undefined) ?? undefined,
+        refundedAmountPaise: Number(raw.refundedAmountPaise ?? 0),
         refunds,
-        ledgerTransactionId: (row.ledgerTransactionId as string | undefined) ?? undefined,
-        metadata: (row.metadata as Record<string, unknown>) ?? {},
-        capturedAt: (row.capturedAt as Date | undefined) ?? undefined,
-        refundedAt: (row.refundedAt as Date | undefined) ?? undefined,
-        createdAt: row.createdAt as Date,
-        updatedAt: row.updatedAt as Date,
-    } as unknown as IPayment;
+        ledgerTransactionId: (raw.ledgerTransactionId as string | undefined) ?? undefined,
+        metadata: (raw.metadata as Record<string, unknown>) ?? {},
+        capturedAt: (raw.capturedAt as Date | undefined) ?? undefined,
+        refundedAt: (raw.refundedAt as Date | undefined) ?? undefined,
+        createdAt: raw.createdAt as Date,
+        updatedAt: raw.updatedAt as Date,
+    };
 }
 
 function getClient(session?: ClientSession) {
@@ -81,7 +110,7 @@ function getClient(session?: ClientSession) {
 
 class PaymentRepository {
     async create(
-        data: Partial<IPayment>,
+        data: CreatePaymentInput,
         session?: ClientSession
     ): Promise<IPayment> {
         const client = getClient(session);

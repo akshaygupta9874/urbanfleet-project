@@ -1,15 +1,14 @@
-import { createClient } from "redis";
+import { createClient, RedisClientType } from "redis";
 import { createLogger } from "@urbanfleet/common";
-const logger = createLogger("payment-redis");
 
+const logger = createLogger("payment-redis");
 const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
-const isUpstash = redisUrl.includes("upstash.io") || redisUrl.startsWith("rediss://");
 
 /**
- * Resilient Redis client for payment locks, idempotency & session validation.
- * Optimized for Upstash Serverless TLS and reconnect resilience.
+ * Upstash Redis client for payment locks, idempotency & session validation.
+ * Configured directly for Upstash Serverless TLS and reconnect resilience.
  */
-export const redisClient = createClient({
+export const redisClient: RedisClientType = createClient({
   url: redisUrl,
   name: "payment-service",
   socket: {
@@ -22,7 +21,7 @@ export const redisClient = createClient({
       return Math.min(retries * 100, 3000);
     },
   },
-  pingInterval: isUpstash ? 25000 : undefined,
+  pingInterval: 25000,
 });
 
 redisClient.on("error", (err: unknown) => {

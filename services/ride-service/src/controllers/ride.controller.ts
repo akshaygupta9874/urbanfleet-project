@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { RidePaymentStatus } from '../db/client.js';
+import { RidePaymentStatus, RideStatus } from '../db/client.js';
 import { RideService, CreateRideInput } from '../services/ride.service.js';
 import { FareService } from '../services/fare.service.js';
 import type { DispatchService } from '../services/dispatch.service.js';
@@ -309,5 +309,26 @@ export class RideController {
     const userId = getUserId(req);
     const summary = await this.rideService.getDriverRatingsSummary(userId);
     res.status(200).json({ success: true, data: summary });
+  });
+
+  getRideAnalyticsAdmin = asyncHandler(async (req: Request, res: Response) => {
+    const period = typeof req.query.period === 'string' ? req.query.period : 'today';
+    const summary = await this.rideService.getRideAnalytics(period);
+    res.status(200).json({ success: true, data: summary });
+  });
+
+  listRidesAdmin = asyncHandler(async (req: Request, res: Response) => {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const status = typeof req.query.status === 'string' ? (req.query.status as RideStatus) : undefined;
+    const paymentStatus = typeof req.query.paymentStatus === 'string' ? (req.query.paymentStatus as RidePaymentStatus) : undefined;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+
+    const result = await this.rideService.listRides({ page, limit, status, paymentStatus, search });
+    res.status(200).json({
+      success: true,
+      data: result.items,
+      pagination: { page, limit, total: result.total },
+    });
   });
 }
