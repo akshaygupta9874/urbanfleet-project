@@ -9,7 +9,7 @@ export interface ReconciliationJobOptions {
 }
 
 /**
- * Starts the periodic reconciliation (stuck payments, pending refunds, ledger integrity).
+ * Starts the periodic reconciliation (stuck payments, ledger integrity).
  * Safe to call on every instance of the API: a Redis lock lets only ONE instance run a cycle.
  * Call it once at start-up, after PostgreSQL and Redis are connected, and call the returned
  * function during graceful shutdown.
@@ -43,7 +43,6 @@ export function startPaymentReconciliationJob(
             }
 
             const payments = await reconciliationService.reconcileStalePayments();
-            const refunds = await reconciliationService.reconcilePendingRefunds();
             const ledger = await reconciliationService.verifyLedgerIntegrity();
 
             if (!ledger.balanced) {
@@ -56,7 +55,6 @@ export function startPaymentReconciliationJob(
 
             paymentLog.info("reconcile.cycle_done", {
                 payments,
-                refunds,
                 ledgerBalanced: ledger.balanced,
             });
 

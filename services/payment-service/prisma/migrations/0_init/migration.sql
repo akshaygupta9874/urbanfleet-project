@@ -5,13 +5,10 @@ CREATE SCHEMA IF NOT EXISTS "public";
 CREATE TYPE "UserRole" AS ENUM ('RIDER', 'DRIVER', 'ADMIN');
 
 -- CreateEnum
-CREATE TYPE "PaymentStatus" AS ENUM ('CREATED', 'PENDING', 'AUTHORIZED', 'CAPTURED', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELLED');
+CREATE TYPE "PaymentStatus" AS ENUM ('CREATED', 'PENDING', 'AUTHORIZED', 'CAPTURED', 'FAILED', 'CANCELLED');
 
 -- CreateEnum
 CREATE TYPE "PayoutStatus" AS ENUM ('PENDING', 'SUBMITTED', 'PROCESSED', 'FAILED', 'REVERSED');
-
--- CreateEnum
-CREATE TYPE "RefundStatus" AS ENUM ('PENDING', 'PROCESSED', 'FAILED');
 
 -- CreateEnum
 CREATE TYPE "LedgerAccount" AS ENUM ('RIDER', 'PLATFORM', 'DRIVER', 'BANK', 'RIDER_WALLET', 'DRIVER_WALLET', 'PLATFORM_COMMISSION', 'GATEWAY_CLEARING', 'TAX_COLLECTED');
@@ -42,30 +39,13 @@ CREATE TABLE "payments" (
     "failure_reason" TEXT,
     "failure_code" TEXT,
     "last_failed_gateway_payment_id" VARCHAR(255),
-    "refunded_amount_paise" INTEGER NOT NULL DEFAULT 0,
     "ledger_transaction_id" VARCHAR(255),
     "metadata" JSONB,
     "captured_at" TIMESTAMP(3),
-    "refunded_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "refunds" JSONB DEFAULT '[]',
 
     CONSTRAINT "payments_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "refunds" (
-    "id" UUID NOT NULL,
-    "payment_id" UUID NOT NULL,
-    "amount_paise" INTEGER NOT NULL,
-    "reason" TEXT,
-    "gateway_refund_id" VARCHAR(255),
-    "ledger_transaction_id" UUID NOT NULL,
-    "status" "RefundStatus" NOT NULL DEFAULT 'PENDING',
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "refunds_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -154,12 +134,6 @@ CREATE UNIQUE INDEX "payments_gateway_payment_id_key" ON "payments"("gateway_pay
 CREATE UNIQUE INDEX "payments_idempotency_key_key" ON "payments"("idempotency_key");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "refunds_gateway_refund_id_key" ON "refunds"("gateway_refund_id");
-
--- CreateIndex
-CREATE INDEX "refunds_payment_id_idx" ON "refunds"("payment_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "payouts_gateway_payout_id_key" ON "payouts"("gateway_payout_id");
 
 -- CreateIndex
@@ -182,9 +156,6 @@ CREATE INDEX "outbox_events_status_lease_expires_at_created_at_idx" ON "outbox_e
 
 -- CreateIndex
 CREATE INDEX "outbox_events_partition_key_aggregate_sequence_idx" ON "outbox_events"("partition_key", "aggregate_sequence");
-
--- AddForeignKey
-ALTER TABLE "refunds" ADD CONSTRAINT "refunds_payment_id_fkey" FOREIGN KEY ("payment_id") REFERENCES "payments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "payouts" ADD CONSTRAINT "payouts_payment_id_fkey" FOREIGN KEY ("payment_id") REFERENCES "payments"("id") ON DELETE SET NULL ON UPDATE CASCADE;

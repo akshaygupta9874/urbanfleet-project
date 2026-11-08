@@ -17,7 +17,6 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
     { key: 'G then P', desc: 'Open Payments & Financial Ledger' },
     { key: 'G then S', desc: 'Open System Policies & Surge Settings' },
     { key: 'G then H', desc: 'Open Cluster Diagnostics & Health' },
-    { key: 'G then A', desc: 'Open Cryptographic Audit Logs' },
     { key: '/', desc: 'Focus active search bar in current tab' },
     { key: 'Esc', desc: 'Close any active modal or side inspector' },
     { key: '?', desc: 'Toggle keyboard shortcuts quick reference' },

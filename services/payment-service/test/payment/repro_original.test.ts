@@ -54,8 +54,6 @@ import {
     PaymentStatus,
 } from "../../src/types/payment.types.js";
 
-import { allocateRefund } from "../../src/utils/refund-allocation.js";
-
 // -----------------------------------------------------------------------------
 // Test lifecycle
 // -----------------------------------------------------------------------------
@@ -94,10 +92,6 @@ const basePayment = (
     gatewayOrderId: "order_1",
 
     gatewayPaymentId: "pay_1",
-
-    refundedAmountPaise: 0,
-
-    refunds: [],
 
     fareBreakdown: {
         platformCommissionPaise: 300,
@@ -375,115 +369,3 @@ describe("capture handler ordering", () => {
 });
 
 // -----------------------------------------------------------------------------
-// Partial refund allocation
-// -----------------------------------------------------------------------------
-
-describe("partial-refund allocation", () => {
-    it(
-        "keeps per-account reversals consistent across multiple partial refunds",
-        () => {
-            let counterExample:
-                | null
-                | Record<string, unknown> = null;
-
-            outer: for (const total of [
-                101,
-                250,
-                999,
-                1000,
-                1234,
-            ]) {
-                for (const driver of [
-                    1,
-                    3,
-                    7,
-                    33,
-                    Math.floor(total * 0.8),
-                ]) {
-                    const platform =
-                        total - driver;
-
-                    if (platform <= 0) {
-                        continue;
-                    }
-
-                    const parts = [
-                        Math.floor(total / 3),
-                        Math.floor(total / 3),
-                    ];
-
-                    parts.push(
-                        total -
-                            parts[0]! -
-                            parts[1]!
-                    );
-
-                    let refundedSoFar = 0;
-                    let driverReversedSoFar = 0;
-                    let platformReversedSoFar = 0;
-
-                    let reversedDriver = 0;
-                    let reversedPlatform = 0;
-
-                    for (const refundPaise of parts) {
-                        const split = allocateRefund({
-                            totalPaise: total,
-
-                            driverEarningPaise:
-                                driver,
-
-                            platformCommissionPaise:
-                                platform,
-
-                            refundedSoFarPaise:
-                                refundedSoFar,
-
-                            driverReversedSoFarPaise:
-                                driverReversedSoFar,
-
-                            platformReversedSoFarPaise:
-                                platformReversedSoFar,
-
-                            refundPaise,
-                        });
-
-                        reversedDriver +=
-                            split.driverPaise;
-
-                        reversedPlatform +=
-                            split.platformPaise;
-
-                        refundedSoFar +=
-                            refundPaise;
-
-                        driverReversedSoFar +=
-                            split.driverPaise;
-
-                        platformReversedSoFar +=
-                            split.platformPaise;
-                    }
-
-                    if (
-                        refundedSoFar !== total ||
-                        reversedDriver !== driver ||
-                        reversedPlatform !== platform
-                    ) {
-                        counterExample = {
-                            total,
-                            driver,
-                            platform,
-                            parts,
-                            refundedSoFar,
-                            reversedDriver,
-                            reversedPlatform,
-                        };
-
-                        break outer;
-                    }
-                }
-            }
-
-            expect(counterExample).toBeNull();
-        }
-    );
-});

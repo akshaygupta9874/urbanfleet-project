@@ -1,69 +1,59 @@
 import 'dotenv/config';
 import dns from 'node:dns';
-import http from 'node:http';
-import https from 'node:https';
+import express, { NextFunction } from 'express';
+import multer from 'multer';
+import cors from 'cors';
+import helmet from 'helmet';
+import { Consumer } from 'kafkajs';
+import { createLogger, AppError, configureBigIntSerialization } from '@urbanfleet/common';
+import { prisma } from './db/client.js';
+import { driverRedisClient, initDriverRedis, disconnectDriverRedis } from './redis/client.js';
+import { DriverRepository } from './repositories/driver.repository.js';
+import { DocumentRepository } from './repositories/document.repository.js';
+import { DriverService } from './services/driver.service.js';
+import { DocumentService } from './services/document.service.js';
+import { cloudinaryService } from './services/cloudinary.service.js';
+import { DriverController } from './controllers/driver.controller.js';
+import { createDriverRouter } from './routes/driver.routes.js';
+import { initDriverConsumer } from './consumers/driver.consumer.js';
 
 try {
   if (typeof dns.setDefaultResultOrder === 'function') {
     dns.setDefaultResultOrder('ipv4first');
   }
-  const httpAgent = http.globalAgent as any;
-  if (httpAgent && httpAgent.options) {
-    httpAgent.options.autoSelectFamily = false;
-  }
-  const httpsAgent = https.globalAgent as any;
-  if (httpsAgent && httpsAgent.options) {
-    httpsAgent.options.autoSelectFamily = false;
-  }
 } catch {
-  // Ignore in environments where network options cannot be configured
+  // Non-fatal if DNS resolution order cannot be configured
 }
 
-import express from 'express';
-import multer from 'multer';
-import cors from 'cors';
-import helmet from 'helmet';
-import { createLogger, AppError, configureBigIntSerialization } from '@urbanfleet/common';
-import { DriverRepository } from './repositories/driver.repository.js';
-import { DocumentRepository } from './repositories/document.repository.js';
-import { DriverService } from './services/driver.service.js';
-import { DocumentService } from './services/document.service.js';
-import { DriverController } from './controllers/driver.controller.js';
-import { cloudinaryService } from './services/cloudinary.service.js';
-import { createDriverRouter } from './routes/driver.routes.js';
-import { initDriverConsumer } from './consumers/driver.consumer.js';
-import { driverRedisClient, initDriverRedis, disconnectDriverRedis } from './redis/client.js';
-
 const logger = createLogger('driver-service');
-import { Consumer } from 'kafkajs';
-import { prisma } from './db/client.js';
-
 const app = express();
 configureBigIntSerialization(app);
 
 const port = process.env.DRIVER_PORT || process.env.PORT || 4002;
 
-// Initialize Redis & Kafka Consumer
+// Initialize Infrastructure: Redis & Kafka Consumer
 initDriverRedis().catch(err => logger.error('Driver Redis startup error:', err));
 
 let driverConsumer: Consumer | null = null;
-initDriverConsumer(prisma).then(c => {
-  driverConsumer = c;
-}).catch(err => logger.error('Consumer startup error:', err));
+initDriverConsumer(prisma)
+  .then(c => {
+    driverConsumer = c;
+  })
+  .catch(err => logger.error('Driver consumer startup error:', err));
 
-// Middlewares
+// Global Security & Parsing Middlewares
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 app.use(express.json());
 
-// Repositories & Services
+// Dependency Injection Wiring
 const driverRepo = new DriverRepository(prisma);
 const docRepo = new DocumentRepository(prisma);
 const driverService = new DriverService(driverRepo);
 const docService = new DocumentService(docRepo, driverRepo);
 const driverController = new DriverController(driverService, docService, cloudinaryService);
 
-// Health check endpoint (mounted before router)
+// Health Check with Active Dependency Validation (DB, Redis & Consumer)
 const healthHandler = async (_req: express.Request, res: express.Response) => {
   let dbStatus = 'DOWN';
   try {
@@ -93,32 +83,33 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
     dependencies: {
       database: dbStatus,
       redis: redisStatus,
-      consumer: driverConsumer ? 'UP' : 'INITIALIZING'
-    }
+      consumer: driverConsumer ? 'UP' : 'INITIALIZING',
+    },
   });
 };
 
 app.get('/health', healthHandler);
 app.get('/v1/drivers/health', healthHandler);
 
-// Routes (Single Canonical Endpoint)
+// Canonical API Routes
 const driverRouter = createDriverRouter(driverController);
 app.use('/v1/drivers', driverRouter);
 
-// Global Error Handler
-app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+// Centralized Global Error Handler
+app.use((err: unknown, req: express.Request, res: express.Response, _next: NextFunction) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({
       success: false,
       code: err.code,
-      message: `File upload error: ${err.message}`
+      message: `File upload error: ${err.message}`,
     });
   }
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       success: false,
       code: err.code,
-      message: err.message
+      message: err.message,
+      errors: (err as { errors?: unknown }).errors,
     });
   }
   logger.error('Unhandled internal error:', err);
@@ -129,7 +120,7 @@ const server = app.listen(port, () => {
   logger.info(`Driver Service running internally on port ${port}`);
 });
 
-// Graceful shutdown handling
+// Graceful Shutdown Handling
 const gracefulShutdown = async (signal: string) => {
   logger.info(`Received ${signal}. Shutting down Driver Service gracefully...`);
   server.close(async () => {

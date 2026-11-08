@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Mail,
-  Phone,
   Shield,
   Star,
   Car,
@@ -237,7 +236,6 @@ function DriverCard({
   lastName,
   vehicleNo,
   email,
-  phone,
   profilePhoto,
   rating = 4.9,
   vehicleBrand,
@@ -249,7 +247,6 @@ function DriverCard({
   lastName: string;
   vehicleNo: string;
   email: string;
-  phone?: string;
   profilePhoto?: string | null;
   rating?: number;
   vehicleBrand?: string;
@@ -331,16 +328,7 @@ function DriverCard({
 
         {/* Right: Quick Action Contact Buttons */}
         <div className="flex items-center gap-2 shrink-0">
-          {phone && (
-            <a
-              href={`tel:${phone}`}
-              className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-700 text-emerald-50 shadow-md hover:bg-emerald-800 transition-colors"
-              aria-label="Call driver"
-              title="Call driver"
-            >
-              <Phone className="h-4 w-4" />
-            </a>
-          )}
+          
           {email && (
             <a
               href={`mailto:${email}`}
@@ -781,7 +769,6 @@ export default function RideDetails() {
     ride.driver?.vehicle?.registrationNumber ||
     "Not Assigned";
   const driverEmail = ride.driver?.user?.email || ride.driver?.email || "";
-  const driverPhone = ride.driver?.user?.phone || ride.driver?.phone || "";
   const driverPhoto =
     ride.driver?.profilePhoto ||
     ride.driver?.profilePhotoUrl ||
@@ -979,7 +966,6 @@ export default function RideDetails() {
                 lastName={driverLastName}
                 vehicleNo={vehicleNo}
                 email={driverEmail}
-                phone={driverPhone}
                 profilePhoto={driverPhoto}
                 rating={driverRating}
                 vehicleBrand={vehicleBrand}

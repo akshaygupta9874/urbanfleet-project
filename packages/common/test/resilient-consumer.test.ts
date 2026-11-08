@@ -45,6 +45,7 @@ describe('Resilient Consumer & DLQ Pipeline', () => {
       const sentMessages: Array<{ topic: string; messages: Array<{ key?: string; value: string; headers?: Record<string, string> }> }> = [];
       const mockProducer = {
         connect: vi.fn().mockResolvedValue(undefined),
+        disconnect: vi.fn().mockResolvedValue(undefined),
         send: vi.fn().mockImplementation((payload) => {
           sentMessages.push(payload);
           return Promise.resolve();
@@ -63,6 +64,10 @@ describe('Resilient Consumer & DLQ Pipeline', () => {
         consumer: {} as any,
         consumerGroup: 'test-group',
         serviceName: 'test-service',
+        maxRetries: 3,
+        initialBackoffMs: 500,
+        backoffMultiplier: 2,
+        maxBackoffMs: 5000,
       };
 
       const handler = vi.fn().mockResolvedValue(undefined);
@@ -106,6 +111,10 @@ describe('Resilient Consumer & DLQ Pipeline', () => {
         consumer: {} as any,
         consumerGroup: 'test-group',
         serviceName: 'test-service',
+        maxRetries: 3,
+        initialBackoffMs: 500,
+        backoffMultiplier: 2,
+        maxBackoffMs: 5000,
       };
 
       const handler = vi.fn();
@@ -148,7 +157,9 @@ describe('Resilient Consumer & DLQ Pipeline', () => {
         consumerGroup: 'test-group',
         serviceName: 'test-service',
         maxRetries: 3,
-        initialBackoffMs: 10, // Fast test backoff
+        initialBackoffMs: 10,
+        backoffMultiplier: 2,
+        maxBackoffMs: 5000,
       };
 
       let attempts = 0;
@@ -201,6 +212,8 @@ describe('Resilient Consumer & DLQ Pipeline', () => {
         serviceName: 'test-service',
         maxRetries: 2,
         initialBackoffMs: 10,
+        backoffMultiplier: 2,
+        maxBackoffMs: 5000,
       };
 
       const handler = vi.fn().mockRejectedValue(new Error('Persistent Database Outage'));
@@ -252,6 +265,10 @@ describe('Resilient Consumer & DLQ Pipeline', () => {
           consumer: {} as any,
           consumerGroup: 'test-group',
           serviceName: 'test-service',
+          maxRetries: 3,
+          initialBackoffMs: 500,
+          backoffMultiplier: 2,
+          maxBackoffMs: 5000,
         },
         vi.fn()
       );
@@ -286,6 +303,8 @@ describe('Resilient Consumer & DLQ Pipeline', () => {
         serviceName: 'test-service',
         maxRetries: 5,
         initialBackoffMs: 1000,
+        backoffMultiplier: 2,
+        maxBackoffMs: 5000,
       };
 
       const operationalError = Object.assign(new Error('Driver already registered with this license'), {

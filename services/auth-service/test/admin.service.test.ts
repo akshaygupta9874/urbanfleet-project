@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { AdminService } from '../src/services/admin.service.js';
 
 describe('AdminService', () => {
@@ -65,9 +65,6 @@ describe('AdminService', () => {
         pagination: { total: 18 },
       },
     }),
-    refundPayment: vi.fn().mockResolvedValue({
-      data: { success: true, status: 'REFUNDED' },
-    }),
   };
 
   const service = new AdminService(
@@ -92,7 +89,7 @@ describe('AdminService', () => {
     expect(res.data).toHaveLength(1);
   });
 
-  it('updates driver verification and audits the action', async () => {
+  it('updates driver verification', async () => {
     const res = await service.verifyDriver('mock-token', 'drv-1', {
       status: 'APPROVED',
       reason: 'Driver documents verified manually',
@@ -106,7 +103,7 @@ describe('AdminService', () => {
     expect(res.verificationStatus).toBe('APPROVED');
   });
 
-  it('suspends user and audits the action', async () => {
+  it('suspends user', async () => {
     await service.setSuspension('mock-token', 'usr-1', true, {
       reason: 'Terms of service violation',
     });
@@ -114,19 +111,6 @@ describe('AdminService', () => {
       'usr-1',
       true,
       'Terms of service violation'
-    );
-  });
-
-  it('requests refund and audits the action', async () => {
-    await service.refundPayment('mock-token', 'pay-1', {
-      reason: 'Driver no-show',
-      amountPaise: 25000,
-    });
-    expect(mockPaymentClient.refundPayment).toHaveBeenCalledWith(
-      'mock-token',
-      'pay-1',
-      'Driver no-show',
-      25000
     );
   });
 
@@ -140,7 +124,7 @@ describe('AdminService', () => {
     expect(analytics.revenueTimeline).toHaveLength(7);
   });
 
-  it('manages system settings and audits changes', async () => {
+  it('manages system settings', async () => {
     const initial = service.getSettings();
     expect(initial.surgeMultiplier).toBe(1.0);
 

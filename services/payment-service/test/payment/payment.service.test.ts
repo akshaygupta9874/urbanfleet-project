@@ -79,7 +79,6 @@ const RidePaymentStatus = {
   PAID: 'PAID',
   CAPTURED: 'CAPTURED',
   FAILED: 'FAILED',
-  REFUNDED: 'REFUNDED',
 } as const;
 
 import { NonRetryablePaymentError } from "../../src/errors/payment.errors.js";
@@ -229,7 +228,8 @@ describe("handlePaymentCaptured", () => {
 
       expect(rideClient.updatePaymentStatus).toHaveBeenCalledWith(
         expect.any(String),
-        RidePaymentStatus.CAPTURED
+        RidePaymentStatus.CAPTURED,
+        null
       );
     }
   );
@@ -336,12 +336,10 @@ describe("handlePaymentCaptured", () => {
   );
 
   it(
-    "already recorded (CAPTURED / REFUNDED ...) -> silent no-op",
+    "already recorded (CAPTURED ...) -> silent no-op",
     async () => {
       for (const status of [
         PaymentStatus.CAPTURED,
-        PaymentStatus.PARTIALLY_REFUNDED,
-        PaymentStatus.REFUNDED,
       ]) {
         vi.spyOn(
           paymentRepository,

@@ -3,10 +3,9 @@ import { reconciliationService } from "../../src/services/reconciliation.service
 import { paymentRepository } from "../../src/repositories/payment.repository.js";
 import { ledgerRepository } from "../../src/repositories/ledger.repository.js";
 import { paymentService } from "../../src/services/payment.service.js";
-import { refundService } from "../../src/services/refund.service.js";
 import { razorpayClient } from "../../src/config/razorpay.config.js";
-import { LedgerAccount as A, LedgerEntryType as T, LedgerReferenceType, PaymentStatus, RefundStatus } from "../../src/types/payment.types.js";
-import { capturedEntity, makePayment, oid } from "../helpers/helpers.js";
+import { LedgerAccount as A, LedgerEntryType as T, LedgerReferenceType, PaymentStatus } from "../../src/types/payment.types.js";
+import { capturedEntity, makePayment } from "../helpers/helpers.js";
 
 const leg = (transactionId: string, account: A, entryType: T, amountPaise: number) => ({ transactionId, account, entryType, amountPaise });
 const captureLegs = (tx = "tx-cap") => [
@@ -14,10 +13,10 @@ const captureLegs = (tx = "tx-cap") => [
 ];
 const paid = (over = {}) => makePayment({ status: PaymentStatus.CAPTURED, ledgerTransactionId: "tx-cap", gatewayPaymentId: "pay_TEST1", ...over });
 
-function ledgerFor(payment: any, capture: any[], refunds: any[] = []) {
+function ledgerFor(payment: any, capture: any[]) {
   vi.spyOn(paymentRepository, "findById").mockResolvedValue(payment);
   vi.spyOn(ledgerRepository, "listByReference").mockImplementation((async (type: LedgerReferenceType) =>
-    type === LedgerReferenceType.PAYMENT ? capture : refunds) as any);
+    type === LedgerReferenceType.PAYMENT ? capture : []) as any);
 }
 
 describe("reconcilePayment - ledger checks", () => {
@@ -46,33 +45,12 @@ describe("reconcilePayment - ledger checks", () => {
     expect(issues).toMatch(/no ledgerTransactionId/);
   });
 
-  it("checks refund bookings against the refund records (including a compensated one)", async () => {
-    const refundLegs = [
-      leg("r1", A.RIDER, T.CREDIT, 250), leg("r1", A.PLATFORM, T.DEBIT, 75), leg("r1", A.DRIVER, T.DEBIT, 175),
-      // a failed refund: booked then undone => nets to zero
-      leg("r2", A.RIDER, T.CREDIT, 100), leg("r2", A.PLATFORM, T.DEBIT, 30), leg("r2", A.DRIVER, T.DEBIT, 70),
-      leg("r2u", A.RIDER, T.DEBIT, 100), leg("r2u", A.PLATFORM, T.CREDIT, 30), leg("r2u", A.DRIVER, T.CREDIT, 70),
-    ];
-    const records = [
-      { status: RefundStatus.PROCESSED, amountPaise: 250, driverReversalPaise: 175, platformReversalPaise: 75 },
-      { status: RefundStatus.FAILED, amountPaise: 100, driverReversalPaise: 70, platformReversalPaise: 30 },
-    ];
-    const p = paid({ status: PaymentStatus.PARTIALLY_REFUNDED, refundedAmountPaise: 250, refunds: records });
-    ledgerFor(p, captureLegs(), refundLegs);
-    expect((await reconciliationService.reconcilePayment(p.id.toString())).issues).toEqual([]);
-
-    const tampered = paid({ status: PaymentStatus.PARTIALLY_REFUNDED, refundedAmountPaise: 250, refunds: records });
-    ledgerFor(tampered, captureLegs(), refundLegs.slice(0, 3).map((l) => (l.account === A.DRIVER ? { ...l, amountPaise: 100 } : l)));
-    const issues = (await reconciliationService.reconcilePayment(tampered.id.toString())).issues.join("|");
-    expect(issues).toMatch(/DRIVER refund reversal/);
-  });
-
   it("optionally compares with the gateway", async () => {
-    const p = paid({ refundedAmountPaise: 0 });
+    const p = paid();
     ledgerFor(p, captureLegs());
-    vi.spyOn(razorpayClient.payments, "fetch").mockResolvedValue(capturedEntity({ amount: 1000, amount_refunded: 200 }) as any);
+    vi.spyOn(razorpayClient.payments, "fetch").mockResolvedValue(capturedEntity({ amount: 900 }) as any);
     const issues = (await reconciliationService.reconcilePayment(p.id.toString(), { checkGateway: true })).issues.join("|");
-    expect(issues).toMatch(/Gateway refunded 200 but we booked 0/);
+    expect(issues).toMatch(/Gateway amount 900 differs/);
   });
 
   it("unknown payment -> 404", async () => {
@@ -131,46 +109,6 @@ describe("healing missed webhooks", () => {
     expect(Date.now() - (olderThan as Date).getTime()).toBeGreaterThanOrEqual(10 * 60_000 - 50);
     expect(Date.now() - (newerThan as Date).getTime()).toBeGreaterThanOrEqual(2 * 86_400_000 - 50);
     expect(limit).toBe(7);
-  });
-});
-
-describe("pending refunds sweep", () => {
-  const old = (minutes: number) => new Date(Date.now() - minutes * 60_000);
-  const withRefund = (rec: Record<string, unknown>) =>
-    makePayment({ status: PaymentStatus.PARTIALLY_REFUNDED, gatewayPaymentId: "pay_TEST1", refunds: [{ id: oid(), status: RefundStatus.PENDING, amountPaise: 250, createdAt: old(30), ...rec }] });
-
-  it("asks the gateway about acknowledged refunds and applies processed / failed", async () => {
-    vi.spyOn(paymentRepository, "findWithPendingRefunds").mockResolvedValue([withRefund({ gatewayRefundId: "rfnd_1" }), withRefund({ gatewayRefundId: "rfnd_2" })]);
-    vi.spyOn(razorpayClient.refunds, "fetch").mockImplementation((async (id: string) => ({ id, status: id === "rfnd_1" ? "processed" : "failed", payment_id: "pay_TEST1", amount: 250 })) as any);
-    const apply = vi.spyOn(refundService, "handleGatewayRefundEvent").mockResolvedValue();
-    expect(await reconciliationService.reconcilePendingRefunds()).toEqual({ checked: 2, healed: 2, failed: 0 });
-    expect(apply.mock.calls.map((c) => c[0])).toEqual(["processed", "failed"]);
-  });
-
-  it("finds an unacknowledged refund at the gateway through our receipt", async () => {
-    const p = withRefund({});
-    const id = p.refunds[0].id.toString();
-    vi.spyOn(paymentRepository, "findWithPendingRefunds").mockResolvedValue([p]);
-    vi.spyOn(razorpayClient.payments, "fetchMultipleRefund").mockResolvedValue({ items: [{ id: "rfnd_9", receipt: id, status: "pending", payment_id: "pay_TEST1", amount: 250 }] } as any);
-    const apply = vi.spyOn(refundService, "handleGatewayRefundEvent").mockResolvedValue();
-    const abandon = vi.spyOn(refundService, "abandonUnsentRefund");
-    await reconciliationService.reconcilePendingRefunds();
-    expect(apply).toHaveBeenCalledWith("created", expect.objectContaining({ id: "rfnd_9" }));
-    expect(abandon).not.toHaveBeenCalled();
-  });
-
-  it("undoes a booking the gateway never received - but only after the grace period", async () => {
-    vi.spyOn(razorpayClient.payments, "fetchMultipleRefund").mockResolvedValue({ items: [] } as any);
-    const abandon = vi.spyOn(refundService, "abandonUnsentRefund").mockResolvedValue(true);
-
-    vi.spyOn(paymentRepository, "findWithPendingRefunds").mockResolvedValue([withRefund({ createdAt: old(30) })]);
-    await reconciliationService.reconcilePendingRefunds();
-    expect(abandon).not.toHaveBeenCalled(); // 30 min: still within the 60 min grace period
-
-    vi.spyOn(paymentRepository, "findWithPendingRefunds").mockResolvedValue([withRefund({ createdAt: old(90) })]);
-    const summary = await reconciliationService.reconcilePendingRefunds();
-    expect(abandon).toHaveBeenCalledTimes(1);
-    expect(summary.healed).toBe(1);
   });
 });
 

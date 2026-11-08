@@ -61,7 +61,6 @@ export const AdminDriversTab: React.FC<AdminDriversTabProps> = ({
       userId: d.userId,
       driverName: d.user ? `${d.user.firstName || ''} ${d.user.lastName || ''}`.trim() : 'N/A',
       email: d.user?.email || 'N/A',
-      phone: d.user?.phone || 'N/A',
       licenseNumber: d.licenseNumber,
       status: d.verificationStatus,
       isAvailable: d.isAvailable,

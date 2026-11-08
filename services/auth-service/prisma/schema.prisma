@@ -37,27 +37,8 @@ model User {
   updatedAt                  DateTime      @updatedAt @map("updated_at")
 
   sessions                   Session[]
-  adminAuditLogs             AdminAuditLog[]
 
   @@map("users")
-}
-
-model AdminAuditLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  adminUserId String   @map("admin_user_id") @db.Uuid
-  adminUser   User     @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
-  action      String   @db.VarChar(100)
-  resource    String   @db.VarChar(50)
-  resourceId  String?  @map("resource_id") @db.VarChar(100)
-  reason      String?  @db.VarChar(500)
-  metadata    Json?
-  ipAddress   String?  @map("ip_address") @db.VarChar(45)
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@index([adminUserId, createdAt])
-  @@index([resource, resourceId])
-  @@index([createdAt])
-  @@map("admin_audit_logs")
 }
 
 model Session {

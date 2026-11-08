@@ -1,14 +1,16 @@
 import axios, { AxiosInstance, isAxiosError } from 'axios';
-import { prisma } from "../db/client.js";
-import type { RideDto } from "@urbanfleet/common";
+import type { RideDto } from '@urbanfleet/common';
 
-type Mockable<T> = T & { mock?: unknown };
+interface RideResponse {
+  success: boolean;
+  data: RideDto;
+}
 
 export class RideClient {
-  private client: AxiosInstance;
+  private readonly client: AxiosInstance;
 
   constructor(
-    baseUrl: string = process.env.RIDE_SERVICE_URL || 'http://localhost:4004'
+    baseUrl: string = process.env.RIDE_SERVICE_URL || 'http://localhost:4004',
   ) {
     this.client = axios.create({
       baseURL: baseUrl,
@@ -20,74 +22,50 @@ export class RideClient {
   }
 
   async getRideById(id: string): Promise<RideDto | null> {
-    const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<RideDto | null>> };
-    if (typeof pRide?.findUnique === 'function' && pRide.findUnique.mock) {
-      return pRide.findUnique({ where: { id } });
-    }
-
     try {
-      const res = await this.client.get<{ success: boolean; data: RideDto }>(`/v1/rides/${id}`);
-      return res.data?.data ?? null;
+      const response = await this.client.get<RideResponse>(`/v1/rides/${id}`);
+      return response.data?.data ?? null;
     } catch (err: unknown) {
-      const pRide = prisma.ride as unknown as { findUnique?: Mockable<(args: { where: { id: string } }) => Promise<RideDto | null>> };
-      if (typeof pRide?.findUnique === 'function' && pRide.findUnique.mock) {
-        try {
-          return await pRide.findUnique({ where: { id } });
-        } catch (_fallbackErr: unknown) {
-          // non-fatal mock fallback
-        }
-      }
-
-      if (isAxiosError(err)) {
-        if (err.response?.status === 404) return null;
-        if (err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'))) {
-          throw new Error('Ride Service timed out');
-        }
-        if (err.response) {
-          throw new Error(`Ride Service returned HTTP ${err.response.status}`);
-        }
-      }
-      throw err;
+      if (isAxiosError(err) && err.response?.status === 404) return null;
+      throw this.toServiceError(err);
     }
   }
 
-  async updatePaymentStatus(id: string, paymentStatus: string, currentStatus?: string): Promise<RideDto | null> {
-    const pRide = prisma.ride as unknown as { updateMany?: Mockable<(args: { where: { id: string; paymentStatus?: string }; data: { paymentStatus: string } }) => Promise<unknown>> };
-    if (typeof pRide?.updateMany === 'function' && pRide.updateMany.mock) {
-      const where: { id: string; paymentStatus?: string } = { id };
-      if (currentStatus) where.paymentStatus = currentStatus;
-      await pRide.updateMany({ where, data: { paymentStatus } });
-      return this.getRideById(id);
-    }
-
+  async updatePaymentStatus(
+    id: string,
+    paymentStatus: string,
+    currentStatus: string | null,
+  ): Promise<RideDto | null> {
     try {
       const payload = { paymentStatus, currentStatus };
-      const res = await this.client.patch<{ success: boolean; data: RideDto }>(
+      const response = await this.client.patch<RideResponse>(
         `/v1/rides/${id}/payment-status`,
         payload
       );
-      return res.data?.data;
+      return response.data?.data ?? null;
     } catch (err: unknown) {
-      const pRide = prisma.ride as unknown as { updateMany?: Mockable<(args: { where: { id: string; paymentStatus?: string }; data: { paymentStatus: string } }) => Promise<unknown>> };
-      if (typeof pRide?.updateMany === 'function' && pRide.updateMany.mock) {
-        try {
-          await pRide.updateMany({ where: { id }, data: { paymentStatus } });
-          return await this.getRideById(id);
-        } catch (_fallbackErr: unknown) {
-          // non-fatal mock fallback
-        }
-      }
-
-      if (isAxiosError(err)) {
-        if (err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'))) {
-          throw new Error('Ride Service timed out');
-        }
-        if (err.response) {
-          throw new Error(`Ride Service returned HTTP ${err.response.status}`);
-        }
-      }
-      throw err;
+      throw this.toServiceError(err);
     }
+  }
+
+  private toServiceError(error: unknown): Error {
+    if (!isAxiosError(error)) {
+      return error instanceof Error ? error : new Error(String(error));
+    }
+
+    if (
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ETIMEDOUT' ||
+      error.message.toLowerCase().includes('timeout')
+    ) {
+      return new Error('Ride Service timed out');
+    }
+
+    if (error.response) {
+      return new Error(`Ride Service returned HTTP ${error.response.status}`);
+    }
+
+    return new Error(error.message);
   }
 }
 

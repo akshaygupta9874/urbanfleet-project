@@ -160,10 +160,6 @@ import {
 } from "../../src/services/payment.service.js";
 
 import {
-  refundService,
-} from "../../src/services/refund.service.js";
-
-import {
   payoutService,
 } from "../../src/services/payout.service.js";
 
@@ -648,62 +644,6 @@ describe("routing", () => {
   });
 
   it(
-    "refund events map to created / processed / failed",
-    async () => {
-      const spy = vi
-        .spyOn(
-          refundService,
-          "handleGatewayRefundEvent"
-        )
-        .mockResolvedValue();
-
-      const refund = {
-        refund: {
-          entity: {
-            id: "rfnd_1",
-            payment_id: "pay_1",
-            amount: 5,
-          },
-        },
-      };
-
-      await webhookService.handleEvent(
-        event(
-          "refund.created",
-          refund
-        ),
-        "r1"
-      );
-
-      await webhookService.handleEvent(
-        event(
-          "refund.processed",
-          refund
-        ),
-        "r2"
-      );
-
-      await webhookService.handleEvent(
-        event(
-          "refund.failed",
-          refund
-        ),
-        "r3"
-      );
-
-      expect(
-        spy.mock.calls.map(
-          (call) => call[0]
-        )
-      ).toEqual([
-        "created",
-        "processed",
-        "failed",
-      ]);
-    }
-  );
-
-  it(
     "payout events go to the payout service",
     async () => {
       const spy = vi
@@ -776,18 +716,6 @@ describe("routing", () => {
             {}
           ),
           "u2"
-        )
-      ).toBe(
-        "acknowledged_with_error"
-      );
-
-      expect(
-        await webhookService.handleEvent(
-          event(
-            "refund.processed",
-            {}
-          ),
-          "u3"
         )
       ).toBe(
         "acknowledged_with_error"

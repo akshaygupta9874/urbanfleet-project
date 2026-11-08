@@ -58,6 +58,15 @@ describe('Auth Service Validation & Route Flow Integration Suite', () => {
       getUserById: vi.fn(async (req, res) => {
         res.status(200).json({ success: true, data: { id: req.params.id, email: 'test@example.com' } });
       }),
+      forgotPassword: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
+      resetPassword: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
+      resendVerificationEmail: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
+      grantDriverRole: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
+      changePassword: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
+      refreshCSRF: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
+      listSessions: vi.fn(async (_req, res) => res.status(200).json({ success: true, data: [] })),
+      revokeSession: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
+      logoutAllOtherSessions: vi.fn(async (_req, res) => res.status(200).json({ success: true })),
     };
 
     app = express();

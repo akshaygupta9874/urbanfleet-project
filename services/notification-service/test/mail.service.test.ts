@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import nodemailer from 'nodemailer';
-import { getMailTransporter, sendMail, verifyMailConnection, setMailTransporter, closeMailTransporter } from '../src/config/mail.config.js';
+import { sendMail, verifyMailConnection, setMailTransporter, closeMailTransporter } from '../src/config/mail.config.js';
 import { sendOtpEmail, sendVerifyEmail, sendResetPasswordEmail } from '../src/services/email.service.js';
 
 describe('Nodemailer Email Integration Suite', () => {

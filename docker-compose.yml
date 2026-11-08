@@ -322,7 +322,7 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-https://urbanfleet.duckdns.org}
         VITE_WS_URL: ${VITE_WS_URL:-wss://urbanfleet.duckdns.org/ws/ride}
-        VITE_GEOAPIFY_API_KEY: ${VITE_GEOAPIFY_API_KEY:-b2e5858ed2ec4ef1bc736c6411abe296}
+        VITE_GEOAPIFY_API_KEY: ${VITE_GEOAPIFY_API_KEY:?Set VITE_GEOAPIFY_API_KEY in .env}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     container_name: urbanfleet-frontend
     restart: always

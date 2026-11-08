@@ -57,7 +57,6 @@ describe('Ride Service Comprehensive Fixes Test Suite', () => {
       expect(paymentStatusSchema.safeParse({ paymentStatus: 'CAPTURED' }).success).toBe(true);
       expect(paymentStatusSchema.safeParse({ paymentStatus: 'FAILED' }).success).toBe(true);
       expect(paymentStatusSchema.safeParse({ paymentStatus: 'PENDING' }).success).toBe(true);
-      expect(paymentStatusSchema.safeParse({ paymentStatus: 'REFUNDED' }).success).toBe(true);
       expect(paymentStatusSchema.safeParse({ paymentStatus: 'UNAUTHORIZED_STATUS' }).success).toBe(false);
     });
   });

@@ -20,8 +20,6 @@ export enum PaymentStatus {
     AUTHORIZED = "AUTHORIZED",
     CAPTURED = "CAPTURED",
     FAILED = "FAILED",
-    REFUNDED = "REFUNDED",
-    PARTIALLY_REFUNDED = "PARTIALLY_REFUNDED",
     CANCELLED = "CANCELLED",
 }
 
@@ -41,7 +39,6 @@ export enum LedgerEntryType {
 export enum LedgerReferenceType {
     PAYMENT = "PAYMENT",
     PAYOUT = "PAYOUT",
-    REFUND = "REFUND",
     ADJUSTMENT = "ADJUSTMENT",
 }
 
@@ -76,24 +73,6 @@ export enum RidePaymentStatus {
     PAID = "PAID",
     CAPTURED = "CAPTURED",
     FAILED = "FAILED",
-    REFUNDED = "REFUNDED",
-}
-
-/** Lifecycle of ONE refund attempt stored inside Payment.refunds[]. */
-export enum RefundStatus {
-    /** Booked in our ledger, gateway has not confirmed it as processed yet. */
-    PENDING = "PENDING",
-    /** Gateway confirmed the refund as processed. */
-    PROCESSED = "PROCESSED",
-    /** Gateway rejected / failed it; the ledger booking was compensated. */
-    FAILED = "FAILED",
-}
-
-export enum RefundOrigin {
-    /** Started through POST /payments/:id/refund. */
-    APP = "APP",
-    /** Started outside the app (e.g. Razorpay dashboard) and discovered through a webhook. */
-    GATEWAY = "GATEWAY",
 }
 
 export interface IFareBreakdown {

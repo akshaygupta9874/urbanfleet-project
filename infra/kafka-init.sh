@@ -1,8 +1,6 @@
 #!/bin/bash
 # Pre-create all required Kafka topics with 3 partitions each
-echo "Waiting for Kafka to be ready..."
-cub kafka-ready -b kafka:29092 1 30
-
+# Note: Docker Compose enforces `depends_on: kafka: condition: service_healthy` before running this script
 echo "Creating UrbanFleet Event Topics..."
 
 TOPIC_REPLICATION_FACTOR="${KAFKA_TOPIC_REPLICATION_FACTOR:-1}"

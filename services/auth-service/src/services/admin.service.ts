@@ -3,14 +3,12 @@ import { driverClient, DriverClient } from '../clients/driver.client.js';
 import { rideClient, RideClient } from '../clients/ride.client.js';
 import { paymentClient, PaymentClient } from '../clients/payment.client.js';
 import { authRedisClient } from '../redis/client.js';
-import { prisma } from '../db/client.js';
 import { UserService } from './user.service.js';
 import { SessionRepository } from '../repositories/session.repository.js';
 import { config } from '../config/config.js';
 import type {
   DriverVerificationInput,
   PaginationQuery,
-  RefundRequestInput,
   SystemSettingsInput,
   UserSuspensionInput,
 } from '../validation/admin.validation.js';
@@ -90,7 +88,6 @@ export interface AnalyticsSummary {
     netPlatformFeeINR: number;
     completionRatePercent: number;
     avgTripFareINR: number;
-    totalRefundsINR: number;
   };
   degradedServices?: string[];
 }
@@ -186,25 +183,13 @@ export class AdminService {
     return { success: true, data: result.items, pagination: { page: query.page, limit: query.limit, total: result.total } };
   }
 
-  async revokeSession(_bearer: string | undefined, sessionId: string, adminUserId?: string) {
+  async revokeSession(_bearer: string | undefined, sessionId: string) {
     await this.sessionRepository.delete(sessionId);
-    await this.recordAudit(adminUserId, {
-      action: 'SESSION_REVOKED',
-      resource: 'SESSION',
-      resourceId: sessionId,
-      reason: 'Revoked by administrator from operations console',
-    });
     return { success: true };
   }
 
-  async setSuspension(_bearer: string | undefined, userId: string, suspended: boolean, input: UserSuspensionInput, adminUserId?: string) {
+  async setSuspension(_bearer: string | undefined, userId: string, suspended: boolean, input: UserSuspensionInput) {
     const user = await this.userService.setSuspension(userId, suspended, input.reason);
-    await this.recordAudit(adminUserId, {
-      action: suspended ? 'USER_SUSPENDED' : 'USER_RESTORED',
-      resource: 'USER',
-      resourceId: userId,
-      reason: input.reason,
-    });
     return user;
   }
 
@@ -213,14 +198,8 @@ export class AdminService {
     return res.data;
   }
 
-  async verifyDriver(bearer: string | undefined, driverId: string, input: DriverVerificationInput, adminUserId?: string) {
+  async verifyDriver(bearer: string | undefined, driverId: string, input: DriverVerificationInput) {
     const res = await this.driver.updateVerification(bearer, driverId, input.status, input.reason);
-    await this.recordAudit(adminUserId, {
-      action: `DRIVER_${input.status}`,
-      resource: 'DRIVER',
-      resourceId: driverId,
-      reason: input.reason,
-    }).catch(() => undefined);
     return res.data;
   }
 
@@ -232,40 +211,6 @@ export class AdminService {
   async getPayments(bearer: string | undefined, query: PaginationQuery) {
     const res = await this.payment.getPayments(bearer, query);
     return res.data;
-  }
-
-  async refundPayment(bearer: string | undefined, paymentId: string, input: RefundRequestInput, idempotencyKey?: string, adminUserId?: string) {
-    const refundArgs: any[] = [bearer, paymentId, input.reason, input.amountPaise];
-    if (idempotencyKey !== undefined) {
-      refundArgs.push(idempotencyKey);
-    }
-    const res = await (this.payment.refundPayment as any)(...refundArgs);
-    await this.recordAudit(adminUserId, {
-      action: 'REFUND_REQUESTED',
-      resource: 'PAYMENT',
-      resourceId: paymentId,
-      reason: input.reason,
-    }).catch(() => undefined);
-    return res.data;
-  }
-
-  async getAuditLogs(bearer: string | undefined, query: PaginationQuery) {
-    const [items, total] = await prisma.$transaction([
-      prisma.adminAuditLog.findMany({
-        orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-      }),
-      prisma.adminAuditLog.count(),
-    ]);
-    return { success: true, data: items, pagination: { page: query.page, limit: query.limit, total } };
-  }
-
-  async recordAudit(adminUserId: string | undefined, payload: { action: string; resource: string; resourceId?: string; reason?: string }) {
-    if (!adminUserId) return;
-    return prisma.adminAuditLog.create({
-      data: { adminUserId, action: payload.action, resource: payload.resource, resourceId: payload.resourceId, reason: payload.reason },
-    });
   }
 
   getSettings(): SystemSettingsState {
@@ -291,13 +236,6 @@ export class AdminService {
     } catch (err) {
       console.warn('[auth-service] Could not persist admin settings to Redis:', err);
     }
-
-    await this.recordAudit(adminUserId, {
-      action: 'SYSTEM_CONFIG_UPDATED',
-      resource: 'SYSTEM',
-      resourceId: 'global-settings',
-      reason: input.reason,
-    }).catch(() => undefined);
 
     return { ...this.settings };
   }
@@ -338,7 +276,6 @@ export class AdminService {
     }
 
     let totalGrossPaise = paymentMetrics?.grossVolumePaise ?? 0;
-    let totalRefundsPaise = paymentMetrics?.refundedVolumePaise ?? 0;
 
     if (!paymentMetrics && fallbackPayments.length > 0) {
       fallbackPayments.forEach((p: any) => {
@@ -350,8 +287,6 @@ export class AdminService {
             timelineMap[dateKey].grossVolumeINR += amountINR;
             timelineMap[dateKey].platformFeeINR += amountINR * 0.15;
           }
-        } else if (p.status === 'REFUNDED') {
-          totalRefundsPaise += p.amountPaise || 0;
         }
       });
     }
@@ -435,7 +370,6 @@ export class AdminService {
         netPlatformFeeINR,
         completionRatePercent,
         avgTripFareINR,
-        totalRefundsINR: Math.round(totalRefundsPaise / 100),
       },
       degradedServices: degradedServices.length > 0 ? degradedServices : undefined,
     };

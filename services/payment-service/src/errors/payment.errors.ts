@@ -31,7 +31,7 @@ export class RideNotFoundError extends AppError {
   }
 }
 
-/** Error thrown when payment state conflict occurs (double capture, already refunded, etc.) */
+/** Error thrown when payment state conflict occurs (double capture, etc.) */
 export class PaymentConflictError extends AppError {
   constructor(message: string, code = 'PAYMENT_CONFLICT', details?: unknown) {
     super(message, 409, code, true, details);

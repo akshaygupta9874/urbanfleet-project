@@ -8,7 +8,7 @@ import { emitRideCancelled, emitToDriver } from '../emitters/driver.emitter.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { coordinatesSchema, requestRideSchema } from '../../validation/ride.validation.js';
-import { toRideDto, toRideDtoWithDriver } from '../../utils/ride-dto.js';
+import { toRideDtoWithDriver } from '../../utils/ride-dto.js';
 
 export interface RiderHandlerDeps {
   rideService?: RideService;

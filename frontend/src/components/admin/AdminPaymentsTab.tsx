@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   CreditCard,
-  RefreshCw,
   CheckCircle2,
   XCircle,
   Clock,
@@ -21,7 +20,6 @@ interface AdminPaymentsTabProps {
   paymentsData: PaginatedResult<AdminPayment> | null;
   loading: boolean;
   onFilterStatus: (status?: string) => void;
-  onOpenRefundModal: (payment: AdminPayment) => void;
   onPageChange: (page: number) => void;
 }
 
@@ -29,7 +27,6 @@ export const AdminPaymentsTab: React.FC<AdminPaymentsTabProps> = ({
   paymentsData,
   loading,
   onFilterStatus,
-  onOpenRefundModal,
   onPageChange,
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<string | undefined>(undefined);
@@ -78,14 +75,6 @@ export const AdminPaymentsTab: React.FC<AdminPaymentsTabProps> = ({
             Captured
           </span>
         );
-      case 'REFUNDED':
-      case 'PARTIALLY_REFUNDED':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-purple-500/10 px-2.5 py-0.5 text-[10px] font-bold text-purple-300">
-            <RefreshCw size={11} />
-            Refunded
-          </span>
-        );
       case 'FAILED':
         return (
           <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-bold text-rose-300">
@@ -118,7 +107,6 @@ export const AdminPaymentsTab: React.FC<AdminPaymentsTabProps> = ({
             {[
               { label: 'All Transactions', value: undefined },
               { label: 'Captured', value: 'CAPTURED' },
-              { label: 'Refunded', value: 'REFUNDED' },
               { label: 'Pending', value: 'PENDING' },
               { label: 'Failed', value: 'FAILED' },
             ].map((item) => (
@@ -171,19 +159,18 @@ export const AdminPaymentsTab: React.FC<AdminPaymentsTabProps> = ({
                 <th className="px-5 py-4">Status</th>
                 <th className="px-5 py-4">Gateway IDs</th>
                 <th className="px-5 py-4">Date</th>
-                <th className="px-5 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {loading && payments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-stone-500">
+                  <td colSpan={6} className="px-5 py-12 text-center text-stone-500">
                     Loading transactions ledger...
                   </td>
                 </tr>
               ) : payments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-stone-500">
+                  <td colSpan={6} className="px-5 py-12 text-center text-stone-500">
                     No payment records found.
                   </td>
                 </tr>
@@ -229,18 +216,6 @@ export const AdminPaymentsTab: React.FC<AdminPaymentsTabProps> = ({
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                    </td>
-
-                    {/* Action */}
-                    <td className="px-5 py-4 text-right">
-                      {p.status === 'CAPTURED' && (
-                        <button
-                          onClick={() => onOpenRefundModal(p)}
-                          className="rounded-xl border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-semibold text-purple-300 hover:bg-purple-500/20 transition"
-                        >
-                          Refund
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))

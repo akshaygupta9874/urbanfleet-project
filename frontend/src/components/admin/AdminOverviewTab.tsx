@@ -8,7 +8,6 @@ import {
   ShieldAlert,
   Server,
   CheckCircle2,
-  Activity,
   Compass,
   Sliders,
   TrendingUp,
@@ -97,7 +96,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({
       label: 'Payment Transactions',
       value: overview?.payments?.total ?? 0,
       degraded: overview?.payments?.degraded,
-      description: 'Authorized, captured & refunded orders',
+      description: 'Authorized & captured orders',
       icon: CreditCard,
       section: 'payments' as AdminSection,
       color: 'from-purple-500/20 to-purple-900/10',
@@ -473,22 +472,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({
                 </span>
                 <ArrowUpRight size={12} className="text-stone-500" />
               </li>
-              <li
-                onClick={() => onNavigateSection('audit')}
-                className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] p-2.5 hover:bg-white/[0.05] cursor-pointer transition"
-              >
-                <span className="flex items-center gap-2">
-                  <Activity size={14} className="text-amber-400" />
-                  Inspect Administrator Logs
-                </span>
-                <ArrowUpRight size={12} className="text-stone-500" />
-              </li>
             </ul>
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] text-amber-300/80">
-            <strong>Audit Policy:</strong> Destructive modifications require mandatory justification
-            persisted to the cryptographic audit log.
           </div>
         </div>
       </div>

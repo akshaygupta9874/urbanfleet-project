@@ -8,24 +8,23 @@ import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
 import { IPayout } from "../types/payment.models.js";
 import { RazorpayPayoutEntity } from "../types/razorpay.types.js";
-import { computeRefundTotals } from "../utils/refund-totals.js";
 import { paymentLog } from "../utils/payment-logger.js";
 
 import {
   LedgerAccount,
+  PaymentStatus,
   PayoutMode,
   PayoutStatus,
 } from "../types/payment.types.js";
 
 import {
   RAZORPAY_WEBHOOK_EVENTS,
-  REFUNDABLE_STATUSES,
 } from "../constants/payment.constants.js";
 
 export interface DriverBalance {
   /** Everything ever credited to the driver's ledger account. */
   earnedPaise: number;
-  /** Everything ever debited (payouts already disbursed, refund reversals). */
+  /** Everything ever debited (payouts already disbursed). */
   debitedPaise: number;
   /** earned - debited: what the platform still owes the driver. */
   balancePaise: number;
@@ -44,7 +43,6 @@ export class PayoutService {
    */
   async createPayout(input: {
     driverId: string;
-    altDriverId?: string;
     paymentId?: string | null;
     rideId?: string | null;
     amountPaise: number;
@@ -70,7 +68,7 @@ export class PayoutService {
         throw new AppError("Payment not found.", 404, "PAYMENT_NOT_FOUND");
       }
 
-      if (!REFUNDABLE_STATUSES.includes(payment.status)) {
+      if (payment.status !== PaymentStatus.CAPTURED) {
         throw new AppError(
           `Cannot pay out a payment in status ${payment.status}`,
           409,
@@ -78,9 +76,7 @@ export class PayoutService {
         );
       }
 
-      const matchesDriver =
-        payment.driver.toString() === input.driverId.toString() ||
-        (input.altDriverId && payment.driver.toString() === input.altDriverId.toString());
+      const matchesDriver = payment.driver.toString() === input.driverId.toString();
 
       if (
         !matchesDriver ||
@@ -93,8 +89,7 @@ export class PayoutService {
         );
       }
 
-      const { driverReversedPaise } = computeRefundTotals(payment);
-      const payableShare = payment.fareBreakdown.driverEarningPaise - driverReversedPaise;
+      const payableShare = payment.fareBreakdown.driverEarningPaise;
 
       if (input.amountPaise > payableShare) {
         throw new AppError(
@@ -228,7 +223,7 @@ export class PayoutService {
     return updated ?? this.requirePayout(payoutId);
   }
 
-  /** PENDING -> CANCELLED (e.g. the ride was refunded before the money was sent). */
+  /** PENDING -> CANCELLED (e.g. payout cancelled before the money was sent). */
   async cancelPending(payoutId: string, reason: string, session?: ClientSession) {
     return payoutRepository.transition(
       payoutId,
@@ -295,71 +290,15 @@ export class PayoutService {
     return updated ?? this.requirePayout(payoutId);
   }
 
-  /**
-   * Called by the refund flow, INSIDE its transaction, after the driver's share of a payment
-   * was reduced.
-   *  - payout still PENDING          -> cancelled (create a new, smaller one later)
-   *  - payout PROCESSING / PROCESSED -> money is (being) sent: flag a clawback; the driver's
-   *                                     ledger balance simply goes lower / negative.
-   */
-  async handleRefundBooked(
-    paymentId: string,
-    driverReversalPaise: number,
-    session?: ClientSession
-  ): Promise<{ cancelledPayoutId?: string; clawbackRequired: boolean }> {
-    if (driverReversalPaise <= 0) {
-      return { clawbackRequired: false };
-    }
-
-    const payout = await payoutRepository.findLiveByPayment(paymentId.toString(), session);
-
-    if (!payout) {
-      return { clawbackRequired: false };
-    }
-
-    if (payout.status === PayoutStatus.PENDING) {
-      const cancelled = await this.cancelPending(
-        payout.id.toString(),
-        "Cancelled: payment was refunded",
-        session
-      );
-
-      if (cancelled) {
-        return { cancelledPayoutId: cancelled.id.toString(), clawbackRequired: false };
-      }
-    }
-
-    return { clawbackRequired: true };
-  }
-
   /** How much the platform owes a driver and how much of it is already spoken for. */
-  async getDriverBalance(driverId: string, altDriverId?: string): Promise<DriverBalance> {
-    const ids = new Set<string>([driverId]);
-    if (altDriverId) ids.add(altDriverId);
-
-    if (ids.size === 1) {
-      try {
-        const { driverClient } = await import('../clients/driver.client.js');
-        const byUser = await driverClient.getDriverByUserId(driverId);
-        if (byUser?.id) ids.add(byUser.id);
-        const byId = await driverClient.getDriverById(driverId);
-        if (byId?.userId) ids.add(byId.userId);
-      } catch (err: unknown) {
-        paymentLog.warn("payout.resolve_driver_ids_failed", {
-          driverId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    const driverIds = Array.from(ids);
+  async getDriverBalance(driverId: string): Promise<DriverBalance> {
     const owner = await ledgerService.getOwnerBalance(
       LedgerAccount.DRIVER,
-      driverIds.length > 1 ? driverIds : driverId
+      driverId
     );
 
     const reservedPaise = await payoutRepository.sumAmountByDriver(
-      driverIds.length > 1 ? driverIds : driverId.toString(),
+      driverId.toString(),
       [PayoutStatus.PENDING, PayoutStatus.PROCESSING]
     );
 

@@ -1,6 +1,15 @@
 import { Router } from 'express';
+import { validateRequest } from '@urbanfleet/common';
 import { authMiddleware, requireRole } from '../middlewares/auth.middleware.js';
 import { AdminController } from '../controllers/admin.controller.js';
+import {
+  paginationQuerySchema,
+  analyticsQuerySchema,
+  idParamSchema,
+  userSuspensionSchema,
+  systemSettingsSchema,
+  driverVerificationSchema,
+} from '../validation/admin.validation.js';
 
 export function createAdminRouter(controller: AdminController): Router {
   const router = Router();
@@ -13,34 +22,38 @@ export function createAdminRouter(controller: AdminController): Router {
 
   // Overview metrics & real-time analytics
   router.get('/overview', controller.getOverview);
-  router.get('/analytics', controller.getAnalytics);
+  router.get('/analytics', validateRequest({ query: analyticsQuerySchema }), controller.getAnalytics);
 
   // Live dispatch fleet radar
   router.get('/fleet/radar', controller.getFleetRadar);
 
   // System settings & policies
   router.get('/settings', controller.getSettings);
-  router.patch('/settings', controller.updateSettings);
+  router.patch('/settings', validateRequest({ body: systemSettingsSchema }), controller.updateSettings);
 
   // User management & suspension
-  router.get('/users', controller.getUsers);
-  router.patch('/users/:id/suspension', controller.setSuspension);
+  router.get('/users', validateRequest({ query: paginationQuerySchema }), controller.getUsers);
+  router.patch(
+    '/users/:id/suspension',
+    validateRequest({ params: idParamSchema, body: userSuspensionSchema }),
+    controller.setSuspension,
+  );
 
   // Session inspection & remote revocation
-  router.get('/sessions', controller.getSessions);
-  router.delete('/sessions/:id', controller.revokeSession);
+  router.get('/sessions', validateRequest({ query: paginationQuerySchema }), controller.getSessions);
+  router.delete('/sessions/:id', validateRequest({ params: idParamSchema }), controller.revokeSession);
 
   // Driver verification & document review
-  router.get('/drivers', controller.getDrivers);
-  router.patch('/drivers/:id/verification', controller.verifyDriver);
+  router.get('/drivers', validateRequest({ query: paginationQuerySchema }), controller.getDrivers);
+  router.patch(
+    '/drivers/:id/verification',
+    validateRequest({ params: idParamSchema, body: driverVerificationSchema }),
+    controller.verifyDriver,
+  );
 
   // Rides & payments inspection
-  router.get('/rides', controller.getRides);
-  router.get('/payments', controller.getPayments);
-  router.post('/payments/:id/refund', controller.refundPayment);
-
-  // Audit logs (read-only query; writes are performed automatically on business mutations)
-  router.get('/audit', controller.getAuditLogs);
+  router.get('/rides', validateRequest({ query: paginationQuerySchema }), controller.getRides);
+  router.get('/payments', validateRequest({ query: paginationQuerySchema }), controller.getPayments);
 
   // System cluster health
   router.get('/system-health', controller.getSystemHealth);

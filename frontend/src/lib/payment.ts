@@ -35,8 +35,6 @@ export type PaymentStatus =
   | "AUTHORIZED"
   | "CAPTURED"
   | "FAILED"
-  | "REFUNDED"
-  | "PARTIALLY_REFUNDED"
   | "CANCELLED";
 
 export interface CreatePaymentOrderInput {

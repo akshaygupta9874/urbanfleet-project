@@ -3,7 +3,6 @@ import { redisClient } from '../redis/client.js';
 import { NonRetryablePaymentError } from "../errors/payment.errors.js";
 import { paymentLog } from "../utils/payment-logger.js";
 import { paymentService } from "./payment.service.js";
-import { refundService } from "./refund.service.js";
 import { payoutService } from "./payout.service.js";
 
 import {
@@ -68,7 +67,6 @@ class WebhookService {
         const entityId =
             payload.payload.payment?.entity.id ??
             payload.payload.order?.entity.id ??
-            payload.payload.refund?.entity.id ??
             payload.payload.payout?.entity.id ??
             "unknown";
 
@@ -237,33 +235,6 @@ class WebhookService {
                 const entity = this.requirePayment(payload);
 
                 await paymentService.handlePaymentFailed(entity);
-
-                return true;
-
-            }
-
-            case events.REFUND_CREATED:
-            case events.REFUND_PROCESSED:
-            case events.REFUND_FAILED: {
-
-                const entity = payload.payload.refund?.entity;
-
-                if (!entity) {
-                    throw new NonRetryablePaymentError(
-                        `${payload.event} webhook missing refund entity`,
-                        400,
-                        "INVALID_WEBHOOK_PAYLOAD"
-                    );
-                }
-
-                const kind =
-                    payload.event === events.REFUND_CREATED
-                        ? "created"
-                        : payload.event === events.REFUND_PROCESSED
-                            ? "processed"
-                            : "failed";
-
-                await refundService.handleGatewayRefundEvent(kind, entity);
 
                 return true;
 

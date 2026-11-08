@@ -2,49 +2,42 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { createLogger, AppError, configureBigIntSerialization } from '@urbanfleet/common';
+import { createLogger, configureBigIntSerialization } from '@urbanfleet/common';
+import { prisma } from './db/client.js';
+import { connectRedis, disconnectRedis, redisClient } from './redis/client.js';
 import { paymentService } from './services/payment.service.js';
 import { OutboxWorker } from './workers/outbox.worker.js';
 import { initPaymentConsumer } from './consumers/payment.consumer.js';
+import { startPaymentReconciliationJob } from './jobs/payment-reconciliation.job.js';
 import paymentRouter from './routes/payment.routes.js';
 import webhookRouter from './routes/webhook.routes.js';
-import { startPaymentReconciliationJob } from './jobs/payment-reconciliation.job.js';
-import { connectRedis, disconnectRedis, redisClient } from './redis/client.js';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
 
 const logger = createLogger('payment-service');
-import { prisma } from './db/client.js';
-
 const app = express();
 configureBigIntSerialization(app);
 
 const port = process.env.PAYMENT_PORT || process.env.PORT || 4005;
 
-// Connect Redis & Initialize Outbox & Consumers
-connectRedis().catch(err => logger.error('Redis connect error on startup:', err));
+// Initialize Infrastructure: Redis, Outbox Worker, Reconciliation Job & Kafka Consumer
+connectRedis().catch(err => logger.error('Redis connection error on startup:', err));
 
-// paymentService is imported as singleton from ./services/payment.service.js
-
-// Start Outbox Worker, Reconciliation Job & Consumer
 const outboxWorker = new OutboxWorker(prisma);
-outboxWorker.start().catch(err => logger.error('Outbox start error:', err));
-const stopReconciliation = startPaymentReconciliationJob();
-initPaymentConsumer(prisma, paymentService).catch(err => logger.error('Consumer error:', err));
+outboxWorker.start().catch(err => logger.error('Outbox worker startup error:', err));
 
-// Middlewares
-app.use((req, _res, next) => {
-  logger.info(`[HTTP IN] ${req.method} ${req.originalUrl}`);
-  next();
-});
+const stopReconciliation = startPaymentReconciliationJob();
+initPaymentConsumer(prisma, paymentService).catch(err => logger.error('Payment consumer startup error:', err));
+
+// Global Security & Request Logging Middlewares
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 
-// Raw Webhook Endpoint (Single Canonical Endpoint BEFORE express.json for cryptographic HMAC verification)
+// Raw Webhook Endpoint (Must stay BEFORE express.json for cryptographic HMAC verification)
 app.use('/v1/webhooks', webhookRouter);
 
 app.use(express.json());
 
-// Health check with active dependency validation (mounted before routers)
+// Health Check with Active Dependency Validation (DB & Redis)
 const healthHandler = async (_req: express.Request, res: express.Response) => {
   let dbStatus = 'DOWN';
   let redisStatus = 'DOWN';
@@ -52,7 +45,7 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     dbStatus = 'UP';
-  } catch (err) {
+  } catch {
     dbStatus = 'DOWN';
   }
 
@@ -61,7 +54,7 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
       await redisClient.ping();
       redisStatus = 'UP';
     }
-  } catch (err) {
+  } catch {
     redisStatus = 'DOWN';
   }
 
@@ -79,7 +72,7 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/v1/payments/health', healthHandler);
 
-// Routes (Single Canonical Endpoint)
+// Canonical API Routes
 app.use('/v1/payments', paymentRouter);
 
 // 404 Route Handler & Centralized Global Error Handler
@@ -90,9 +83,9 @@ const server = app.listen(port, () => {
   logger.info(`Payment Service running internally on port ${port}`);
 });
 
-// Graceful shutdown
+// Graceful Shutdown Handling
 const gracefulShutdown = async (signal: string) => {
-  logger.info(`Received ${signal}. Shutting down payment-service gracefully...`);
+  logger.info(`Received ${signal}. Shutting down Payment Service gracefully...`);
   server.close(async () => {
     try {
       if (typeof stopReconciliation === 'function') {
@@ -101,10 +94,10 @@ const gracefulShutdown = async (signal: string) => {
       await outboxWorker.stop();
       await disconnectRedis();
       await prisma.$disconnect();
-      logger.info('Payment service shutdown complete.');
+      logger.info('Payment Service shut down cleanly.');
       process.exit(0);
     } catch (err) {
-      logger.error('Error during payment service shutdown:', err);
+      logger.error('Error during graceful shutdown:', err);
       process.exit(1);
     }
   });
@@ -112,16 +105,3 @@ const gracefulShutdown = async (signal: string) => {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-process.on('unhandledRejection', (reason: unknown) => {
-  logger.error('Unhandled Promise Rejection in Payment Service:', {
-    error: reason instanceof Error ? reason.stack || reason.message : String(reason),
-  });
-});
-
-process.on('uncaughtException', (err: Error) => {
-  logger.error('Uncaught Exception in Payment Service:', {
-    error: err.stack || err.message,
-  });
-  void gracefulShutdown('uncaughtException');
-});

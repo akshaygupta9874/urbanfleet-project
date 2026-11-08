@@ -23,8 +23,6 @@ import {
 
 import { CURRENCY } from "../constants/payment.constants.js";
 
-import { RefundAllocation } from "../utils/refund-allocation.js";
-
 const opposite = (
     type: LedgerEntryType
 ): LedgerEntryType =>
@@ -297,119 +295,6 @@ export class LedgerService {
     }
 
     /**
-     * Booking of a refund (reverses the capture proportionally).
-     *   CREDIT RIDER     amount
-     *   DEBIT  PLATFORM  platform share of the refund
-     *   DEBIT  DRIVER    driver share of the refund
-     */
-    async recordRefundBooking(
-        args: {
-            payment: PaymentForPosting;
-            refundId: string;
-            amountPaise: Paise;
-            split: RefundAllocation;
-            reason: string;
-            transactionId: string;
-        },
-        session?: ClientSession
-    ): Promise<string> {
-
-        const { payment, refundId, amountPaise, split, reason } = args;
-
-        return this.recordTransaction(
-            {
-                entries: withoutZeroLegs([
-                    {
-                        account: LedgerAccount.RIDER,
-                        ownerId: payment.rider,
-                        entryType: LedgerEntryType.CREDIT,
-                        amountPaise,
-                        description: `Refund for ride ${payment.ride.toString()}: ${reason}`,
-                    },
-                    {
-                        account: LedgerAccount.PLATFORM,
-                        entryType: LedgerEntryType.DEBIT,
-                        amountPaise: split.platformPaise,
-                        description: "Platform commission reversed (refund)",
-                    },
-                    {
-                        account: LedgerAccount.DRIVER,
-                        ownerId: payment.driver,
-                        entryType: LedgerEntryType.DEBIT,
-                        amountPaise: split.driverPaise,
-                        description: "Driver earning reversed (refund)",
-                    },
-                ]),
-                referenceType: LedgerReferenceType.REFUND,
-                referenceId: payment.id,
-                transactionId: args.transactionId,
-                idempotencyKey:
-                    `refund:${payment.id.toString()}:${refundId.toString()}:book`,
-                metadata: {
-                    paymentId: payment.id.toString(),
-                    refundId: refundId.toString(),
-                    reason,
-                },
-            },
-            session
-        );
-    }
-
-    /** Exact mirror of recordRefundBooking - used when the gateway refund FAILED. */
-    async recordRefundCompensation(
-        args: {
-            payment: PaymentForPosting;
-            refundId: string;
-            amountPaise: Paise;
-            split: RefundAllocation;
-            reason: string;
-            transactionId: string;
-        },
-        session?: ClientSession
-    ): Promise<string> {
-
-        const { payment, refundId, amountPaise, split, reason } = args;
-
-        return this.recordTransaction(
-            {
-                entries: withoutZeroLegs([
-                    {
-                        account: LedgerAccount.RIDER,
-                        ownerId: payment.rider,
-                        entryType: LedgerEntryType.DEBIT,
-                        amountPaise,
-                        description: `Refund failed, booking undone for ride ${payment.ride.toString()}`,
-                    },
-                    {
-                        account: LedgerAccount.PLATFORM,
-                        entryType: LedgerEntryType.CREDIT,
-                        amountPaise: split.platformPaise,
-                        description: "Platform commission restored (refund failed)",
-                    },
-                    {
-                        account: LedgerAccount.DRIVER,
-                        ownerId: payment.driver,
-                        entryType: LedgerEntryType.CREDIT,
-                        amountPaise: split.driverPaise,
-                        description: "Driver earning restored (refund failed)",
-                    },
-                ]),
-                referenceType: LedgerReferenceType.REFUND,
-                referenceId: payment.id,
-                transactionId: args.transactionId,
-                idempotencyKey:
-                    `refund:${payment.id.toString()}:${refundId.toString()}:undo`,
-                metadata: {
-                    paymentId: payment.id.toString(),
-                    refundId: refundId.toString(),
-                    reason,
-                },
-            },
-            session
-        );
-    }
-
-    /**
      * Money left the platform for a driver's bank account.
      *   DEBIT  DRIVER  amount   (the platform no longer owes the driver)
      *   CREDIT BANK    amount   (cash out)
@@ -514,16 +399,7 @@ export class LedgerService {
     }
 
     /**
-     * @deprecated
-     *
-     * Prefer:
-     *
-     *   allocateRefund(...)
-     *   recordRefundBooking(...)
-     *
-     * This compatibility method intentionally performs a simple
-     * proportional reversal. It must NOT be used by the production
-     * refund flow because it has no cumulative-refund state.
+     * Reversal of a transaction by fraction.
      */
     async reverseTransactionPartial(
         originalTransactionId: string,

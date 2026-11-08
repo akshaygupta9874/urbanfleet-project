@@ -52,7 +52,7 @@ const adminController = new AdminController(adminService);
 const authRouter = createAuthRouter(authController);
 
 app.use('/v1/auth', authRouter);
-app.use('/v1/auth/admin', createAdminRouter(userService, sessionRepo));
+app.use('/v1/auth/admin', createAdminRouter(adminController));
 app.use('/v1/admin', createOperationsRouter(adminController));
 
 app.use((err: unknown, req: express.Request, res: express.Response, next: NextFunction) => {

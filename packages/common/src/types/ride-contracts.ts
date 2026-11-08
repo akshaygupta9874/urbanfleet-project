@@ -24,7 +24,6 @@ export interface FormattedDriver {
   lastName: string;
   vehicleNumber: string;
   email: string;
-  phone?: string;
   profilePhoto?: string | null;
   rating?: number;
   totalTrips?: number;
@@ -32,7 +31,6 @@ export interface FormattedDriver {
     firstName: string;
     lastName: string;
     email: string;
-    phone?: string;
   };
   vehicle: {
     registrationNumber: string;

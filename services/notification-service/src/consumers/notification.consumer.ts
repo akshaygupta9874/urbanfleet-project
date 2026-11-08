@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
+import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics, UserRegisteredPayload, PaymentCapturedPayload } from '@urbanfleet/contracts';
 import { NotificationService } from '../services/notification.service.js';
 import { authClient } from '../clients/auth.client.js';
@@ -28,6 +28,10 @@ export async function initNotificationConsumer(
           consumer,
           consumerGroup,
           serviceName: 'notification-service',
+          maxRetries: 3,
+          initialBackoffMs: 500,
+          backoffMultiplier: 2,
+          maxBackoffMs: 5000,
           dlqTopicResolver: (topic: string) => {
             if (topic === EventTopics.AUTH_EVENTS) return EventTopics.AUTH_DLQ;
             if (topic === EventTopics.PAYMENT_EVENTS) return EventTopics.PAYMENT_DLQ;

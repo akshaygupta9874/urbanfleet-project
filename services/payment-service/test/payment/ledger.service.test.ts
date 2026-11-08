@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { ledgerService } from "../../src/services/ledger.service.js";
 import { ledgerRepository } from "../../src/repositories/ledger.repository.js";
@@ -116,36 +115,6 @@ describe("posting rules", () => {
     await ledgerService.recordPaymentCapture(payment, "tx-2", fakeSession() as any);
     expect(rows.map((r) => r.account).sort()).toEqual([A.DRIVER, A.RIDER].sort());
     expect(sum(rows, T.DEBIT)).toBe(sum(rows, T.CREDIT));
-  });
-
-  it("refund booking and compensation are exact mirrors and always balance", async () => {
-    const rows = captureInserts();
-    const payment = makePayment();
-    const refundId = randomUUID();
-    const args = {
-      payment, refundId, amountPaise: 250,
-      split: { driverPaise: 175, platformPaise: 75 }, reason: "test", transactionId: "tx-r",
-    };
-
-    await ledgerService.recordRefundBooking(args, fakeSession() as any);
-    const booking = rows.splice(0);
-    await ledgerService.recordRefundCompensation({ ...args, transactionId: "tx-u" }, fakeSession() as any);
-    const undo = rows.splice(0);
-
-    for (const set of [booking, undo]) expect(sum(set, T.DEBIT)).toBe(sum(set, T.CREDIT));
-
-    // booking: rider CREDIT 250, platform DEBIT 75, driver DEBIT 175
-    expect(sum(booking, T.CREDIT, A.RIDER)).toBe(250);
-    expect(sum(booking, T.DEBIT, A.PLATFORM)).toBe(75);
-    expect(sum(booking, T.DEBIT, A.DRIVER)).toBe(175);
-    // compensation nets every account back to zero
-    for (const acc of [A.RIDER, A.PLATFORM, A.DRIVER]) {
-      const net = (set: any[]) => sum(set, T.CREDIT, acc) - sum(set, T.DEBIT, acc);
-      expect(net(booking) + net(undo)).toBe(0);
-    }
-    expect(booking[0].idempotencyKey).toMatch(/:book$/);
-    expect(undo[0].idempotencyKey).toMatch(/:undo$/);
-    expect(booking.every((r) => r.referenceType === LedgerReferenceType.REFUND && r.referenceId === payment.id)).toBe(true);
   });
 
   it("payout disbursement and reversal move DRIVER <-> BANK", async () => {

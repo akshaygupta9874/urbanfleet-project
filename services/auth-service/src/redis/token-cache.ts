@@ -82,15 +82,8 @@ export async function validateSessionInRedis(
   }
 
   try {
-    let storedSession = await authRedisClient.get(authRedisKey(`session:${sessionId}`));
-    if (!storedSession) {
-      storedSession = await authRedisClient.get(`session:${sessionId}`);
-    }
-
-    let activeSessionIds = await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`));
-    if (!activeSessionIds || activeSessionIds.length === 0) {
-      activeSessionIds = await authRedisClient.sMembers(`user-sessions:${userId}`);
-    }
+    const storedSession = await authRedisClient.get(authRedisKey(`session:${sessionId}`));
+    const activeSessionIds = await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`));
 
     if (!storedSession) {
       return { valid: false, reason: 'SESSION_EXPIRED' };
@@ -217,45 +210,31 @@ export async function revokeCachedTokens(userId: string, sessionId?: string): Pr
     if (authRedisClient && authRedisClient.isOpen) {
       const keysToDelete: string[] = [
         authRedisKey(`token:access:${userId}`),
-        `token:access:${userId}`,
         authRedisKey(`token:refresh:${userId}`),
-        `token:refresh:${userId}`,
         authRedisKey(`user:${userId}`),
-        `user:${userId}`,
       ];
       if (sessionId) {
         keysToDelete.push(
           authRedisKey(`token:access:${userId}:${sessionId}`),
-          `token:access:${userId}:${sessionId}`,
           authRedisKey(`token:refresh:${userId}:${sessionId}`),
-          `token:refresh:${userId}:${sessionId}`,
-          authRedisKey(`session:${sessionId}`),
-          `session:${sessionId}`
+          authRedisKey(`session:${sessionId}`)
         );
-        await Promise.all([
-          typeof authRedisClient.sRem === 'function' ? authRedisClient.sRem(authRedisKey(`user-sessions:${userId}`), sessionId).catch(() => {}) : Promise.resolve(),
-          typeof authRedisClient.sRem === 'function' ? authRedisClient.sRem(`user-sessions:${userId}`, sessionId).catch(() => {}) : Promise.resolve(),
-        ]);
+        if (typeof authRedisClient.sRem === 'function') {
+          await authRedisClient.sRem(authRedisKey(`user-sessions:${userId}`), sessionId).catch(() => {});
+        }
       } else {
         let sessions: string[] = [];
         if (typeof authRedisClient.sMembers === 'function') {
-          const [prefixedSessions, rawSessions] = await Promise.all([
-            authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)).catch(() => []),
-            authRedisClient.sMembers(`user-sessions:${userId}`).catch(() => []),
-          ]);
-          sessions = Array.from(new Set([...(prefixedSessions || []), ...(rawSessions || [])]));
+          sessions = (await authRedisClient.sMembers(authRedisKey(`user-sessions:${userId}`)).catch(() => [])) || [];
         }
         for (const s of sessions) {
           keysToDelete.push(
             authRedisKey(`session:${s}`),
-            `session:${s}`,
             authRedisKey(`token:refresh:${userId}:${s}`),
-            `token:refresh:${userId}:${s}`,
-            authRedisKey(`token:access:${userId}:${s}`),
-            `token:access:${userId}:${s}`
+            authRedisKey(`token:access:${userId}:${s}`)
           );
         }
-        keysToDelete.push(authRedisKey(`user-sessions:${userId}`), `user-sessions:${userId}`);
+        keysToDelete.push(authRedisKey(`user-sessions:${userId}`));
       }
       await Promise.all(keysToDelete.map((k) => authRedisClient.del(k).catch(() => {})));
     }
@@ -288,8 +267,7 @@ export async function revokeOtherSessions(userId: string, exceptSessionId: strin
       for (const s of sessionsToRevoke) {
         keysToDelete.push(
           authRedisKey(`token:refresh:${userId}:${s}`),
-          authRedisKey(`session:${s}`),
-          `session:${s}`
+          authRedisKey(`session:${s}`)
         );
       }
 

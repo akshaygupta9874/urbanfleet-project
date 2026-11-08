@@ -54,8 +54,6 @@ export function makePayment(over: Record<string, unknown> = {}) {
     },
     idempotencyKey: "k".repeat(64),
     attemptNumber: 1,
-    refundedAmountPaise: 0,
-    refunds: [],
     ledgerTransactionId: undefined,
     lastFailedGatewayPaymentId: undefined,
     ...over,

@@ -1,15 +1,13 @@
-import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { PaymentStatus } from '../types/payment.types.js';
+import { PaymentStatus, PayoutMode } from '../types/payment.types.js';
 
-const ID_PATTERN = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-fA-F]{24})$/;
-export const idSchema = z.string().trim().refine((val) => ID_PATTERN.test(val), 'Invalid id');
-export const objectIdSchema = idSchema;
+export const uuidSchema = z.string().trim().uuid({ message: 'Must be a valid UUID' });
+export const idSchema = uuidSchema;
+export const objectIdSchema = uuidSchema;
 
-// The server derives the rider, driver, fare, and idempotency key from trusted records.
 export const createOrderSchema = z.object({
   body: z.object({
-    rideId: objectIdSchema,
+    rideId: uuidSchema,
   }),
 });
 
@@ -21,19 +19,12 @@ export const verifyCheckoutSchema = z.object({
   }),
 });
 
-export const refundSchema = z.object({
-  body: z.object({
-    amountPaise: z.number().int().positive().optional(),
-    reason: z.string().min(3).max(500),
-  }),
-});
-
 export const paymentIdParamSchema = z.object({
-  params: z.object({ paymentId: objectIdSchema }),
+  params: z.object({ paymentId: uuidSchema }),
 });
 
 export const rideIdParamSchema = z.object({
-  params: z.object({ rideId: objectIdSchema }),
+  params: z.object({ rideId: uuidSchema }),
 });
 
 export const listPaymentsQuerySchema = z.object({
@@ -44,22 +35,36 @@ export const listPaymentsQuerySchema = z.object({
   }),
 });
 
-export function validate(schema : z.ZodType) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const result = schema.safeParse({ body: req.body, params: req.params, query: req.query });
-    if (!result.success) {
-      const zWithTreeify = z as typeof z & { treeifyError?: (err: z.ZodError) => unknown };
-      res.status(422).json({
-        message: 'Validation failed',
-        errors: typeof zWithTreeify.treeifyError === 'function' ? zWithTreeify.treeifyError(result.error) : result.error.flatten(),
-      });
-      return;
-    }
-    const parsed = result.data as { body?: unknown; params?: unknown; query?: unknown };
-    if (parsed.body !== undefined) req.body = parsed.body;
-    if (parsed.params !== undefined) req.params = parsed.params as typeof req.params;
-    if (parsed.query !== undefined) req.query = parsed.query as typeof req.query;
+export const requestPayoutSchema = z.object({
+  body: z.object({
+    amountPaise: z.coerce.number().int().positive({ message: 'Valid amount in paise is required' }),
+    rideId: uuidSchema.optional().nullable(),
+    paymentId: uuidSchema.optional().nullable(),
+    mode: z.nativeEnum(PayoutMode).optional(),
+    metadata: z.record(z.unknown()).optional(),
+  }),
+});
 
-    next();
-  };
-}
+export const listPayoutsQuerySchema = z.object({
+  query: z.object({
+    driverId: z.string().trim().optional(),
+  }),
+});
+
+export const adminMetricsQuerySchema = z.object({
+  query: z.object({
+    period: z.enum(['24h', '7d', '30d']).default('7d').optional(),
+  }),
+});
+
+export const adminListPaymentsQuerySchema = z.object({
+  query: z.object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(25),
+    status: z.nativeEnum(PaymentStatus).optional(),
+    search: z.string().trim().optional(),
+  }),
+});
+
+export { validate } from '../middlewares/validate.middleware.js';
+

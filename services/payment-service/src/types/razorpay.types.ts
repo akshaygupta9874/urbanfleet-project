@@ -23,23 +23,9 @@ export interface RazorpayPaymentEntity {
     currency: string;
     method: string;
     captured: boolean;
-    amount_refunded?: Paise;
     notes?: RazorpayNotes;
     error_code?: string | null;
     error_description?: string | null;
-    created_at: number;
-}
-
-export interface RazorpayRefundEntity {
-    id: string;
-    entity: "refund";
-    payment_id: string;
-    amount: Paise;
-    currency?: string;
-    status: string;
-    receipt?: string | null;
-    notes?: RazorpayNotes;
-    speed_processed?: string;
     created_at: number;
 }
 
@@ -72,10 +58,6 @@ export interface RazorpayWebhookPayload {
 
         order?: {
             entity: RazorpayOrderEntity;
-        };
-
-        refund?: {
-            entity: RazorpayRefundEntity;
         };
 
         payout?: {

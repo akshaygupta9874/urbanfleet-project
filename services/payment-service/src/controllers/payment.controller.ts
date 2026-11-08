@@ -1,8 +1,6 @@
 import { Response } from "express";
 import { createHash } from "crypto";
-import {
-  AppError,
-} from '../utils/AppError.js';
+import { AppError } from '../utils/AppError.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
 import { paymentService } from "../services/payment.service.js";
 import { payoutService } from "../services/payout.service.js";
@@ -10,440 +8,281 @@ import { payoutRepository } from "../repositories/payout.repository.js";
 import { PaymentStatus } from "../types/payment.types.js";
 import { IPayment } from "../types/payment.models.js";
 import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
+import { prisma } from '../db/client.js';
 
 /**
  * One payment per (ride, rider): the key is derived, never taken from the client.
  * Calling "create order" again therefore returns the SAME order (retry / double click).
  */
-function deriveIdempotencyKey(
-  ride: string,
-  rider: string
-): string {
-
-  return createHash("sha256")
-    .update(`${ride}:${rider}`)
-    .digest("hex");
-
+function deriveIdempotencyKey(ride: string, rider: string): string {
+  return createHash("sha256").update(`${ride}:${rider}`).digest("hex");
 }
 
-function unauthenticated(): AppError {
-  return new AppError(
-    "Unauthenticated",
-    401,
-    "UNAUTHENTICATED"
-  );
-}
-
-/** One user lookup per request (handled via service or authenticated request context). */
-async function loadRequester(
-  _userId: string,
-  _req?: AuthenticatedRequest
-): Promise<{ isAdmin: boolean }> {
-  return { isAdmin: false };
-}
-
-function isParticipant(
-  payment: IPayment,
-  userId: string
-): boolean {
-  const riderId = payment.riderId?.toString();
-  const driverId = payment.driverId?.toString();
-  return (
-    riderId === userId ||
-    driverId === userId
-  );
+function isParticipant(payment: IPayment, userId: string): boolean {
+  const riderId = payment.riderId || payment.rider;
+  const driverId = payment.driverId || payment.driver;
+  return riderId === userId || driverId === userId;
 }
 
 /**
  * What an API client may see. Internal bookkeeping (idempotency key, ledger ids, raw
- * metadata, refund ledger splits, who issued a refund) is admin-only.
+ * metadata) is admin-only.
  */
-function toPaymentView(
-  payment: IPayment,
-  isAdmin: boolean
-): Record<string, unknown> {
-  const pRecord = payment as IPayment & { toObject?: () => Record<string, unknown> };
-  const base = typeof pRecord.toObject === "function"
-    ? pRecord.toObject()
-    : { ...payment };
-  const view: Record<string, unknown> = { ...base };
-
+function toPaymentView(payment: IPayment, isAdmin: boolean): Record<string, unknown> {
   if (isAdmin) {
-    return view;
+    return { ...payment };
   }
 
-  delete view.idempotencyKey;
-  delete view.metadata;
-  delete view.ledgerTransactionId;
-  delete view.lastFailedGatewayPaymentId;
-  delete view.__v;
-
-  if (Array.isArray(payment.refunds)) {
-    view.refunds = payment.refunds.map((refund) => ({
-      id: refund.id,
-      amountPaise: refund.amountPaise,
-      status: refund.status,
-      createdAt: refund.createdAt,
-      processedAt: refund.processedAt,
-    }));
-  }
+  const {
+    idempotencyKey,
+    metadata,
+    ledgerTransactionId,
+    lastFailedGatewayPaymentId,
+    ...view
+  } = payment as unknown as Record<string, unknown>;
 
   return view;
 }
 
-export const createOrder =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
-    if (!req.userId) {
-      throw unauthenticated();
-    }
+export const createOrder = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    throw new AppError("Unauthenticated", 401, "UNAUTHENTICATED");
+  }
 
-    const { rideId } = req.body as { rideId: string };
+  const { rideId } = req.body;
 
-    const result =
-      await paymentService.createOrder({
-        rideId,
-        riderId: req.userId,
-        idempotencyKey:
-          deriveIdempotencyKey(rideId, req.userId),
-      });
-
-    res.status(201).json({
-      data: result,
-    });
-
+  const result = await paymentService.createOrder({
+    rideId,
+    riderId: req.userId,
+    idempotencyKey: deriveIdempotencyKey(rideId, req.userId),
   });
 
-export const verifyCheckout =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
+  res.status(201).json({
+    data: result,
+  });
+});
 
-    if (!req.userId) {
-      throw unauthenticated();
-    }
+export const verifyCheckout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    throw new AppError("Unauthenticated", 401, "UNAUTHENTICATED");
+  }
 
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-    } = req.body;
+  const {
+    razorpay_order_id,
+    razorpay_payment_id,
+    razorpay_signature,
+  } = req.body;
 
-    const status =
-      await paymentService.verifyCheckoutSignature({
-
-        gatewayOrderId:
-          razorpay_order_id,
-
-        gatewayPaymentId:
-          razorpay_payment_id,
-
-        signature:
-          razorpay_signature,
-
-        requesterId:
-          req.userId,
-
-      });
-
-    res.status(200).json({
-      data: {
-        status,
-      },
-    });
-
+  const status = await paymentService.verifyCheckoutSignature({
+    gatewayOrderId: razorpay_order_id,
+    gatewayPaymentId: razorpay_payment_id,
+    signature: razorpay_signature,
+    requesterId: req.userId,
   });
 
-export const getPayment =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
-
-    if (!req.userId) {
-      throw unauthenticated();
-    }
-
-    if (!req.params.paymentId) {
-      throw new AppError(
-        "Payment id is required.",
-        400,
-        "PAYMENT_ID_REQUIRED"
-      );
-    }
-
-    const payment =
-      await paymentService.getPaymentById(
-        req.params.paymentId
-      );
-
-    if (!payment) {
-
-      throw new AppError(
-        "Payment not found",
-        404,
-        "PAYMENT_NOT_FOUND"
-      );
-
-    }
-
-    const { isAdmin } = await loadRequester(req.userId, req);
-
-    if (
-      !isParticipant(payment, req.userId) &&
-      !isAdmin
-    ) {
-
-      throw new AppError(
-        "Not authorized to view this payment",
-        403,
-        "FORBIDDEN"
-      );
-
-    }
-
-    res.status(200).json({
-      data: toPaymentView(payment, isAdmin),
-    });
-
+  res.status(200).json({
+    data: {
+      status,
+    },
   });
+});
 
-export const getPaymentsByRide =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
+export const getPayment = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    throw new AppError("Unauthenticated", 401, "UNAUTHENTICATED");
+  }
 
-    if (!req.userId) {
-      throw unauthenticated();
-    }
+  const payment = await paymentService.getPaymentById(req.params.paymentId);
+  if (!payment) {
+    throw new AppError("Payment not found", 404, "PAYMENT_NOT_FOUND");
+  }
 
-    if (!req.params.rideId) {
-      throw new AppError(
-        "Ride id is required.",
-        400,
-        "RIDE_ID_REQUIRED"
-      );
-    }
+  const isAdmin = Boolean(req.roles?.includes('ADMIN') || req.user?.roles?.includes('ADMIN'));
+  if (!isParticipant(payment, req.userId) && !isAdmin) {
+    throw new AppError("Not authorized to view this payment", 403, "FORBIDDEN");
+  }
 
-    const payments =
-      await paymentService.getPaymentsByRide(
-        req.params.rideId
-      );
-
-    const { isAdmin } = await loadRequester(req.userId, req);
-
-    const owns =
-      payments.some(
-        (payment) =>
-          isParticipant(payment, req.userId as string)
-      );
-
-    if (
-      payments.length > 0 &&
-      !owns &&
-      !isAdmin
-    ) {
-
-      throw new AppError(
-        "Not authorized to view these payments",
-        403,
-        "FORBIDDEN"
-      );
-
-    }
-
-    res.status(200).json({
-      data: payments.map((payment) => toPaymentView(payment, isAdmin)),
-    });
-
+  res.status(200).json({
+    data: toPaymentView(payment, isAdmin),
   });
+});
 
-export const listPayments =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
+export const getPaymentsByRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    throw new AppError("Unauthenticated", 401, "UNAUTHENTICATED");
+  }
 
-    if (!req.userId) {
-      throw unauthenticated();
-    }
+  const payments = await paymentService.getPaymentsByRide(req.params.rideId);
+  const isAdmin = Boolean(req.roles?.includes('ADMIN') || req.user?.roles?.includes('ADMIN'));
 
-    // already validated + defaulted by listPaymentsQuerySchema
-    const {
+  if (payments.length > 0 && !isAdmin && !isParticipant(payments[0], req.userId)) {
+    throw new AppError("Not authorized to view these payments", 403, "FORBIDDEN");
+  }
+
+  res.status(200).json({
+    data: payments.map((payment) => toPaymentView(payment, isAdmin)),
+  });
+});
+
+export const listPayments = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    throw new AppError("Unauthenticated", 401, "UNAUTHENTICATED");
+  }
+
+  const { page, limit, status } = req.query as unknown as {
+    page: number;
+    limit: number;
+    status?: PaymentStatus;
+  };
+
+  const isAdmin = Boolean(req.roles?.includes('ADMIN') || req.user?.roles?.includes('ADMIN'));
+  const filter = isAdmin ? { status } : { rider: req.userId, status };
+
+  const { items, total } = await paymentService.listPaymentsPaginated(
+    filter,
+    page,
+    limit
+  );
+
+  res.status(200).json({
+    data: items.map((payment) => toPaymentView(payment, isAdmin)),
+    meta: {
       page,
       limit,
-      status,
-    } = req.query as unknown as {
-      page: number;
-      limit: number;
-      status?: PaymentStatus;
-    };
-
-    const { isAdmin } = await loadRequester(req.userId, req);
-
-    const filter =
-      isAdmin
-        ? {
-          status,
-        }
-        : {
-          rider:
-            req.userId,
-
-          status,
-        };
-
-    const { items, total } =
-      await paymentService.listPaymentsPaginated(
-        filter,
-        page,
-        limit
-      );
-
-    // `data` stays a plain array (as before); pagination info is new and additive.
-    res.status(200).json({
-      data: items.map((payment) => toPaymentView(payment, isAdmin)),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
-      },
-    });
-
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    },
   });
-
-/** Admin only (enforced by requireAdmin on the route). */
-export const refundPayment =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
-
-    if (!req.userId) {
-      throw unauthenticated();
-    }
-
-    const {
-      amountPaise,
-      reason,
-    } = req.body;
-
-    const result = await paymentService.initiateRefund({
-
-      paymentId:
-        req.params.paymentId,
-
-      amountPaise,
-
-      reason,
-
-      initiatedBy: req.userId,
-
-    });
-
-    res.status(202).json({
-
-      message:
-        "Refund initiated",
-
-      data: result,
-
-    });
-
-  });
+});
 
 /** Get driver's ledger balance and available earnings */
-export const getDriverBalance =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
-    const driverId = req.driverId || req.userId;
-    if (!driverId) {
-      throw new AppError("Driver identity required", 403, "FORBIDDEN");
-    }
-    const altDriverId = req.userId && req.userId !== driverId ? req.userId : undefined;
+export const getDriverBalance = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const driverId = req.driverId;
+  if (!driverId) {
+    throw new AppError("Driver identity required", 403, "FORBIDDEN");
+  }
 
-    const balance = await payoutService.getDriverBalance(driverId, altDriverId);
-    res.status(200).json({
-      success: true,
-      data: balance,
-    });
+  const balance = await payoutService.getDriverBalance(driverId);
+  res.status(200).json({
+    success: true,
+    data: balance,
   });
+});
 
 /** Request a payout from driver's available earnings */
-export const requestPayout =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
-    const driverId = req.driverId || req.userId;
-    if (!driverId) {
-      throw new AppError("Driver identity required", 403, "FORBIDDEN");
-    }
-    const altDriverId = req.userId && req.userId !== driverId ? req.userId : undefined;
+export const requestPayout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const driverId = req.driverId;
+  if (!driverId) {
+    throw new AppError("Driver identity required", 403, "FORBIDDEN");
+  }
 
-    const { amountPaise, rideId, paymentId, mode, metadata } = req.body;
-    if (!amountPaise || amountPaise <= 0) {
-      throw new AppError("Valid amount in paise is required.", 400, "INVALID_AMOUNT");
-    }
+  const { amountPaise, rideId, paymentId, mode, metadata } = req.body;
 
-    const isUuid = (val: unknown): val is string =>
-      typeof val === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-
-    const payout = await payoutService.createPayout({
-      driverId,
-      altDriverId,
-      rideId: isUuid(rideId) ? rideId : null,
-      paymentId: isUuid(paymentId) ? paymentId : null,
-      amountPaise: Math.round(Number(amountPaise)),
-      mode,
-      metadata: typeof metadata === "object" && metadata !== null ? (metadata as Record<string, unknown>) : undefined,
-    });
-
-    res.status(201).json({
-      success: true,
-      data: payout,
-    });
+  const payout = await payoutService.createPayout({
+    driverId,
+    rideId: rideId || null,
+    paymentId: paymentId || null,
+    amountPaise: Number(amountPaise),
+    mode,
+    metadata,
   });
+
+  res.status(201).json({
+    success: true,
+    data: payout,
+  });
+});
 
 /** List payouts for the authenticated driver or all for admin */
-export const listPayouts =
-  asyncHandler(async (
-    req: AuthenticatedRequest,
-    res: Response
-  ) => {
-    const userId = req.userId;
-    if (!userId) {
-      throw unauthenticated();
-    }
+export const listPayouts = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) {
+    throw new AppError("Unauthenticated", 401, "UNAUTHENTICATED");
+  }
 
-    const { isAdmin } = await loadRequester(userId, req);
-    if (isAdmin && typeof req.query.driverId === "string") {
-      const payouts = await payoutRepository.findByDriver(req.query.driverId);
-      return res.status(200).json({ success: true, data: payouts });
-    }
-    if (isAdmin) {
-      const payouts = await payoutRepository.findPending();
-      return res.status(200).json({ success: true, data: payouts });
-    }
+  const isAdmin = Boolean(req.roles?.includes('ADMIN') || req.user?.roles?.includes('ADMIN'));
+  if (isAdmin && req.query.driverId) {
+    const payouts = await payoutRepository.findByDriver(String(req.query.driverId));
+    return res.status(200).json({ success: true, data: payouts });
+  }
+  if (isAdmin) {
+    const payouts = await payoutRepository.findPending();
+    return res.status(200).json({ success: true, data: payouts });
+  }
 
-    const driverId = req.driverId || req.userId;
-    if (!driverId) {
-      throw new AppError("Driver identity required", 403, "FORBIDDEN");
-    }
-    const altDriverId = req.userId && req.userId !== driverId ? req.userId : undefined;
-    const driverIds = altDriverId ? [driverId, altDriverId] : driverId;
+  const driverId = req.driverId;
+  if (!driverId) {
+    throw new AppError("Driver identity required", 403, "FORBIDDEN");
+  }
 
-    const payouts = await payoutRepository.findByDriver(driverIds);
+  const payouts = await payoutRepository.findByDriver(driverId);
 
-    res.status(200).json({
-      success: true,
-      data: payouts,
-    });
+  res.status(200).json({
+    success: true,
+    data: payouts,
   });
+});
+
+/** Admin metrics for payments volume and status breakdown */
+export const getAdminMetrics = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { period } = req.query as unknown as { period: '24h' | '7d' | '30d' };
+  const days = period === '24h' ? 1 : period === '30d' ? 30 : 7;
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  const [capturedStats, totalCount, statusCounts] = await Promise.all([
+    prisma.payment.aggregate({
+      _sum: { amountPaise: true },
+      _count: true,
+      where: { status: 'CAPTURED', createdAt: { gte: startDate } },
+    }),
+    prisma.payment.count({ where: { createdAt: { gte: startDate } } }),
+    prisma.payment.groupBy({
+      by: ['status'],
+      _count: true,
+      where: { createdAt: { gte: startDate } },
+    }),
+  ]);
+
+  const statusBreakdown: Record<string, number> = {};
+  for (const s of statusCounts) {
+    statusBreakdown[s.status] = s._count;
+  }
+
+  res.json({
+    success: true,
+    data: {
+      period,
+      totalTransactions: totalCount,
+      grossVolumePaise: capturedStats._sum.amountPaise || 0,
+      statusBreakdown,
+    },
+  });
+});
+
+/** Admin list payments with filtering and pagination */
+export const listPaymentsAdmin = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { page, limit, status, search } = req.query as unknown as {
+    page: number;
+    limit: number;
+    status?: PaymentStatus;
+    search?: string;
+  };
+  const where = {
+    ...(status ? { status: status as never } : {}),
+    ...(search ? {
+      OR: [
+        { id: { contains: search, mode: 'insensitive' as const } },
+        { rideId: { contains: search, mode: 'insensitive' as const } },
+        { riderId: { contains: search, mode: 'insensitive' as const } },
+        { gatewayPaymentId: { contains: search, mode: 'insensitive' as const } },
+        { gatewayOrderId: { contains: search, mode: 'insensitive' as const } },
+      ],
+    } : {}),
+  };
+  const [items, total] = await prisma.$transaction([
+    prisma.payment.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+    prisma.payment.count({ where }),
+  ]);
+  res.json({ success: true, data: items, pagination: { page, limit, total } });
+});

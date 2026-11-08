@@ -17,11 +17,10 @@ describe('Payment Service Order Creation & Verification', () => {
     create: vi.fn(),
     update: vi.fn()
   };
-  const mockRefundRepo: any = { create: vi.fn() };
   const mockLedgerService: any = { recordPaymentCapture: vi.fn().mockResolvedValue('tx-1') };
   const mockOutboxRepo: any = { stageEvent: vi.fn().mockResolvedValue({}) };
 
-  const paymentService = new PaymentService(mockPaymentRepo, mockRefundRepo, mockLedgerService, mockOutboxRepo);
+  const paymentService = new PaymentService(mockPaymentRepo, mockLedgerService, mockOutboxRepo);
 
   it('should create a real Razorpay payment order for a ride', async () => {
     const validRide = {

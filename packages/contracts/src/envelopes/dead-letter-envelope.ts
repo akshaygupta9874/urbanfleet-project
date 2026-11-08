@@ -43,7 +43,7 @@ export const DeadLetterEnvelopeSchema = z.object({
     isOperational: z.boolean().optional(),
     statusCode: z.number().int().optional(),
   }),
-  payload: z.any().optional(),
+  payload: z.any(),
   rawPayload: z.string().optional(),
   originalValue: z.string().optional(),
   originalEnvelope: z.record(z.any()).optional(),

@@ -1,14 +1,8 @@
 import { randomUUID, createHmac, timingSafeEqual } from "crypto";
 
-
 import {
   RazorpayPaymentEntity,
 } from "../types/razorpay.types.js";
-
-import {
-  InitiateRefundInput,
-  InitiateRefundResult,
-} from "../types/payment.dto.js";
 
 import {
   IFareBreakdown,
@@ -40,7 +34,6 @@ import {
 
 import { paymentRepository, ListPaymentsFilter } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
-import { refundService } from "./refund.service.js";
 
 import { acquireLock } from '../redis/redis-lock.js';
 import { paymentLog } from "../utils/payment-logger.js";
@@ -55,7 +48,6 @@ import { rideClient } from '../clients/ride.client.js';
 import type { RideDto } from "@urbanfleet/common";
 import { RidePaymentStatus, RideStatus } from "../types/payment.types.js";
 export { RidePaymentStatus, RideStatus };
-import { UserRole } from '../db/client.js';
 
 // Re-exported so existing imports of acquireLock from this file keep working.
 export { acquireLock } from '../redis/redis-lock.js';
@@ -167,18 +159,15 @@ function validateFareBreakdown(
 
 export class PaymentService {
   private customPaymentRepo?: any;
-  private customRefundRepo?: any;
   private customLedgerService?: any;
   private customOutboxRepo?: any;
 
   constructor(
     customPaymentRepo?: any,
-    customRefundRepo?: any,
     customLedgerService?: any,
     customOutboxRepo?: any
   ) {
     this.customPaymentRepo = customPaymentRepo;
-    this.customRefundRepo = customRefundRepo;
     this.customLedgerService = customLedgerService;
     this.customOutboxRepo = customOutboxRepo;
   }
@@ -197,7 +186,7 @@ export class PaymentService {
       throw new AppError("Ride and rider are required.", 400, "INVALID_INPUT");
     }
 
-    const ride = await rideClient.getRideById(rideIdStr);
+    const ride = await paymentRepository.findRideById(rideIdStr);
 
     if (!ride) {
       throw new AppError(
@@ -264,7 +253,7 @@ export class PaymentService {
       );
     }
 
-    const latestDriverId = latestRide.driverId;
+    const latestDriverId = latestRide.driverId || input.driverId;
     if (!latestDriverId && !isCancelled) {
       throw new AppError(
         "Driver not assigned.",
@@ -273,7 +262,7 @@ export class PaymentService {
       );
     }
 
-    const fareBreakdown = latestRide.fare.breakdown;
+    const fareBreakdown = latestRide.fare?.breakdown || (input.fareBreakdown as unknown as IFareBreakdown);
 
     if (!fareBreakdown) {
       throw new AppError(
@@ -337,9 +326,9 @@ export class PaymentService {
             return { payment: existingForRide[0]!, alreadyExists: true };
           }
 
-          const lockedFare = lockedRide.fare.breakdown;
+          const lockedFare = lockedRide.fare?.breakdown || (input.fareBreakdown as unknown as IFareBreakdown);
           const lockedRiderId = lockedRide.riderId;
-          const lockedDriverId = lockedRide.driverId || (isCancelled ? lockedRiderId : undefined);
+          const lockedDriverId = lockedRide.driverId || input.driverId || (isCancelled ? lockedRiderId : undefined);
           if (!lockedDriverId || !lockedFare) {
             throw new AppError(
               "Ride payment details are incomplete.",
@@ -361,7 +350,6 @@ export class PaymentService {
               fareBreakdown: lockedFare,
               idempotencyKey: input.idempotencyKey,
               attemptNumber: 1,
-              refundedAmountPaise: 0,
               metadata: {
                 rideStatus: lockedRide.status,
                 paymentStatus: lockedRide.paymentStatus,
@@ -505,11 +493,17 @@ export class PaymentService {
       return this.toOrderResult(fresh ?? existing);
     }
 
-    await rideClient.updatePaymentStatus(
-      existing.ride.toString(),
-      RidePaymentStatus.PENDING,
-      RidePaymentStatus.FAILED
-    );
+    await paymentRepository.updateRideMany({
+      where: {
+        id: existing.ride.toString(),
+        paymentStatus: RidePaymentStatus.FAILED,
+      },
+      data: {
+        paymentStatus: RidePaymentStatus.PENDING,
+      },
+    });
+
+    await rideClient.updatePaymentStatus(existing.ride.toString(), RidePaymentStatus.PENDING, RidePaymentStatus.FAILED).catch(() => null);
 
     return this.toOrderResult(reopened);
   }
@@ -887,7 +881,11 @@ export class PaymentService {
 
       // Sync payment status with authoritative ride-service
       try {
-        await rideClient.updatePaymentStatus(payment.ride.toString(), RidePaymentStatus.CAPTURED);
+        await rideClient.updatePaymentStatus(
+          payment.ride.toString(),
+          RidePaymentStatus.CAPTURED,
+          null,
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         paymentLog.warn("payment.ride_service_sync_failed", {
@@ -1021,20 +1019,6 @@ export class PaymentService {
 
   }
 
-  // ------------------------------------------------------------------
-  // 4. REFUNDS (implemented in refund.service.ts, kept here for compatibility)
-  // ------------------------------------------------------------------
-
-  async initiateRefund(
-    input: InitiateRefundInput
-  ): Promise<InitiateRefundResult> {
-    return refundService.initiateRefund(input);
-  }
-
-  async loadRequester(_userId: string): Promise<{ isAdmin: boolean }> {
-    return { isAdmin: false };
-  }
-
   async getPaymentById(paymentId: string): Promise<IPayment | null> {
     return paymentRepository.findById(paymentId);
   }
@@ -1049,15 +1033,6 @@ export class PaymentService {
     limit = 20
   ): Promise<{ items: IPayment[]; total: number }> {
     return paymentRepository.listPaginated(filter, page, limit);
-  }
-
-  async issueRefund(paymentId: string, amountPaise: number, reason?: string): Promise<unknown> {
-    return refundService.initiateRefund({
-      paymentId,
-      amountPaise,
-      reason: reason || 'Ride cancellation refund',
-      initiatedBy: 'system',
-    });
   }
 
   async verifyPaymentSignature(paymentId: string, gatewayPaymentId: string, signature: string, orderId?: string): Promise<boolean> {

@@ -13,7 +13,6 @@ import {
   CreditCard,
   ShieldCheck,
   Activity,
-  FileSpreadsheet,
   Sliders,
   RefreshCw,
   Terminal,
@@ -31,7 +30,6 @@ import {
   type AdminRide,
   type AdminPayment,
   type AdminSession,
-  type AdminAuditLog,
   type PaginatedResult,
 } from './lib/adminApi';
 import { AdminHeader } from './components/admin/AdminHeader';
@@ -45,7 +43,6 @@ import { AdminRidesTab } from './components/admin/AdminRidesTab';
 import { AdminPaymentsTab } from './components/admin/AdminPaymentsTab';
 import { AdminSessionsTab } from './components/admin/AdminSessionsTab';
 import { AdminSystemHealthTab } from './components/admin/AdminSystemHealthTab';
-import { AdminAuditLogTab } from './components/admin/AdminAuditLogTab';
 import { AdminActionModal, type AdminActionModalProps } from './components/admin/AdminActionModal';
 import { KeyboardShortcutsModal } from './components/admin/KeyboardShortcutsModal';
 import CityMapBackground from './components/CityMapBackground';
@@ -94,7 +91,7 @@ const SECTION_CONFIG: Record<AdminSection, SectionMeta> = {
     id: 'drivers',
     label: 'Captain KYC & Fleet',
     shortLabel: 'Drivers',
-    subtitle: 'Audit commercial licenses, RC smart cards, insurance, and onboarding status.',
+    subtitle: 'Verify commercial licenses, RC smart cards, insurance, and onboarding status.',
     shortcut: 'G D',
     icon: Car,
   },
@@ -110,7 +107,7 @@ const SECTION_CONFIG: Record<AdminSection, SectionMeta> = {
     id: 'payments',
     label: 'Ledger & Settlements',
     shortLabel: 'Payments',
-    subtitle: 'Double-entry paise ledger, Razorpay gateway orders, and instant refunds.',
+    subtitle: 'Double-entry paise ledger, Razorpay gateway orders, and payouts.',
     shortcut: 'G P',
     icon: CreditCard,
   },
@@ -129,14 +126,6 @@ const SECTION_CONFIG: Record<AdminSection, SectionMeta> = {
     subtitle: 'PostgreSQL, Redis, Kafka outbox, and WebSocket cluster diagnostics.',
     shortcut: 'G H',
     icon: Activity,
-  },
-  audit: {
-    id: 'audit',
-    label: 'Immutable Audit Log',
-    shortLabel: 'Audit',
-    subtitle: 'Cryptographic trail of administrative mutations and security events.',
-    shortcut: 'G A',
-    icon: FileSpreadsheet,
   },
   settings: {
     id: 'settings',
@@ -157,7 +146,6 @@ const ORDERED_SECTIONS: AdminSection[] = [
   'payments',
   'sessions',
   'health',
-  'audit',
   'settings',
 ];
 
@@ -211,10 +199,6 @@ export default function AdminDashboard() {
     data: [],
   });
   const [sessionsData, setSessionsData] = useState<PaginatedResult<AdminSession>>({
-    success: true,
-    data: [],
-  });
-  const [auditData, setAuditData] = useState<PaginatedResult<AdminAuditLog>>({
     success: true,
     data: [],
   });
@@ -320,12 +304,6 @@ export default function AdminDashboard() {
       } else if (section === 'health') {
         const hlData = await adminApi.getSystemHealth();
         setHealth(hlData);
-      } else if (section === 'audit') {
-        const res = await adminApi.getAuditLogs({
-          page: currentPage,
-          limit: 20,
-        });
-        setAuditData(res);
       }
       setLastSyncedAt(new Date());
     } catch (err) {
@@ -436,9 +414,6 @@ export default function AdminDashboard() {
           case 'h':
             handleSectionChange('health');
             break;
-          case 'a':
-            handleSectionChange('audit');
-            break;
         }
       }
     };
@@ -518,22 +493,6 @@ export default function AdminDashboard() {
         if (!status) return;
         await adminApi.verifyDriver(targetDriver.id, status, reason);
         showToast(`Driver verification status changed to ${status}`, 'success');
-        await loadSectionData();
-      },
-    });
-  };
-
-  const openRefundModal = (payment: AdminPayment) => {
-    setModalConfig({
-      isOpen: true,
-      title: 'Initiate Ledger & Gateway Refund',
-      description:
-        'Issues a compensating ledger entry and contacts Razorpay to return passenger funds.',
-      targetId: `Payment Order ${payment.id} (Ride: ${payment.rideId || 'Direct'})`,
-      actionType: 'REFUND_PAYMENT',
-      onConfirm: async ({ reason, amountPaise }) => {
-        await adminApi.refundPayment(payment.id, reason, amountPaise);
-        showToast('Refund processed successfully', 'success');
         await loadSectionData();
       },
     });
@@ -876,7 +835,6 @@ export default function AdminDashboard() {
                     paymentsData={paymentsData}
                     loading={loading}
                     onFilterStatus={handlePaymentFilter}
-                    onOpenRefundModal={openRefundModal}
                     onPageChange={(page) => setCurrentPage(page)}
                   />
                 )}
@@ -895,14 +853,6 @@ export default function AdminDashboard() {
                     health={health}
                     loading={loading}
                     onRefreshHealth={() => void loadSectionData()}
-                  />
-                )}
-
-                {section === 'audit' && (
-                  <AdminAuditLogTab
-                    auditData={auditData}
-                    loading={loading}
-                    onPageChange={(page) => setCurrentPage(page)}
                   />
                 )}
               </motion.div>
@@ -933,7 +883,6 @@ export default function AdminDashboard() {
                 ['R', 'Rides'],
                 ['P', 'Pay'],
                 ['H', 'Health'],
-                ['A', 'Audit'],
               ].map(([k, label]) => (
                 <span
                   key={k}

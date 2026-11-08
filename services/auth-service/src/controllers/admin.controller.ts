@@ -8,12 +8,19 @@ import {
   driverVerificationSchema,
   idParamSchema,
   paginationQuerySchema,
-  refundRequestSchema,
   systemSettingsSchema,
   userSuspensionSchema,
 } from '../validation/admin.validation.js';
 
-type AdminRequest = Request & Partial<Pick<AuthenticatedRequest, 'userId' | 'bearer' | 'roles'>>;
+type AdminRequest = Request & Partial<Pick<AuthenticatedRequest, 'userId' | 'roles'>>;
+
+function extractBearerToken(req: Request): string | undefined {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  return undefined;
+}
 
 function handleControllerError(error: unknown, res: Response) {
   if (error instanceof ZodError) {
@@ -40,7 +47,7 @@ export class AdminController {
 
   getOverview = async (req: AdminRequest, res: Response) => {
     try {
-      const data = await this.service.getOverview(req.bearer);
+      const data = await this.service.getOverview(extractBearerToken(req));
       res.json({ success: true, data });
     } catch (error) {
       handleControllerError(error, res);
@@ -50,7 +57,7 @@ export class AdminController {
   getUsers = async (req: AdminRequest, res: Response) => {
     try {
       const query = paginationQuerySchema.parse(req.query);
-      const result = await this.service.getUsers(req.bearer, query);
+      const result = await this.service.getUsers(extractBearerToken(req), query);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -60,7 +67,7 @@ export class AdminController {
   getSessions = async (req: AdminRequest, res: Response) => {
     try {
       const query = paginationQuerySchema.parse(req.query);
-      const result = await this.service.getSessions(req.bearer, query);
+      const result = await this.service.getSessions(extractBearerToken(req), query);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -70,7 +77,7 @@ export class AdminController {
   revokeSession = async (req: AdminRequest, res: Response) => {
     try {
       const { id } = idParamSchema.parse(req.params);
-      const result = await this.service.revokeSession(req.bearer, id, req.userId);
+      const result = await this.service.revokeSession(extractBearerToken(req), id);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -88,7 +95,7 @@ export class AdminController {
       }
       const suspended = req.query.suspended === 'true';
       const input = userSuspensionSchema.parse(req.body);
-      const result = await this.service.setSuspension(req.bearer, id, suspended, input, req.userId);
+      const result = await this.service.setSuspension(extractBearerToken(req), id, suspended, input);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -98,7 +105,7 @@ export class AdminController {
   getDrivers = async (req: AdminRequest, res: Response) => {
     try {
       const query = paginationQuerySchema.parse(req.query);
-      const result = await this.service.getDrivers(req.bearer, query);
+      const result = await this.service.getDrivers(extractBearerToken(req), query);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -109,7 +116,7 @@ export class AdminController {
     try {
       const { id } = idParamSchema.parse(req.params);
       const input = driverVerificationSchema.parse(req.body);
-      const result = await this.service.verifyDriver(req.bearer, id, input, req.userId);
+      const result = await this.service.verifyDriver(extractBearerToken(req), id, input);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -119,7 +126,7 @@ export class AdminController {
   getRides = async (req: AdminRequest, res: Response) => {
     try {
       const query = paginationQuerySchema.parse(req.query);
-      const result = await this.service.getRides(req.bearer, query);
+      const result = await this.service.getRides(extractBearerToken(req), query);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -129,29 +136,7 @@ export class AdminController {
   getPayments = async (req: AdminRequest, res: Response) => {
     try {
       const query = paginationQuerySchema.parse(req.query);
-      const result = await this.service.getPayments(req.bearer, query);
-      res.json(result);
-    } catch (error) {
-      handleControllerError(error, res);
-    }
-  };
-
-  refundPayment = async (req: AdminRequest, res: Response) => {
-    try {
-      const { id } = idParamSchema.parse(req.params);
-      const input = refundRequestSchema.parse(req.body);
-      const idempotencyKey = (req.headers['idempotency-key'] as string) || undefined;
-      const result = await this.service.refundPayment(req.bearer, id, input, idempotencyKey, req.userId);
-      res.json(result);
-    } catch (error) {
-      handleControllerError(error, res);
-    }
-  };
-
-  getAuditLogs = async (req: AdminRequest, res: Response) => {
-    try {
-      const query = paginationQuerySchema.parse(req.query);
-      const result = await this.service.getAuditLogs(req.bearer, query);
+      const result = await this.service.getPayments(extractBearerToken(req), query);
       res.json(result);
     } catch (error) {
       handleControllerError(error, res);
@@ -170,7 +155,7 @@ export class AdminController {
   getAnalytics = async (req: AdminRequest, res: Response) => {
     try {
       const query = analyticsQuerySchema.parse(req.query);
-      const data = await this.service.getAnalytics(req.bearer, query.period);
+      const data = await this.service.getAnalytics(extractBearerToken(req), query.period);
       res.json({ success: true, data });
     } catch (error) {
       handleControllerError(error, res);
@@ -189,7 +174,7 @@ export class AdminController {
   updateSettings = async (req: AdminRequest, res: Response) => {
     try {
       const input = systemSettingsSchema.parse(req.body);
-      const data = await this.service.updateSettings(req.bearer, input, req.userId);
+      const data = await this.service.updateSettings(extractBearerToken(req), input, req.userId);
       res.json({ success: true, data });
     } catch (error) {
       handleControllerError(error, res);
@@ -198,7 +183,7 @@ export class AdminController {
 
   getFleetRadar = async (req: AdminRequest, res: Response) => {
     try {
-      const data = await this.service.getFleetRadar(req.bearer);
+      const data = await this.service.getFleetRadar(extractBearerToken(req));
       res.json({ success: true, data });
     } catch (error) {
       handleControllerError(error, res);

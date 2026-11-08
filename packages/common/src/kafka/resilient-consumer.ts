@@ -15,10 +15,10 @@ export interface ResilientConsumerConfig {
   consumer: Consumer;
   consumerGroup: string;
   serviceName: string;
-  maxRetries?: number;        // Default: 3
-  initialBackoffMs?: number;  // Default: 500ms
-  backoffMultiplier?: number; // Default: 2
-  maxBackoffMs?: number;      // Default: 5000ms
+  maxRetries: number;
+  initialBackoffMs: number;
+  backoffMultiplier: number;
+  maxBackoffMs: number;
   dlqTopicResolver?: (originalTopic: string) => string;
 }
 
@@ -38,30 +38,27 @@ export interface RouteToDlqParams {
 }
 
 export function isNonRetryableError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const anyErr = err as {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+
+  const error = err as {
     isOperational?: boolean;
     statusCode?: number;
     name?: string;
-    code?: string;
   };
 
-  // Operational 4xx HTTP/domain errors
-  if (anyErr.isOperational && typeof anyErr.statusCode === 'number' && anyErr.statusCode < 500) {
+  if (
+    error.isOperational &&
+    typeof error.statusCode === 'number' &&
+    error.statusCode < 500
+  ) {
     return true;
   }
 
-  // Schema validation failures
-  if (anyErr.name === 'ZodError' || anyErr.name === 'ValidationError') {
-    return true;
-  }
-
-  // Non-retryable payment errors
-  if (anyErr.name === 'NonRetryablePaymentError') {
-    return true;
-  }
-
-  return false;
+  return ['ZodError', 'ValidationError', 'NonRetryablePaymentError'].includes(
+    error.name ?? ''
+  );
 }
 
 export function createResilientConsumerRunner(
@@ -69,17 +66,22 @@ export function createResilientConsumerRunner(
   handler: (envelope: KafkaEnvelope<unknown>, rawParsed: Record<string, unknown>) => Promise<void>
 ) {
   let dlqProducer: Producer | null = null;
-  let dlqProducerConnected = false;
+  let dlqConnectPromise: Promise<Producer> | null = null;
 
-  const getDlqProducer = async (): Promise<Producer> => {
-    if (!dlqProducer) {
-      dlqProducer = createDurableProducer(config.kafka);
+  const getDlqProducer = (): Promise<Producer> => {
+    if (!dlqConnectPromise) {
+      dlqConnectPromise = (async () => {
+        if (!dlqProducer) {
+          dlqProducer = createDurableProducer(config.kafka);
+        }
+        await dlqProducer.connect();
+        return dlqProducer;
+      })().catch((err) => {
+        dlqConnectPromise = null;
+        throw err;
+      });
     }
-    if (!dlqProducerConnected) {
-      await dlqProducer.connect();
-      dlqProducerConnected = true;
-    }
-    return dlqProducer;
+    return dlqConnectPromise;
   };
 
   const routeToDlq = async (params: RouteToDlqParams) => {
@@ -147,100 +149,138 @@ export function createResilientConsumerRunner(
     }
   };
 
-  const commitProcessedOffset = async (
-    topic: string,
-    partition: number,
-    offset: string
-  ): Promise<void> => {
+  const commitOffset = async (topic: string, partition: number, offset: string) => {
     if (typeof config.consumer.commitOffsets === 'function') {
-      const nextOffset = (BigInt(offset) + 1n).toString();
-      await config.consumer.commitOffsets([{ topic, partition, offset: nextOffset }]);
+      await config.consumer.commitOffsets([{
+        topic,
+        partition,
+        offset: (BigInt(offset) + 1n).toString(),
+      }]);
     }
   };
 
-  return async ({ topic, partition, message }: EachMessagePayload): Promise<void> => {
-    if (!message.value) return;
+  const deadLetterAndCommit = async (
+    params: RouteToDlqParams
+  ): Promise<void> => {
+    await routeToDlq(params);
+    await commitOffset(params.originalTopic, params.partition, params.offset);
+  };
 
-    const offset = message.offset;
-    const key = message.key ? message.key.toString() : undefined;
-    const rawString = message.value.toString();
+  const toFiniteNumber = (value: unknown, fallback: number): number => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
 
-    // 1. Safe JSON Deserialization Guard (Poison Pill Protection)
-    let rawParsed: Record<string, unknown>;
-    try {
-      const parsed: unknown = JSON.parse(rawString);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Invalid Kafka event: message root must be an object');
+  const parseEnvelope = (
+    raw: string,
+    key: string | undefined
+  ): { envelope: KafkaEnvelope<unknown>; parsed: Record<string, unknown> } => {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Invalid Kafka event: message root must be an object');
+    }
+
+    const rawParsed = parsed as Record<string, unknown>;
+    if ('payload' in rawParsed) {
+      const result = KafkaEnvelopeSchema.safeParse(rawParsed);
+      if (!result.success) {
+        throw Object.assign(
+          new Error(`Invalid Kafka envelope: ${result.error.message}`),
+          { payload: rawParsed },
+        );
       }
-      rawParsed = parsed as Record<string, unknown>;
-    } catch (parseErr) {
-      await routeToDlq({
+      return {
+        envelope: result.data as KafkaEnvelope<unknown>,
+        parsed: rawParsed,
+      };
+    }
+
+    return {
+      parsed: rawParsed,
+      envelope: {
+        id: String(rawParsed.id ?? key ?? crypto.randomUUID()),
+        version: toFiniteNumber(rawParsed.version, 1),
+        eventType: String(rawParsed.eventType ?? 'UNKNOWN'),
+        producer: String(rawParsed.producer ?? 'unknown'),
+        timestamp: String(rawParsed.timestamp ?? new Date().toISOString()),
+        partitionKey: String(rawParsed.partitionKey ?? key ?? ''),
+        aggregateType: String(rawParsed.aggregateType ?? ''),
+        aggregateId: String(rawParsed.aggregateId ?? ''),
+        aggregateSequence: toFiniteNumber(rawParsed.aggregateSequence, 1),
+        payload: rawParsed,
+      },
+    };
+  };
+
+  const maxRetries = config.maxRetries;
+  const initialBackoff = config.initialBackoffMs;
+  const multiplier = config.backoffMultiplier;
+  const maxBackoff = config.maxBackoffMs ?? 30_000;
+
+  const sleepWithHeartbeat = async (
+    milliseconds: number,
+    heartbeat?: () => Promise<void>,
+    intervalMs = 3_000,
+  ): Promise<void> => {
+    let remaining = milliseconds;
+    while (remaining > 0) {
+      const step = Math.min(remaining, intervalMs);
+      await new Promise((resolve) => setTimeout(resolve, step));
+      remaining -= step;
+      if (heartbeat) {
+        await heartbeat();
+      }
+    }
+  };
+
+  const eachMessageHandler = async ({
+    topic,
+    partition,
+    message,
+    heartbeat,
+  }: EachMessagePayload): Promise<void> => {
+    const offset = message.offset;
+    if (!message.value) {
+      await commitOffset(topic, partition, offset);
+      return;
+    }
+
+    const key = message.key ? message.key.toString() : undefined;
+    const rawPayload = message.value.toString();
+    let envelope: KafkaEnvelope<unknown>;
+    let rawParsed: Record<string, unknown>;
+
+    try {
+      ({ envelope, parsed: rawParsed } = parseEnvelope(rawPayload, key));
+    } catch (parseError) {
+      const error = parseError instanceof Error
+        ? parseError
+        : new Error(String(parseError));
+      await deadLetterAndCommit({
         originalTopic: topic,
         partition,
         offset,
         key,
-        error: parseErr instanceof Error ? parseErr : new Error(String(parseErr)),
+        error,
         retryCount: 0,
-        rawPayload: rawString,
-        payload: null,
-        originalValue: rawString,
+        rawPayload,
+        payload: (error as Error & { payload?: unknown }).payload ?? null,
+        originalValue: rawPayload,
       });
-      await commitProcessedOffset(topic, partition, offset);
       return;
     }
-    let envelope: KafkaEnvelope<unknown>;
-    if (rawParsed.payload !== undefined) {
-      const parsedEnvelope = KafkaEnvelopeSchema.safeParse(rawParsed);
-      if (!parsedEnvelope.success) {
-        await routeToDlq({
-          originalTopic: topic,
-          partition,
-          offset,
-          key,
-          error: new Error(`Invalid Kafka envelope: ${parsedEnvelope.error.message}`),
-          retryCount: 0,
-          rawPayload: rawString,
-          payload: rawParsed,
-          originalValue: rawString,
-        });
-        await commitProcessedOffset(topic, partition, offset);
-        return;
-      }
-      envelope = parsedEnvelope.data as KafkaEnvelope<unknown>;
-    } else {
-      envelope = {
-        id: String(rawParsed.id || key || crypto.randomUUID()),
-        version: Number(rawParsed.version || 1),
-        eventType: String(rawParsed.eventType || 'UNKNOWN'),
-        producer: String(rawParsed.producer || 'unknown'),
-        timestamp: String(rawParsed.timestamp || new Date().toISOString()),
-        partitionKey: String(rawParsed.partitionKey || key || ''),
-        aggregateType: String(rawParsed.aggregateType || ''),
-        aggregateId: String(rawParsed.aggregateId || ''),
-        aggregateSequence: Number(rawParsed.aggregateSequence || 1),
-        payload: rawParsed as unknown,
-      };
-    }
 
-    // 2. Retry Loop with Exponential Backoff + Jitter
     let attempt = 0;
-    const maxRetries = config.maxRetries ?? 3;
-    const initialBackoff = config.initialBackoffMs ?? 500;
-    const multiplier = config.backoffMultiplier ?? 2;
-    const maxBackoff = config.maxBackoffMs ?? 5000;
-
     while (attempt <= maxRetries) {
       try {
         await handler(envelope, rawParsed);
-        await commitProcessedOffset(topic, partition, offset);
+        await commitOffset(topic, partition, offset);
         return;
       } catch (err: unknown) {
         const error = err instanceof Error ? err : new Error(String(err));
-        const nonRetryable = isNonRetryableError(err);
 
-        if (nonRetryable || attempt >= maxRetries) {
-          // Terminal failure: Divert to DLQ and commit offset
-          await routeToDlq({
+        if (isNonRetryableError(err) || attempt >= maxRetries) {
+          await deadLetterAndCommit({
             originalTopic: topic,
             partition,
             offset,
@@ -249,24 +289,33 @@ export function createResilientConsumerRunner(
             retryCount: attempt,
             payload: envelope.payload,
             originalEventId: envelope.id,
-            originalValue: rawString,
+            originalValue: rawPayload,
             originalEnvelope: envelope,
           });
-          await commitProcessedOffset(topic, partition, offset);
           return;
         }
 
         attempt++;
-        const jitter = Math.random() * 200;
         const backoff = Math.min(
-          initialBackoff * Math.pow(multiplier, attempt - 1) + jitter,
-          maxBackoff
+          initialBackoff * multiplier ** (attempt - 1) + Math.random() * 200,
+          maxBackoff,
         );
         logger.warn(
-          `Transient consumer error on ${topic} [attempt ${attempt}/${maxRetries}]. Backing off ${Math.round(backoff)}ms: ${error.message}`
+          `Transient error on ${topic} (attempt ${attempt}/${maxRetries}). ` +
+          `Retrying in ${Math.round(backoff)}ms: ${error.message}`,
         );
-        await new Promise((r) => setTimeout(r, backoff));
+        await sleepWithHeartbeat(backoff, heartbeat);
       }
     }
   };
+
+  return Object.assign(eachMessageHandler, {
+    disconnectDlqProducer: async (): Promise<void> => {
+      if (dlqProducer) {
+        await dlqProducer.disconnect();
+        dlqProducer = null;
+        dlqConnectPromise = null;
+      }
+    },
+  });
 }

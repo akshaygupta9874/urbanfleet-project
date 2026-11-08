@@ -1,4 +1,4 @@
-import { Kafka, Consumer } from 'kafkajs';
+import { Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
 import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
@@ -26,6 +26,10 @@ export async function initRidePaymentConsumer(prisma: PrismaClient): Promise<Con
           consumer,
           consumerGroup,
           serviceName: 'ride-service',
+          maxRetries: 3,
+          initialBackoffMs: 500,
+          backoffMultiplier: 2,
+          maxBackoffMs: 5000,
           dlqTopicResolver: () => EventTopics.PAYMENT_DLQ,
         },
         async (envelope, raw) => {

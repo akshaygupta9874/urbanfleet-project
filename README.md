@@ -26,7 +26,7 @@ parts are intentionally simplified for a single-machine showcase deployment.
 6. [Authentication and session flow](#authentication-and-session-flow)
 7. [Ride booking flow](#ride-booking-flow)
 8. [Driver flow](#driver-flow)
-9. [Payment and refund flow](#payment-and-refund-flow)
+9. [Payment and settlement flow](#payment-and-settlement-flow)
 10. [Notification flow](#notification-flow)
 11. [Administrator flow](#administrator-flow)
 12. [Synchronous and asynchronous communication](#synchronous-and-asynchronous-communication)
@@ -174,7 +174,7 @@ installations reproducible.
 | Driver | `4002` | driver profile, documents, vehicles, driver state | HTTP, Redis, Kafka |
 | Notification | `4003` | notification inbox and delivery state | Kafka, Nodemailer (SMTP) |
 | Ride | `4004` | ride aggregate, lifecycle, dispatch, location | HTTP, Redis, Kafka, WebSocket |
-| Payment | `4005` | orders, captures, refunds, ledger | HTTP, Razorpay, Kafka |
+| Payment | `4005` | orders, captures, payouts, ledger | HTTP, Razorpay, Kafka |
 | PostgreSQL | external or CI service | one database per domain | Prisma |
 | Redis | external or CI service | sessions, cache, GEO/ephemeral state | Redis clients |
 | Kafka | container `kafka:29092` | event transport and DLQs | KafkaJS/shared client |
@@ -183,7 +183,7 @@ installations reproducible.
 
 The admin service does not directly query another service's database. It calls
 that domain's API. Auth owns user suspension and audit persistence; driver owns
-driver verification; ride owns ride state; payment owns payment/refund state.
+driver verification; ride owns ride state; payment owns payment/ledger state.
 This keeps business rules near the data they protect.
 
 ## Repository map by code layer
@@ -368,7 +368,7 @@ auth. Cloudinary configuration is used for driver image/document integration
 where configured. Ride state remains owned by ride-service even when a driver
 initiates a lifecycle action.
 
-## Payment and refund flow
+## Payment and settlement flow
 
 ```mermaid
 sequenceDiagram
@@ -385,11 +385,11 @@ sequenceDiagram
   Payment->>DB: Persist payment and balanced ledger entries
   Payment->>DB: Persist outbox event in same transaction
   Payment-->>Rider: Payment status
-  Payment->>Kafka: Publish captured/refunded event
+  Payment->>Kafka: Publish payment.captured event
   Kafka-->>Notify: Consume event and stage receipt
-  Rider->>Payment: Refund request (admin-controlled where applicable)
-  Payment->>Gateway: Request/refine refund
-  Payment->>DB: Persist normalized refund state
+
+
+
 ```
 
 Payment amounts are represented in paise. The payment service validates
@@ -399,9 +399,9 @@ double-entry ledger balance before committing journal entries:
 sum(debits) - sum(credits) = 0
 ```
 
-Gateway webhooks are routed by Kong to the payment service. Refunds must remain
-owned by payment-service because gateway lifecycle, duplicate requests, and
-reconciliation are payment concerns.
+Gateway webhooks are routed by Kong to the payment service. Payouts and reconciliation remain
+owned by payment-service because gateway lifecycle, idempotency, and
+journal reconciliation are payment concerns.
 
 ## Notification flow
 
@@ -444,7 +444,7 @@ flowchart TD
   AuthAdmin --> Auth["Auth: users, sessions, suspensions, audit"]
   AuthAdmin --> Driver["Driver: profiles and verification"]
   AuthAdmin --> Ride["Ride: operational list"]
-  AuthAdmin --> Payment["Payment: payments and refunds"]
+  AuthAdmin --> Payment["Payment: payments and ledger"]
   AuthAdmin --> Health["Service health aggregation"]
 ```
 
@@ -454,7 +454,7 @@ Stage 1 surfaces include:
 - users, suspension/restoration, and session revocation;
 - driver review and verification actions;
 - ride and payment lists with pagination;
-- refund requests through payment-service;
+- payments inspection and metrics through payment-service;
 - service health;
 - audit history;
 - fleet/radar and settings UI surfaces.
@@ -487,7 +487,7 @@ recovery source of truth after reconnect.
 ### Kafka
 
 Use Kafka for events such as user registration, ride lifecycle changes, payment
-capture/refund, and notification work. Topic names are created by
+capture, and notification work. Topic names are created by
 `infra/kafka-init.sh`:
 
 ```text
@@ -524,7 +524,7 @@ Typical durable records include:
   audit logs;
 - driver profiles, documents, vehicles, and processed event identifiers;
 - rides, lifecycle data, outbox records, and processed event identifiers;
-- payments, refunds, journal entries, and outbox records;
+- payments, driver payouts, journal entries, and outbox records;
 - notification records, inbox/processed events, retry state, and delivery
   timestamps.
 
@@ -850,8 +850,8 @@ understood honestly:
   coordinates come from active driver telemetry.
 - Analytics should use authoritative aggregation queries rather than bounded
   UI samples when used for business reporting.
-- Payment refunds require gateway idempotency, reconciliation, and operational
-  review in a real deployment.
+- Driver payouts and reconciliation use gateway idempotency and ledger journal balance verification.
+
 - Rate limiting, secret rotation, backups, alerts, tracing, and disaster
   recovery should be expanded before exposing the system to untrusted public
   traffic at scale.

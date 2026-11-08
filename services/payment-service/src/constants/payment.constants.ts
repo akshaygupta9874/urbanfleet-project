@@ -9,9 +9,6 @@ export const RAZORPAY_WEBHOOK_EVENTS = {
     PAYMENT_CAPTURED: "payment.captured",
     PAYMENT_FAILED: "payment.failed",
     ORDER_PAID: "order.paid",
-    REFUND_CREATED: "refund.created",
-    REFUND_PROCESSED: "refund.processed",
-    REFUND_FAILED: "refund.failed",
     PAYOUT_INITIATED: "payout.initiated",
     PAYOUT_PROCESSED: "payout.processed",
     PAYOUT_REVERSED: "payout.reversed",
@@ -24,7 +21,6 @@ export type RazorpayWebhookEventName = (typeof RAZORPAY_WEBHOOK_EVENTS)[keyof ty
 export const MIN_PAYMENT_AMOUNT_PAISE = 100;
 export const MAX_PAYMENT_AMOUNT_PAISE = 5_000_000;
 export const IDEMPOTENCY_LOCK_TTL_MS = 60_000;
-export const REFUND_LOCK_TTL_MS = 30_000;
 export const WEBHOOK_DEDUPE_TTL_SECONDS = 60 * 60 * 24 * 7;
 /** While a webhook is being processed its dedupe key is only a short "in progress" marker. */
 export const WEBHOOK_PROCESSING_TTL_SECONDS = 5 * 60;
@@ -36,18 +32,12 @@ export const MAX_PAYMENT_ATTEMPTS = 8;
 export const RECONCILE_MIN_AGE_MINUTES = 10;
 export const RECONCILE_MAX_AGE_DAYS = 7;
 export const RECONCILE_BATCH_LIMIT = 100;
-export const RECONCILE_UNSENT_REFUND_GIVE_UP_MINUTES = 60;
 
 export const REDIS_KEYS = {
     paymentOrderLock: (
         rideId: string
     ): string =>
         `lock:payment:order:${rideId}`,
-
-    refundLock: (
-        paymentId: string
-    ): string =>
-        `lock:payment:refund:${paymentId}`,
 
     webhookProcessed: (
         eventId: string
@@ -72,16 +62,9 @@ export const CAPTURABLE_FROM_STATUSES: readonly PaymentStatus[] = [
     PaymentStatus.CANCELLED,
 ];
 
-/** Statuses in which money has been captured (and possibly refunded). */
+/** Statuses in which money has been captured. */
 export const PAID_STATUSES: readonly PaymentStatus[] = [
     PaymentStatus.CAPTURED,
-    PaymentStatus.PARTIALLY_REFUNDED,
-    PaymentStatus.REFUNDED,
-];
-
-export const REFUNDABLE_STATUSES: readonly PaymentStatus[] = [
-    PaymentStatus.CAPTURED,
-    PaymentStatus.PARTIALLY_REFUNDED,
 ];
 
 /** Statuses that still wait for money (used by the reconciliation sweep). */

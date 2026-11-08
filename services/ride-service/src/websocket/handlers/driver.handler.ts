@@ -19,7 +19,7 @@ import type { DriverPresenceService } from '../../services/driver-presence.servi
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { Ride } from '../../db/client.js';
-import { toRideDto, toRideDtoWithDriver } from '../../utils/ride-dto.js';
+import { toRideDtoWithDriver } from '../../utils/ride-dto.js';
 
 export interface DriverHandlerDeps {
   geoService: GeoService;

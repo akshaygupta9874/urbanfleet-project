@@ -5,7 +5,7 @@ import { AppError, ServiceUnavailableError, asyncHandler, createLogger } from '@
 const logger = createLogger('auth-middleware');
 import { prisma, Role } from '../db/client.js';
 import { getPublicKey } from '../crypto/keys.js';
-import { validateSessionInRedis, getCachedUser, cacheUser, CachedUser } from '../redis/token-cache.js';
+import { validateSessionInRedis, getCachedUser, cacheUser } from '../redis/token-cache.js';
 
 export interface UserPayloadContext {
   userId: string;
@@ -22,7 +22,6 @@ export interface AuthenticatedRequest extends Request {
   userId: string;
   roles: string[];
   sessionId: string;
-  bearer?: string;
   driverId?: string;
   user: UserPayloadContext;
 }
@@ -33,8 +32,8 @@ export interface AuthPayload extends JwtPayload {
   email: string;
   roles: string[];
   tokenType: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   driverId?: string;
 }
 
@@ -177,7 +176,6 @@ export const authMiddleware = asyncHandler(
     request.userId = currentUser.id;
     request.roles = userRoles;
     request.sessionId = sessionId;
-    request.bearer = token;
     if (currentUser.driverId) {
       request.driverId = currentUser.driverId;
     }

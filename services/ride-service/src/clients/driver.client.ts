@@ -25,7 +25,6 @@ export interface DriverProfile {
   firstName?: string;
   lastName?: string;
   email?: string;
-  phone?: string;
   profilePhoto?: string | null;
   profilePhotoUrl?: string | null;
   vehicleNumber?: string;
@@ -36,7 +35,6 @@ export interface DriverProfile {
     firstName?: string;
     lastName?: string;
     email?: string;
-    phone?: string;
   };
 }
 

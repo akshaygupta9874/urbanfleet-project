@@ -73,8 +73,8 @@ export const startRideSchema = z.object({
 });
 
 export const paymentStatusSchema = z.object({
-  paymentStatus: z.enum(['PENDING', 'PAID', 'CAPTURED', 'FAILED', 'REFUNDED'], {
-    errorMap: () => ({ message: 'Invalid payment status. Must be one of: PENDING, PAID, CAPTURED, FAILED, REFUNDED' }),
+  paymentStatus: z.enum(['PENDING', 'PAID', 'CAPTURED', 'FAILED'], {
+    errorMap: () => ({ message: 'Invalid payment status. Must be one of: PENDING, PAID, CAPTURED, FAILED' }),
   }),
 });
 

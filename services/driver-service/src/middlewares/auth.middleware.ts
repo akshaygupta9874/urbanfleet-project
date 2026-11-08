@@ -39,8 +39,8 @@ export interface AuthPayload extends JwtPayload {
   email: string;
   roles: string[];
   tokenType?: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   driverId?: string;
 }
 
@@ -102,8 +102,8 @@ export const authMiddleware = asyncHandler(
       let activeSessionIds: string[] = [];
       try {
         [storedSession, activeSessionIds] = await Promise.all([
-          driverRedisClient.get(`auth:session:${sessionId}`).then((res) => res || driverRedisClient.get(`session:${sessionId}`)),
-          driverRedisClient.sMembers(`auth:user-sessions:${userId}`).then((res) => (res && res.length > 0 ? res : driverRedisClient.sMembers(`user-sessions:${userId}`))),
+          driverRedisClient.get(`auth:session:${sessionId}`),
+          driverRedisClient.sMembers(`auth:user-sessions:${userId}`),
         ]);
       } catch (e: unknown) {
         if (e instanceof AppError) throw e;

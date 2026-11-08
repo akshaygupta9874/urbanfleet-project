@@ -59,7 +59,7 @@ export function AdminSettingsTab({ onNotify }: AdminSettingsTabProps) {
   const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (justification.trim().length < 3) {
-      setError('Audit justification must be at least 3 characters');
+      setError('Justification must be at least 3 characters');
       return;
     }
 
@@ -384,7 +384,7 @@ export function AdminSettingsTab({ onNotify }: AdminSettingsTabProps) {
             <form onSubmit={handleSaveSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-300 block">
-                  Mandatory Audit Justification <span className="text-rose-400">*</span>
+                  Change Justification <span className="text-rose-400">*</span>
                 </label>
                 <textarea
                   required
@@ -409,7 +409,7 @@ export function AdminSettingsTab({ onNotify }: AdminSettingsTabProps) {
                   disabled={saving || justification.trim().length < 3}
                   className="px-5 py-2 rounded-xl text-xs font-medium bg-amber-400 text-slate-950 hover:bg-amber-300 transition shadow-lg shadow-amber-400/10 disabled:opacity-50"
                 >
-                  {saving ? 'Recording Audit...' : 'Confirm & Apply'}
+                  {saving ? 'Applying...' : 'Confirm & Apply'}
                 </button>
               </div>
             </form>

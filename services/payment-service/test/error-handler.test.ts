@@ -1,16 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { errorHandler, notFoundHandler } from '../src/middlewares/errorHandler.js';
 import {
-  AppError,
   NonRetryablePaymentError,
   PaymentNotFoundError,
-  PaymentConflictError,
-  PaymentSignatureInvalidError,
-  PaymentGatewayError,
-  InvalidFareBreakdownError,
-  PaymentAmountOutOfRangeError,
 } from '../src/errors/payment.errors.js';
-import { z, ZodError } from 'zod';
+import { z } from 'zod';
 
 describe('Payment Service Centralized Error Handler Middleware', () => {
   const createMockReqRes = (url = '/api/payments/test', method = 'POST') => {

@@ -262,14 +262,6 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, { label: string; badge: string
     label: "Cancelled",
     badge: "text-rose-900 bg-rose-500/15 border border-rose-600/30",
   },
-  REFUNDED: {
-    label: "Refunded",
-    badge: "text-[#3a1f0a] bg-[#7a4416]/15 border border-[#7a4416]/30",
-  },
-  PARTIALLY_REFUNDED: {
-    label: "Partial Refund",
-    badge: "text-amber-900 bg-amber-500/15 border border-amber-600/30",
-  },
 };
 
 const RIDE_STEPS: { key: RideStatus; label: string }[] = [
@@ -2694,7 +2686,7 @@ export default function DriverDashboard() {
               {[
                 {
                   label: "Ride History",
-                  sub: "Past trips & audit logs",
+                  sub: "Past trips & history",
                   icon: History,
                   onClick: () => handleSelectTab("history"),
                 },

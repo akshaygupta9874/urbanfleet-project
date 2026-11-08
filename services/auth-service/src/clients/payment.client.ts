@@ -14,15 +14,6 @@ export class PaymentClient extends InternalHttpClient {
     });
   }
 
-  async refundPayment(bearer: string | undefined, paymentId: string, reason: string, amountPaise?: number, idempotencyKey?: string) {
-    return this.request(bearer, {
-      method: 'POST',
-      url: `/v1/payments/${paymentId}/refund`,
-      data: { reason, amountPaise },
-      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
-    });
-  }
-
   async getMetrics(bearer: string | undefined, period: string = '7d') {
     return this.request(bearer, {
       method: 'GET',

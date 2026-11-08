@@ -18,8 +18,6 @@ enum PaymentStatus {
   AUTHORIZED
   CAPTURED
   FAILED
-  REFUNDED
-  PARTIALLY_REFUNDED
   CANCELLED
 }
 
@@ -30,12 +28,6 @@ enum PayoutStatus {
   PROCESSED
   FAILED
   REVERSED
-}
-
-enum RefundStatus {
-  PENDING
-  PROCESSED
-  FAILED
 }
 
 enum LedgerAccount {
@@ -82,35 +74,16 @@ model Payment {
   failureReason              String?       @map("failure_reason")
   failureCode                String?       @map("failure_code")
   lastFailedGatewayPaymentId String?       @map("last_failed_gateway_payment_id") @db.VarChar(255)
-  refundedAmountPaise        Int           @default(0) @map("refunded_amount_paise")
   ledgerTransactionId        String?       @map("ledger_transaction_id") @db.VarChar(255)
   metadata                   Json?
   capturedAt                 DateTime?     @map("captured_at")
-  refundedAt                 DateTime?     @map("refunded_at")
 
   createdAt                  DateTime      @default(now()) @map("created_at")
   updatedAt                  DateTime      @updatedAt @map("updated_at")
 
   payouts                    Payout[]
-  refunds                    Json?         @default("[]")
-  refundRecords              Refund[]
 
   @@map("payments")
-}
-
-model Refund {
-  id                  String       @id @default(uuid()) @db.Uuid
-  paymentId           String       @map("payment_id") @db.Uuid
-  payment             Payment      @relation(fields: [paymentId], references: [id])
-  amountPaise         Int          @map("amount_paise")
-  reason              String?
-  gatewayRefundId     String?      @unique @map("gateway_refund_id") @db.VarChar(255)
-  ledgerTransactionId String       @map("ledger_transaction_id") @db.Uuid
-  status              RefundStatus @default(PENDING)
-  createdAt           DateTime     @default(now()) @map("created_at")
-
-  @@index([paymentId])
-  @@map("refunds")
 }
 
 model Payout {

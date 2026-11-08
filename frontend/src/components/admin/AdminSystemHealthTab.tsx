@@ -21,7 +21,7 @@ export const AdminSystemHealthTab: React.FC<AdminSystemHealthTabProps> = ({
     auth: 'Identity verification, RS256 token issuance & RFC session security',
     driver: 'Driver onboarding, Cloudinary media processing & availability presence',
     ride: 'Ride state-machine orchestration, dispatching & live telemetry',
-    payment: 'Razorpay gateway orders, paise-precision double-entry ledger & refunds',
+    payment: 'Razorpay gateway orders, paise-precision double-entry ledger & payouts',
     notification: 'Transactional emails, account verification & Kafka DLQ consumer',
   };
 

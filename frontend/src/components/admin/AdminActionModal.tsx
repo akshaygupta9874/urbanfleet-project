@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, X, CheckCircle2, ShieldCheck, RefreshCw, Loader2 } from 'lucide-react';
+import { AlertTriangle, X, CheckCircle2, ShieldCheck, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 
 export interface AdminActionModalProps {
@@ -8,10 +8,10 @@ export interface AdminActionModalProps {
   title: string;
   description: string;
   targetId: string;
-  actionType: 'SUSPEND_USER' | 'RESTORE_USER' | 'VERIFY_DRIVER' | 'REFUND_PAYMENT' | 'REVOKE_SESSION';
+  actionType: 'SUSPEND_USER' | 'RESTORE_USER' | 'VERIFY_DRIVER' | 'REVOKE_SESSION';
   initialStatus?: string;
   onClose: () => void;
-  onConfirm: (payload: { reason: string; status?: string; amountPaise?: number; idempotencyKey?: string }) => Promise<void>;
+  onConfirm: (payload: { reason: string; status?: string; idempotencyKey?: string }) => Promise<void>;
 }
 
 export const AdminActionModal: React.FC<AdminActionModalProps> = ({
@@ -26,7 +26,6 @@ export const AdminActionModal: React.FC<AdminActionModalProps> = ({
 }) => {
   const [reason, setReason] = useState('');
   const [status, setStatus] = useState(initialStatus);
-  const [amountRupees, setAmountRupees] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,19 +42,9 @@ export const AdminActionModal: React.FC<AdminActionModalProps> = ({
     setError(null);
     setSubmitting(true);
     try {
-      const amountPaise = amountRupees.trim() ? Math.round(parseFloat(amountRupees) * 100) : undefined;
-      const idempotencyKey =
-        actionType === 'REFUND_PAYMENT'
-          ? typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `idemp-${Date.now()}`
-          : undefined;
-
       await onConfirm({
         reason: reason.trim(),
         status: actionType === 'VERIFY_DRIVER' ? status : undefined,
-        amountPaise,
-        idempotencyKey,
       });
       onClose();
     } catch (err) {
@@ -92,7 +81,6 @@ export const AdminActionModal: React.FC<AdminActionModalProps> = ({
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] to-[#7a4416] border border-[#ffd88a]/20 text-[#ffd88a]">
                 {actionType === 'VERIFY_DRIVER' && <ShieldCheck size={20} />}
-                {actionType === 'REFUND_PAYMENT' && <RefreshCw size={20} />}
                 {actionType === 'SUSPEND_USER' && <AlertTriangle size={20} className="text-rose-400" />}
                 {actionType === 'RESTORE_USER' && <CheckCircle2 size={20} className="text-emerald-400" />}
                 {actionType === 'REVOKE_SESSION' && <AlertTriangle size={20} className="text-amber-400" />}
@@ -137,25 +125,7 @@ export const AdminActionModal: React.FC<AdminActionModalProps> = ({
               </div>
             )}
 
-            {/* Optional Partial Amount for Refund */}
-            {actionType === 'REFUND_PAYMENT' && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-stone-300">
-                  Refund Amount (₹) <span className="text-stone-500 font-normal">(Leave blank for full refund)</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="1"
-                  placeholder="e.g. 250.00"
-                  value={amountRupees}
-                  onChange={(e) => setAmountRupees(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-black/50 px-3.5 py-2.5 text-xs text-white placeholder-stone-500 focus:border-[#ffd88a] focus:outline-none"
-                />
-              </div>
-            )}
-
-            {/* Mandatory Audit Justification Reason */}
+            {/* Action Reason */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-stone-300">
                 Action Reason <span className="text-amber-400">*</span>
@@ -163,13 +133,13 @@ export const AdminActionModal: React.FC<AdminActionModalProps> = ({
               <textarea
                 rows={3}
                 required
-                placeholder="Enter formal justification for audit and compliance logs..."
+                placeholder="Enter reason for this action..."
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-black/50 p-3 text-xs text-white placeholder-stone-500 focus:border-[#ffd88a] focus:outline-none"
               />
               <p className="text-[10px] text-stone-400">
-                This explanation will be permanently recorded in the cryptographic audit journal.
+                This explanation is recorded for account status updates.
               </p>
             </div>
 

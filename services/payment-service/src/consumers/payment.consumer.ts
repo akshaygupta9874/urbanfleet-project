@@ -1,29 +1,16 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
+import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics } from '@urbanfleet/contracts';
 import { PaymentService } from '../services/payment.service.js';
-import { NonRetryablePaymentError } from '../errors/payment.errors.js';
 import crypto from 'crypto';
 
 const logger = createLogger('payment-event-consumer');
 const consumerGroup = 'payment-service-group';
 
-export interface PaymentOrderCreator {
-  createOrder(input: {
-    rideId: string;
-    riderId: string;
-    amountPaise: number;
-    driverId?: string;
-    fareBreakdown?: Record<string, unknown>;
-    idempotencyKey: string;
-  }): Promise<unknown>;
-  issueRefund(paymentId: string, amountPaise: number, reason?: string): Promise<unknown>;
-}
-
 export async function initPaymentConsumer(
   prisma: PrismaClient,
-  paymentService: PaymentService | PaymentOrderCreator
+  paymentService: PaymentService
 ): Promise<Consumer | null> {
   const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
   const kafka = new Kafka({ clientId: 'payment-service', brokers });
@@ -40,6 +27,10 @@ export async function initPaymentConsumer(
           consumer,
           consumerGroup,
           serviceName: 'payment-service',
+          maxRetries: 3,
+          initialBackoffMs: 500,
+          backoffMultiplier: 2,
+          maxBackoffMs: 5000,
           dlqTopicResolver: () => EventTopics.RIDE_DLQ,
         },
         async (envelope, raw) => {
@@ -59,8 +50,6 @@ export async function initPaymentConsumer(
             await tx.processedEvent.create({
               data: { eventId, consumerGroup },
             });
-
-            const creator: PaymentOrderCreator = paymentService;
 
             if (eventType === 'RIDE_ARRIVED_AT_DESTINATION') {
               const rideId = String(payload.rideId || '');
@@ -96,7 +85,7 @@ export async function initPaymentConsumer(
                 return;
               }
 
-              await creator.createOrder({
+              await paymentService.createOrder({
                 rideId,
                 riderId,
                 amountPaise: totalFarePaise,
@@ -146,7 +135,7 @@ export async function initPaymentConsumer(
                   return;
                 }
 
-                await creator.createOrder({
+                await paymentService.createOrder({
                   rideId,
                   riderId,
                   amountPaise: totalFarePaise,
@@ -162,26 +151,7 @@ export async function initPaymentConsumer(
               const cancellationFeePaise = Number(payload.cancellationFeePaise || 0);
               const existingPayment = await tx.payment.findUnique({ where: { rideId } });
 
-              // Compensating Saga: If payment was captured, issue partial refund deducting cancellation fee
-              if (existingPayment && existingPayment.status === 'CAPTURED') {
-                const refundAmount = existingPayment.amountPaise - cancellationFeePaise;
-                if (refundAmount > 0) {
-                  await creator.issueRefund(
-                    existingPayment.id,
-                    refundAmount,
-                    `Compensating refund for cancelled ride (fee deducted: ${cancellationFeePaise}): ${String(
-                      payload.cancellationReason || 'Rider Cancelled'
-                    )}`
-                  );
-                  logger.info(
-                    `Compensating partial refund of ${refundAmount} paise executed for cancelled ride ${rideId}`
-                  );
-                } else {
-                  logger.info(
-                    `No refund issued for cancelled ride ${rideId}; fee (${cancellationFeePaise}) covers captured amount (${existingPayment.amountPaise})`
-                  );
-                }
-              } else if (
+              if (
                 existingPayment &&
                 (existingPayment.status === 'PENDING' || existingPayment.status === 'CREATED')
               ) {
@@ -190,7 +160,7 @@ export async function initPaymentConsumer(
                   data: { status: 'CANCELLED' },
                 });
                 if (cancellationFeePaise > 0) {
-                  await creator.createOrder({
+                  await paymentService.createOrder({
                     rideId,
                     riderId,
                     amountPaise: cancellationFeePaise,
@@ -202,7 +172,7 @@ export async function initPaymentConsumer(
                   );
                 }
               } else if (!existingPayment && cancellationFeePaise > 0) {
-                await creator.createOrder({
+                await paymentService.createOrder({
                   rideId,
                   riderId,
                   amountPaise: cancellationFeePaise,

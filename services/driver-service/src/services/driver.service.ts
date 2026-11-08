@@ -12,12 +12,10 @@ export interface UserDetailsInput {
   firstName?: string;
   lastName?: string;
   email?: string;
-  phone?: string;
   user?: {
     firstName?: string;
     lastName?: string;
     email?: string;
-    phone?: string;
   };
 }
 
@@ -128,7 +126,6 @@ export class DriverService {
     const firstName = userDetails?.firstName || (userDetails?.user?.firstName) || 'Captain';
     const lastName = userDetails?.lastName || (userDetails?.user?.lastName) || '';
     const email = userDetails?.email || (userDetails?.user?.email) || '';
-    const phone = userDetails?.phone || (userDetails?.user?.phone) || '';
 
     return {
       id: profile.id,
@@ -136,7 +133,6 @@ export class DriverService {
       firstName,
       lastName,
       email,
-      phone,
       rating: Number(profile.rating || 5.0),
       totalTrips: profile.totalTrips || 0,
       isAvailable: Boolean(profile.isAvailable),
@@ -152,7 +148,6 @@ export class DriverService {
         firstName,
         lastName,
         email,
-        phone,
       },
       createdAt: profile.createdAt,
     };

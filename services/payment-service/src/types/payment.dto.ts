@@ -7,13 +7,15 @@ import {
     Paise,
     PaymentStatus,
     PayoutMode,
-    RefundStatus,
 } from "./payment.types.js";
 
 export interface CreateOrderInput {
     rideId: string;
     riderId: string;
     idempotencyKey: string;
+    amountPaise?: number;
+    driverId?: string;
+    fareBreakdown?: Record<string, unknown>;
 }
 
 export interface CreateOrderResult {
@@ -31,22 +33,6 @@ export interface VerifyCheckoutInput {
     signature: string;
     /** The authenticated caller. When supplied it must be the rider that owns the payment. */
     requesterId?: string;
-}
-
-export interface InitiateRefundInput {
-    paymentId: string;
-    amountPaise?: Paise;
-    reason: string;
-    initiatedBy: string;
-}
-
-export interface InitiateRefundResult {
-    refundId: string;
-    gatewayRefundId?: string;
-    amountPaise: Paise;
-    refundStatus: RefundStatus;
-    paymentStatus: PaymentStatus;
-    refundedAmountPaise: Paise;
 }
 
 export interface LedgerEntryInput {

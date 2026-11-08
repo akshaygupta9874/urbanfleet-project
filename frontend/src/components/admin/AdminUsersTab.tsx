@@ -52,7 +52,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       id: u.id,
       fullName: `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'N/A',
       email: u.email,
-      phone: u.phone || 'N/A',
       roles: (u.roles || []).join('; '),
       isEmailVerified: u.isEmailVerified,
       isSuspended: u.isSuspended,
@@ -177,10 +176,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         </div>
                       </td>
 
-                      {/* Email & Phone */}
+                      {/* Email */}
                       <td className="px-5 py-4">
                         <p className="text-stone-300 font-mono">{u.email}</p>
-                        <p className="text-[11px] text-stone-500">{u.phone || 'No phone'}</p>
                       </td>
 
                       {/* Role Badges */}

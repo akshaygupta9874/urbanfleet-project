@@ -26,3 +26,57 @@ process.env.CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "test-a
 
 process.env.JWT_PUBLIC_KEY_BASE64 = process.env.JWT_PUBLIC_KEY_BASE64 || "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFxR0IrdTQ4TzNWV2Vwakk1L2wwWQpsTE5nT2dmZFNZSDVwcldaaEwvVVJRTTBUZ2lFd2ZyaE4xSS96OTkwbjJkaE9hdEtqSjhSZGVVVExDSGRERTU2CmhYOG5WbHhjb0Y0dHAwSEJNRFBqbzVSTDllM0c2V0FYSGZoeEwwbUMzTGVIdVRRVFh0MnRyenMwWVY5SmQyTU8KU3FRaGJHbWcvdk00WUQ0cWt3TC9iMFhXcjl4MTFQblR2cUNYUlBvYmNoRU9ZeWVLby9DQ2VJNEdzSGREV2dGTwpyaXVoS0dNN0JQRC9BTWM0SDNBc2hLRWdzRk9HeXNrV2U5RTVDdEduVkUyT3UrQk5wY3lGQzJoN1cwdDdPNFNXCkF6TmluYjNnay9RQ1dDblBKQjlKdzd2MVNmd2V2cVl4UWp5TmpXK2lzdUZFaHdSMm1hdnZ4bFh3NXZlbHdpVnkKVFFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==";
 process.env.JWT_PRIVATE_KEY_BASE64 = process.env.JWT_PRIVATE_KEY_BASE64 || "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ29ZSDY3anc3ZFZaNm0KTWpuK1hSaVVzMkE2QjkxSmdmbW10Wm1FdjlSRkF6Uk9DSVRCK3VFM1VqL1AzM1NmWjJFNXEwcU1ueEYxNVJNcwpJZDBNVG5xRmZ5ZFdYRnlnWGkyblFjRXdNK09qbEV2MTdjYnBZQmNkK0hFdlNZTGN0NGU1TkJOZTNhMnZPelJoClgwbDNZdzVLcENGc2FhRCs4emhnUGlxVEF2OXZSZGF2M0hYVStkTytvSmRFK2h0eUVRNWpKNHFqOElKNGpnYXcKZDBOYUFVNnVLNkVvWXpzRThQOEF4emdmY0N5RW9TQ3dVNGJLeVJaNzBUa0swYWRVVFk2NzRFMmx6SVVMYUh0YgpTM3M3aEpZRE0yS2R2ZUNUOUFKWUtjOGtIMG5EdS9WSi9CNitwakZDUEkyTmI2S3k0VVNIQkhhWnErL0dWZkRtCjk2WENKWEpOQWdNQkFBRUNnZ0VBQVRMOHZCTzdBSjhMTy9aSUhQUm5TQ25WNGR2citzbks4Q0hEZCtOUTNQUDIKbzZhaVlXcEt2OVRkWVByZnJ3SHl1cEVxZlFGbUE2K3Z1UVQ5dU1oM1RXdVlLV0NMaFZYZVg5NVRSS2RkOCt5Swp0UFB1VW51dGRuaHVQKzYzV0tDUy9pSHRrR09tU01UMGJNd2JyeGE4dzVIVExoMDdlUTFjNWF5VHE0dmVLMW55ClAzNXp5M0RYUU1KcUM3cUplTm5xWGJocnIraHplZ3BjTmNmSnRJYzlGY09VL2Y4UEhDdkM4Rzl0eml0TEZjV0sKZFJEU1FEVEtyUGs2YmRhM3M3TGlBM1hjOWFoNUExM1JwcmxnOUU5b3NNcDltdytjOC9BcUFvTDZlVmI3cXl0ZQpKQUEvVG5PcTQwa1Rrd0FKUDI2eDB1NWJTcVFrL0FaMkVMN3RibUM1bVFLQmdRRHREdFM2dCtmWUprNUZYZjk2CkdsdjkzVWEwZVRUa0U5WEY0VDBIWEJGaytiL3c3dXNobmxTbmQreEpEandpSFNvRmM4SXhPZzM0M2hWVFA0aFgKRFhybzFObWFaSy9IazFhNTh0cVlsMkcyYWhoRHFxelVILys5RWJ4QkEwUUFEWmlBYzlHbjhoL2tHSGhvSE14MQpTUlQzY0pOWmZIdVhTUUpDOUo2NHpNVW1wUUtCZ1FDMTFNQkZZek5WV2tDWjhybk0zdFNlbytNVXlYQ3Rua01FClExNHEwTnJsV1k2RFdBUzViYyt6YnVBREszblU1SEs2NjhvUWxHam8wVFRBbVNoaUFzUC9RS0hUTVBnc05qVWYKVDNnT0FRcFVMUmdwTkgwNk9PM2F4bDJvUjlKZTRaWEh1bVJ2QXRaM2ErQjRONnc2ZE8rc2x4alRFa0VrYmJtbApWUEI3UWMxMGlRS0JnREpYK2ZtRllPbFlpVHJXRVpGKzA1YUFUYW02Sys5Yi93UTlKMWJPeUxoK2liTERLcEJECkxiczdEcVVkTHN3WDRYcXk4TVMvallRU3RmaXQvMmh0Wm5MWDhUYUd0NFhzMW5nN0NRMXE2TWR5bEtDYU9JWDgKSGJXcmRJMWlBaWo0dWpCZGFHTUFXcUY0U09ualk5QnNxdFU1eFRFMTdKRmVZZXFTUkxyK1VjZzVBb0dBSHNOdwpCRTFVVWd5REFZamZocG5zdnlwYk1Sa2p4endQZXBrclJYTXdsYjBoTDNlazFQcVBPWHg0eWhDQS9GUHFWVld2ClNqN1J3UklrS3JHKzgxWWtjdnNzWmQ3VEhpZk50UTVzOFhHYm5jSkRaRFZOT3B5SElZeU9LL3A2elRLOWRKMUUKZ01PcUpXcExBQXZyUjdpaEZFSThJUG5scTVRazVLUUtTOUJHUW9FQ2dZQVhEamdnalh2VGxGZ3ZMVGMvWEY5bApiQitmYTV4d3VMVEhNbTdjRXFFaklTTDl0VDdOQ3FsaG1mcDZ5TzJKd0hHUENhdkc0YzE1dzVTdlFiZEw5N0txCjhLUTg1b1J4RVlNbjZGQTRWSkx4T2hTK0hTc0J6Rlo5K1o1a3FqQ3liYzUzVWJhanlmNFFGSVZjNGRJMnBkbGEKeGQyd3VXb0NsQVEwVEZKa1VUZE1DQT09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K";
+
+import { prisma as paymentPrisma } from "../services/payment-service/src/db/client.js";
+import { rideClient } from "../services/payment-service/src/clients/ride.client.js";
+import { authClient } from "../services/payment-service/src/clients/auth.client.js";
+import { redisClient } from "../services/payment-service/src/redis/client.js";
+
+// Vitest unit test extensions on the shared Prisma test instance for payment-service
+(paymentPrisma as any).ride = {
+  findUnique: async (args: { where: { id: string } }) => {
+    return rideClient.getRideById(args.where.id);
+  },
+  update: async (args: { where: { id: string }; data: { paymentStatus?: string } }) => {
+    if (args.data?.paymentStatus) {
+      await rideClient.updatePaymentStatus(args.where.id, args.data.paymentStatus, null);
+    }
+    return rideClient.getRideById(args.where.id);
+  },
+  updateMany: async (args: { where: { id?: string; paymentStatus?: string }; data: { paymentStatus?: string } }) => {
+    if (args.where?.id && args.data?.paymentStatus) {
+      await rideClient.updatePaymentStatus(args.where.id, args.data.paymentStatus, null);
+      return { count: 1 };
+    }
+    return { count: 0 };
+  },
+};
+
+(paymentPrisma as any).user = {
+  findUnique: async (args: { where: { id: string }; select?: Record<string, boolean> }) => {
+    try {
+      if (redisClient.isOpen) {
+        const cached = await redisClient.get(`auth:user:${args.where.id}`);
+        if (cached) {
+          const u = JSON.parse(cached) as { id?: string; roles?: string[] };
+          return { id: u.id || args.where.id, roles: u.roles || ['RIDER'] };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    const u = await authClient.getUserById(args.where.id);
+    return u ? { id: u.id, roles: u.roles || ['RIDER'] } : null;
+  },
+};
+
+const origTx = paymentPrisma.$transaction.bind(paymentPrisma);
+(paymentPrisma as any).$transaction = async (arg: any, options: any) => {
+  if (typeof arg === "function") {
+    return await arg(paymentPrisma);
+  }
+  if (Array.isArray(arg)) {
+    return await Promise.all(arg);
+  }
+  return await origTx(arg, options);
+};

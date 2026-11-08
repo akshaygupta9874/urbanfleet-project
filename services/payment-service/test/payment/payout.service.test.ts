@@ -5,8 +5,8 @@ import { payoutRepository } from "../../src/repositories/payout.repository.js";
 import { paymentRepository } from "../../src/repositories/payment.repository.js";
 import { ledgerService } from "../../src/services/ledger.service.js";
 import { NonRetryablePaymentError } from "../../src/errors/payment.errors.js";
-import { PaymentStatus, PayoutStatus, RefundStatus } from "../../src/types/payment.types.js";
-import { fakeSession, makePayment, oid } from "../helpers/helpers.js";
+import { PaymentStatus, PayoutStatus } from "../../src/types/payment.types.js";
+import { makePayment, oid } from "../helpers/helpers.js";
 
 const payout = (over: Record<string, unknown> = {}): any => ({
   id: oid(), driver: oid(), payment: oid(), ride: oid(), amountPaise: 700, status: PayoutStatus.PENDING, ...over,
@@ -29,7 +29,6 @@ describe("createPayout", () => {
     ["non-integer amount", () => paid(), { amountPaise: 10.5 }, 422],
     ["zero amount", () => paid(), { amountPaise: 0 }, 422],
     ["payment not captured", () => paid({ status: PaymentStatus.PENDING }), {}, 409],
-    ["fully refunded payment", () => paid({ status: PaymentStatus.REFUNDED }), {}, 409],
     ["another driver", () => paid(), { driverId: oid() }, 409],
     ["more than the driver's share", () => paid(), { amountPaise: 701 }, 422],
   ])("rejects: %s", async (_n, make, over, status) => {
@@ -39,18 +38,6 @@ describe("createPayout", () => {
     const create = vi.spyOn(payoutRepository, "create");
     await expect(payoutService.createPayout(args(p, over))).rejects.toMatchObject({ statusCode: status });
     expect(create).not.toHaveBeenCalled();
-  });
-
-  it("the driver's share shrinks by refunds that were already booked", async () => {
-    const p = paid({
-      status: PaymentStatus.PARTIALLY_REFUNDED, refundedAmountPaise: 250,
-      refunds: [{ status: RefundStatus.PROCESSED, amountPaise: 250, driverReversalPaise: 175, platformReversalPaise: 75 }],
-    });
-    vi.spyOn(paymentRepository, "findById").mockResolvedValue(p);
-    vi.spyOn(payoutRepository, "findLiveByPayment").mockResolvedValue(null);
-    vi.spyOn(payoutRepository, "create").mockResolvedValue(payout() as any);
-    await expect(payoutService.createPayout(args(p, { amountPaise: 526 }))).rejects.toMatchObject({ statusCode: 422 }); // 700-175 = 525
-    await expect(payoutService.createPayout(args(p, { amountPaise: 525 }))).resolves.toBeDefined();
   });
 
   it("one live payout per payment - checked in code AND by the unique index", async () => {
@@ -119,36 +106,6 @@ describe("state changes", () => {
     vi.spyOn(payoutRepository, "transition").mockResolvedValue(null);
     vi.spyOn(payoutRepository, "findById").mockResolvedValue(null);
     await expect(payoutService.markProcessing("6aafbb5e07d38f34801eddfd")).rejects.toMatchObject({ statusCode: 404 });
-  });
-});
-
-describe("refund side effects", () => {
-  const session = fakeSession() as any;
-
-  it("nothing to do when the driver's share is untouched or no payout exists", async () => {
-    const find = vi.spyOn(payoutRepository, "findLiveByPayment").mockResolvedValue(null);
-    expect(await payoutService.handleRefundBooked(oid(), 0, session)).toEqual({ clawbackRequired: false });
-    expect(find).not.toHaveBeenCalled();
-    expect(await payoutService.handleRefundBooked(oid(), 10, session)).toEqual({ clawbackRequired: false });
-  });
-
-  it("a PENDING payout is cancelled (the money has not been sent yet)", async () => {
-    const p = payout();
-    vi.spyOn(payoutRepository, "findLiveByPayment").mockResolvedValue(p);
-    const t = vi.spyOn(payoutRepository, "transition").mockResolvedValue({ ...p, status: PayoutStatus.CANCELLED } as any);
-    const result = await payoutService.handleRefundBooked(oid(), 100, session);
-    expect(result).toEqual({ cancelledPayoutId: p.id.toString(), clawbackRequired: false });
-    expect(t.mock.calls[0]![1]).toEqual([PayoutStatus.PENDING]);
-  });
-
-  it("PROCESSING / PROCESSED payouts (or a lost cancel race) require a clawback", async () => {
-    for (const status of [PayoutStatus.PROCESSING, PayoutStatus.PROCESSED]) {
-      vi.spyOn(payoutRepository, "findLiveByPayment").mockResolvedValue(payout({ status }));
-      expect(await payoutService.handleRefundBooked(oid(), 100, session)).toEqual({ clawbackRequired: true });
-    }
-    vi.spyOn(payoutRepository, "findLiveByPayment").mockResolvedValue(payout());
-    vi.spyOn(payoutRepository, "transition").mockResolvedValue(null);
-    expect(await payoutService.handleRefundBooked(oid(), 100, session)).toEqual({ clawbackRequired: true });
   });
 });
 

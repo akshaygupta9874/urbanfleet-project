@@ -1,28 +1,24 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { NextFunction } from 'express';
+import cors from 'cors';
 import helmet from 'helmet';
-import { createLogger } from '@urbanfleet/common';
+import { Consumer } from 'kafkajs';
+import { createLogger, AppError } from '@urbanfleet/common';
+import { prisma } from './db/client.js';
+import { notificationRedisClient, initNotificationRedis, disconnectNotificationRedis } from './redis/client.js';
 import { NotificationRepository } from './repositories/notification.repository.js';
 import { NotificationService } from './services/notification.service.js';
 import { NotificationDispatcher } from './workers/notification.dispatcher.js';
 import { initNotificationConsumer } from './consumers/notification.consumer.js';
-import { notificationRedisClient, initNotificationRedis, disconnectNotificationRedis } from './redis/client.js';
+import { createNotificationRouter } from './routes/notification.routes.js';
 
 const logger = createLogger('notification-service');
-import { prisma } from './db/client.js';
 const app = express();
 
 const port = process.env.NOTIFICATION_PORT || process.env.PORT || 4003;
 
-// Initialize Redis & Kafka Consumer
+// Initialize Infrastructure: Redis, Dispatcher & Kafka Consumer
 initNotificationRedis().catch(err => logger.error('Notification Redis startup error:', err));
-
-app.use(helmet());
-app.use(express.json());
-
-import { createNotificationRouter } from './routes/notification.routes.js';
-
-import { Consumer } from 'kafkajs';
 
 const notifRepo = new NotificationRepository(prisma);
 const notifService = new NotificationService(notifRepo);
@@ -31,11 +27,18 @@ const dispatcher = new NotificationDispatcher(notifRepo);
 dispatcher.start();
 
 let notifConsumer: Consumer | null = null;
-initNotificationConsumer(prisma, notifService).then(c => {
-  notifConsumer = c;
-}).catch(err => logger.error('Consumer error:', err));
+initNotificationConsumer(prisma, notifService)
+  .then(c => {
+    notifConsumer = c;
+  })
+  .catch(err => logger.error('Notification consumer startup error:', err));
 
-// Health check endpoint (mounted before router)
+// Global Security & Parsing Middlewares
+app.use(helmet());
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
+app.use(express.json());
+
+// Health Check with Active Dependency Validation (DB, Redis, Dispatcher & Consumer)
 const healthHandler = async (_req: express.Request, res: express.Response) => {
   let dbStatus = 'DOWN';
   try {
@@ -66,23 +69,37 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
       database: dbStatus,
       redis: redisStatus,
       dispatcher: dispatcher.isHealthy() ? 'UP' : 'DOWN',
-      consumer: notifConsumer ? 'UP' : 'INITIALIZING'
-    }
+      consumer: notifConsumer ? 'UP' : 'INITIALIZING',
+    },
   });
 };
 
 app.get('/health', healthHandler);
 app.get('/v1/notifications/health', healthHandler);
 
-// Routes (Single Canonical Endpoint)
+// Canonical API Routes
 const notifRouter = createNotificationRouter(notifRepo);
 app.use('/v1/notifications', notifRouter);
+
+// Centralized Global Error Handler
+app.use((err: unknown, req: express.Request, res: express.Response, _next: NextFunction) => {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      success: false,
+      code: err.code,
+      message: err.message,
+      errors: (err as { errors?: unknown }).errors,
+    });
+  }
+  logger.error('Unhandled internal error:', err);
+  res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Internal server error' });
+});
 
 const server = app.listen(port, () => {
   logger.info(`Notification Service running internally on port ${port}`);
 });
 
-// Graceful shutdown handling
+// Graceful Shutdown Handling
 const gracefulShutdown = async (signal: string) => {
   logger.info(`Received ${signal}. Shutting down Notification Service gracefully...`);
   dispatcher.stop();

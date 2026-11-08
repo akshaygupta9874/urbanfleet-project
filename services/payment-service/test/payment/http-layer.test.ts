@@ -1,17 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
 import { createHash } from "crypto";
 import {
-  createOrderSchema, verifyCheckoutSchema, refundSchema, listPaymentsQuerySchema,
+  createOrderSchema, verifyCheckoutSchema, listPaymentsQuerySchema,
   paymentIdParamSchema, validate,
 } from "../../src/validation/payment.validation.js";
 import * as controller from "../../src/controllers/payment.controller.js";
 import { paymentService } from "../../src/services/payment.service.js";
 import { paymentRepository } from "../../src/repositories/payment.repository.js";
 import { prisma, UserRole } from "../../src/db/client.js";
-import { PaymentStatus, RefundStatus } from "../../src/types/payment.types.js";
+import { PaymentStatus } from "../../src/types/payment.types.js";
 import { makePayment, oid } from "../helpers/helpers.js";
 
-const rideId = "6aafbb5e07d38f34801eddfd";
+const rideId = "6aafbb5e-07d3-4f34-801e-ddfd12345678";
 
 describe("validation schemas", () => {
   it("createOrder needs only a valid rideId; legacy client fields are dropped, never trusted", () => {
@@ -33,10 +33,7 @@ describe("validation schemas", () => {
     }
   });
 
-  it("refund + params + list query", () => {
-    expect(refundSchema.safeParse({ body: { reason: "ok reason", amountPaise: 100 } }).success).toBe(true);
-    expect(refundSchema.safeParse({ body: { reason: "ok reason", amountPaise: 1.5 } }).success).toBe(false);
-    expect(refundSchema.safeParse({ body: { reason: "x" } }).success).toBe(false);
+  it("params + list query", () => {
     expect(paymentIdParamSchema.safeParse({ params: { paymentId: "nope" } }).success).toBe(false);
 
     expect(listPaymentsQuerySchema.parse({ query: {} }).query).toEqual({ page: 1, limit: 20 });
@@ -80,7 +77,7 @@ describe("controllers", () => {
   });
 
   it("unauthenticated requests get 401 (was 400)", async () => {
-    for (const handler of [controller.createOrder, controller.verifyCheckout, controller.getPayment, controller.listPayments, controller.refundPayment]) {
+    for (const handler of [controller.createOrder, controller.verifyCheckout, controller.getPayment, controller.listPayments]) {
       const { next } = await call(handler, { body: {}, params: {}, query: {} });
       expect(next.mock.calls[0]![0]).toMatchObject({ statusCode: 401 });
     }
@@ -94,7 +91,7 @@ describe("controllers", () => {
   });
 
   it("getPayment: participant sees a sanitised view, stranger gets 403, admin sees everything", async () => {
-    const payment = makePayment({ refunds: [{ id: oid(), amountPaise: 5, status: RefundStatus.PROCESSED, createdAt: new Date(), initiatedBy: oid(), driverReversalPaise: 3, platformReversalPaise: 2, ledgerTransactionId: "t" }], metadata: { a: 1 }, ledgerTransactionId: "tx" });
+    const payment = makePayment({ metadata: { a: 1 }, ledgerTransactionId: "tx" });
     vi.spyOn(paymentRepository, "findById").mockResolvedValue(payment);
 
     asUser([UserRole.RIDER]);
@@ -103,7 +100,6 @@ describe("controllers", () => {
     expect(res.body.data).not.toHaveProperty("idempotencyKey");
     expect(res.body.data).not.toHaveProperty("metadata");
     expect(res.body.data).not.toHaveProperty("ledgerTransactionId");
-    expect(Object.keys(res.body.data.refunds[0]).sort()).toEqual(["amountPaise", "createdAt", "id", "processedAt", "status"]);
 
     let out = await call(controller.getPayment, { userId: oid().toString(), params: { paymentId: "x" } });
     expect(out.next.mock.calls[0]![0]).toMatchObject({ statusCode: 403 });
@@ -117,14 +113,5 @@ describe("controllers", () => {
     expect(list).toHaveBeenCalledWith({ rider: riderId, status: PaymentStatus.CAPTURED }, 2, 20);
     expect(Array.isArray(res.body.data)).toBe(true);
     expect(res.body.meta).toEqual({ page: 2, limit: 20, total: 41, totalPages: 3 });
-  });
-
-  it("refundPayment returns 202 with the refund result", async () => {
-    const refund = vi.spyOn(paymentService, "initiateRefund").mockResolvedValue({ refundId: "r1" } as any);
-    const adminId = oid().toString();
-    const { res } = await call(controller.refundPayment, { userId: adminId, params: { paymentId: rideId }, body: { reason: "why not", amountPaise: 50 } });
-    expect(res.statusCode).toBe(202);
-    expect(res.body).toEqual({ message: "Refund initiated", data: { refundId: "r1" } });
-    expect(refund.mock.calls[0]![0].initiatedBy.toString()).toBe(adminId);
   });
 });

@@ -90,7 +90,7 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
         data: { success: true, data: { ...makeRideDto('ride-1'), paymentStatus: 'CAPTURED' } },
       });
 
-      await client.updatePaymentStatus('ride-1', 'CAPTURED');
+      await client.updatePaymentStatus('ride-1', 'CAPTURED', null);
 
       expect(patchSpy).toHaveBeenCalled();
       const headers = (client as unknown as { client: { defaults: { headers: Record<string, string> } } }).client.defaults.headers;
@@ -132,7 +132,6 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
 
       mockPaymentService = {
         createOrder: vi.fn().mockResolvedValue({ id: 'order-1' }),
-        issueRefund: vi.fn().mockResolvedValue({ id: 'refund-1' }),
       };
     });
 
@@ -358,63 +357,6 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       expect(mockPaymentService.createOrder).not.toHaveBeenCalled();
     });
 
-    it('RIDE_CANCELLED: deducts cancellation fee from captured payment and issues partial refund', async () => {
-      mockPrisma = {
-        $transaction: vi.fn().mockImplementation(async (cb: any) => {
-          const tx = {
-            processedEvent: {
-              findUnique: vi.fn().mockResolvedValue(null),
-              create: vi.fn().mockResolvedValue({}),
-            },
-            payment: {
-              findUnique: vi.fn().mockResolvedValue({
-                id: 'pay-captured-1',
-                rideId: 'ride-cancel-1',
-                amountPaise: 50000, // ₹500
-                status: 'CAPTURED',
-              }),
-              update: vi.fn().mockResolvedValue({}),
-            },
-          };
-          return cb(tx);
-        }),
-      };
-
-      await initPaymentConsumer(mockPrisma, mockPaymentService);
-      const messageHandler = getCapturedHandler();
-
-      const cancelEnvelope = {
-        id: 'evt-cancel-1',
-        version: 1,
-        eventType: 'RIDE_CANCELLED',
-        aggregateType: 'RIDE',
-        aggregateId: 'ride-cancel-1',
-        aggregateSequence: 2,
-        timestamp: new Date().toISOString(),
-        payload: {
-          rideId: 'ride-cancel-1',
-          riderId: 'rider-1',
-          cancelledBy: 'RIDER',
-          cancellationFeePaise: 5000, // ₹50 fee
-          cancelledAt: new Date().toISOString(),
-        },
-      };
-
-      await messageHandler({
-        message: {
-          key: Buffer.from('ride-cancel-1'),
-          value: Buffer.from(JSON.stringify(cancelEnvelope)),
-        },
-      });
-
-      // Captured amount 50000 - 5000 fee = 45000 refund
-      expect(mockPaymentService.issueRefund).toHaveBeenCalledWith(
-        'pay-captured-1',
-        45000,
-        expect.stringContaining('fee deducted: 5000')
-      );
-    });
-
     it('RIDE_CANCELLED: bills cancellation fee when payment was not captured', async () => {
       mockPrisma = {
         $transaction: vi.fn().mockImplementation(async (cb: any) => {
@@ -443,6 +385,8 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
         id: 'evt-cancel-2',
         version: 1,
         eventType: 'RIDE_CANCELLED',
+        producer: 'ride-service',
+        partitionKey: 'ride-cancel-2',
         aggregateType: 'RIDE',
         aggregateId: 'ride-cancel-2',
         aggregateSequence: 2,
@@ -552,20 +496,21 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       expect(getSpy).toHaveBeenCalledWith('ride-decoupled-2');
 
       await paymentRepository.updateRide('ride-decoupled-2', { paymentStatus: 'CAPTURED' });
-      expect(updateSpy).toHaveBeenCalledWith('ride-decoupled-2', 'CAPTURED');
+      expect(updateSpy).toHaveBeenCalledWith('ride-decoupled-2', 'CAPTURED', null);
 
       getSpy.mockRestore();
       updateSpy.mockRestore();
     });
 
     it('findUserById checks Redis cache first, then falls back to authClient', async () => {
+      const isOpenSpy = vi.spyOn(redisClient, 'isOpen', 'get').mockReturnValue(true);
       const redisSpy = vi.spyOn(redisClient, 'get').mockResolvedValue(
         JSON.stringify({ id: 'user-cached-1', roles: [UserRole.RIDER] })
       );
 
       const userFromCache = await paymentRepository.findUserById('user-cached-1');
-      expect(userFromCache.id).toBe('user-cached-1');
-      expect(userFromCache.roles).toContain(UserRole.RIDER);
+      expect(userFromCache?.id).toBe('user-cached-1');
+      expect(userFromCache?.roles).toContain(UserRole.RIDER);
       expect(redisSpy).toHaveBeenCalledWith('auth:user:user-cached-1');
 
       redisSpy.mockRestore();
@@ -583,11 +528,12 @@ describe('Payment Service Comprehensive Fixes Test Suite', () => {
       });
 
       const userFromAuth = await paymentRepository.findUserById('user-auth-2');
-      expect(userFromAuth.id).toBe('user-auth-2');
-      expect(userFromAuth.roles).toContain('DRIVER');
+      expect(userFromAuth?.id).toBe('user-auth-2');
+      expect(userFromAuth?.roles).toContain('DRIVER');
       expect(authSpy).toHaveBeenCalledWith('user-auth-2');
 
       authSpy.mockRestore();
+      isOpenSpy.mockRestore();
     });
 
     it('prisma.$transaction attaches ride and user delegates to transactional client', async () => {

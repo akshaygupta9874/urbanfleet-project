@@ -22,7 +22,6 @@ enum RidePaymentStatus {
   PAID
   CAPTURED
   FAILED
-  REFUNDED
 }
 
 enum OutboxStatus {

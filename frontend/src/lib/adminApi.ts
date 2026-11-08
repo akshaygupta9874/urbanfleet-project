@@ -13,7 +13,6 @@ export interface AdminUser {
   email: string;
   firstName?: string;
   lastName?: string;
-  phone?: string;
   roles: string[];
   isEmailVerified: boolean;
   isSuspended: boolean;
@@ -55,7 +54,6 @@ export interface AdminDriver {
     email?: string;
     firstName?: string;
     lastName?: string;
-    phone?: string;
   };
 }
 
@@ -81,7 +79,7 @@ export interface AdminRide {
       platformCommissionPaise?: number;
     };
   } | null;
-  paymentStatus?: 'PENDING' | 'CAPTURED' | 'REFUNDED' | 'FAILED' | null;
+  paymentStatus?: 'PENDING' | 'CAPTURED' | 'FAILED' | null;
   createdAt: string;
 }
 
@@ -90,7 +88,7 @@ export interface AdminPayment {
   rideId: string;
   amountPaise: number;
   currency: string;
-  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'REFUNDED' | 'PARTIALLY_REFUNDED' | 'FAILED';
+  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED';
   gatewayOrderId?: string;
   gatewayPaymentId?: string;
   createdAt: string;
@@ -107,17 +105,6 @@ export interface AdminSession {
   expiresAt: string;
   createdAt: string;
   lastActiveAt?: string;
-}
-
-export interface AdminAuditLog {
-  id: string;
-  adminUserId: string;
-  action: string;
-  resource: string;
-  resourceId?: string | null;
-  reason: string;
-  ipAddress?: string | null;
-  createdAt: string;
 }
 
 export interface ServiceHealthSummary {
@@ -187,7 +174,6 @@ export interface AnalyticsSummary {
     netPlatformFeeINR: number;
     completionRatePercent: number;
     avgTripFareINR: number;
-    totalRefundsINR: number;
   };
   degradedServices?: string[];
 }
@@ -341,15 +327,6 @@ export const adminApi = {
     return res.data;
   },
 
-  async refundPayment(paymentId: string, reason: string, amountPaise?: number, idempotencyKey?: string): Promise<{ success: boolean; status: string }> {
-    const res = await appApi.post<{ success: boolean; status: string }>(
-      `/admin/payments/${paymentId}/refund`,
-      { reason, amountPaise },
-      { headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {} }
-    );
-    return res.data;
-  },
-
   async getSessions(params: { page?: number; limit?: number; userId?: string } = {}): Promise<PaginatedResult<AdminSession>> {
     const res = await appApi.get<PaginatedResult<AdminSession>>('/admin/sessions', { params });
     return res.data;
@@ -357,11 +334,6 @@ export const adminApi = {
 
   async revokeSession(sessionId: string): Promise<{ success: boolean }> {
     const res = await appApi.delete<{ success: boolean }>(`/admin/sessions/${sessionId}`);
-    return res.data;
-  },
-
-  async getAuditLogs(params: { page?: number; limit?: number } = {}): Promise<PaginatedResult<AdminAuditLog>> {
-    const res = await appApi.get<PaginatedResult<AdminAuditLog>>('/admin/audit', { params });
     return res.data;
   },
 

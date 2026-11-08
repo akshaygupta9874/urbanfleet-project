@@ -261,8 +261,6 @@ export const AdminRidesTab: React.FC<AdminRidesTabProps> = ({
                         className={`rounded-md px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${
                           r.paymentStatus === 'CAPTURED'
                             ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
-                            : r.paymentStatus === 'REFUNDED'
-                            ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20'
                             : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
                         }`}
                       >

@@ -7,7 +7,6 @@ export interface AuthUser {
   lastName: string;
   roles: string[];
   isEmailVerified: boolean;
-  phone?: string;
   driverId?: string;
 }
 

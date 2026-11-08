@@ -1,5 +1,4 @@
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
 import { createLogger } from '@urbanfleet/common';
 
 const logger = createLogger('auth-crypto');

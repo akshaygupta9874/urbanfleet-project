@@ -1,6 +1,6 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { PrismaClient } from '../db/client.js';
-import { createKafkaClient, createKafkaConsumer, createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
+import { createLogger, createResilientConsumerRunner } from '@urbanfleet/common';
 import { EventTopics, RideCompletedPayload, UserRegisteredPayload } from '@urbanfleet/contracts';
 
 const logger = createLogger('driver-event-consumer');
@@ -23,6 +23,10 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
           consumer,
           consumerGroup,
           serviceName: 'driver-service',
+          maxRetries: 3,
+          initialBackoffMs: 500,
+          backoffMultiplier: 2,
+          maxBackoffMs: 5000,
           dlqTopicResolver: (topic: string) => {
             if (topic === EventTopics.AUTH_EVENTS) return EventTopics.AUTH_DLQ;
             if (topic === EventTopics.RIDE_EVENTS) return EventTopics.RIDE_DLQ;

@@ -50,7 +50,6 @@ export function toRideDto(ride: Ride | null, driverInfo?: DriverProfile | null):
     const driverFirstName = driverInfo?.firstName || driverInfo?.user?.firstName || 'Captain';
     const driverLastName = driverInfo?.lastName || driverInfo?.user?.lastName || '';
     const driverEmail = driverInfo?.email || driverInfo?.user?.email || '';
-    const driverPhone = driverInfo?.phone || driverInfo?.user?.phone || '';
     const driverRating = typeof driverInfo?.rating === 'number' ? driverInfo.rating : 4.9;
 
     formattedDriver = {
@@ -59,7 +58,6 @@ export function toRideDto(ride: Ride | null, driverInfo?: DriverProfile | null):
       lastName: driverLastName,
       vehicleNumber: vehiclePlate,
       email: driverEmail,
-      phone: driverPhone,
       profilePhoto: photoUrl,
       rating: driverRating,
       totalTrips: driverInfo?.totalTrips || 0,
@@ -67,7 +65,6 @@ export function toRideDto(ride: Ride | null, driverInfo?: DriverProfile | null):
         firstName: driverFirstName,
         lastName: driverLastName,
         email: driverEmail,
-        phone: driverPhone,
       },
       vehicle: {
         registrationNumber: vehiclePlate,

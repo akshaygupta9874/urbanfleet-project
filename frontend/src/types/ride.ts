@@ -7,7 +7,6 @@ export interface RideDriver {
   lastName: string;
   vehicleNumber: string;
   email: string;
-  phone?: string;
   profilePhoto?: string | null;
   profilePhotoUrl?: string | null;
   rating?: number;
@@ -16,7 +15,6 @@ export interface RideDriver {
     firstName: string;
     lastName: string;
     email: string;
-    phone?: string;
   };
   vehicle: {
     registrationNumber: string;

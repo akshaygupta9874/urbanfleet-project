@@ -9,7 +9,6 @@ import {
   Sliders,
   Laptop,
   Activity,
-  CheckCircle2,
   X,
   ChevronRight,
   ShieldAlert,
@@ -25,8 +24,7 @@ export type AdminSection =
   | 'payments'
   | 'settings'
   | 'sessions'
-  | 'health'
-  | 'audit';
+  | 'health';
 
 interface NavItem {
   id: AdminSection;
@@ -71,7 +69,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     id: 'payments',
     label: 'Payments & Ledger',
-    description: 'Transactions & refunds',
+    description: 'Transactions & payouts',
     icon: CreditCard,
   },
   {
@@ -91,12 +89,6 @@ const NAV_ITEMS: NavItem[] = [
     label: 'System Health',
     description: 'Microservice mesh & latency',
     icon: Activity,
-  },
-  {
-    id: 'audit',
-    label: 'Audit Trail',
-    description: 'Operations activity log',
-    icon: CheckCircle2,
   },
 ];
 

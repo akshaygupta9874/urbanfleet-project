@@ -6,7 +6,7 @@ export const UserRegisteredPayloadSchema = z.object({
   email: z.string().email(),
   firstName: z.string(),
   lastName: z.string(),
-  roles: z.array(z.enum(['RIDER', 'DRIVER'])).optional(),
+  roles: z.array(z.enum(['RIDER', 'DRIVER'])),
 });
 export type UserRegisteredPayload = z.infer<typeof UserRegisteredPayloadSchema>;
 
@@ -59,14 +59,3 @@ export const PaymentCapturedPayloadSchema = z.object({
 });
 export type PaymentCapturedPayload = z.infer<typeof PaymentCapturedPayloadSchema>;
 
-// 6. PaymentRefunded Event
-export const PaymentRefundedPayloadSchema = z.object({
-  refundId: z.string().uuid(),
-  paymentId: z.string().uuid(),
-  rideId: z.string().uuid(),
-  amountPaise: z.number().int().positive(),
-  reason: z.string().optional(),
-  gatewayRefundId: z.string().optional(),
-  refundedAt: z.string().datetime()
-});
-export type PaymentRefundedPayload = z.infer<typeof PaymentRefundedPayloadSchema>;

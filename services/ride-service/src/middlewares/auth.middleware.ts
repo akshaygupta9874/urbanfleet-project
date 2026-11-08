@@ -19,8 +19,8 @@ export interface AuthPayload extends JwtPayload {
   email: string;
   roles: string[];
   tokenType?: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   driverId?: string;
 }
 
@@ -87,8 +87,8 @@ export const authMiddleware: RequestHandler = asyncHandler(
       let activeSessionIds: string[] = [];
       try {
         [storedSession, activeSessionIds] = await Promise.all([
-          rideRedisClient.get(`auth:session:${sessionId}`).then((res) => res || rideRedisClient.get(`session:${sessionId}`)),
-          rideRedisClient.sMembers(`auth:user-sessions:${userId}`).then((res) => (res && res.length > 0 ? res : rideRedisClient.sMembers(`user-sessions:${userId}`))),
+          rideRedisClient.get(`auth:session:${sessionId}`),
+          rideRedisClient.sMembers(`auth:user-sessions:${userId}`),
         ]);
       } catch (e: unknown) {
         if (e instanceof AppError) throw e;
@@ -122,9 +122,7 @@ export const authMiddleware: RequestHandler = asyncHandler(
     let user: Record<string, unknown> | null = null;
     if (rideRedisClient.isOpen) {
       try {
-        const userStr =
-          (await rideRedisClient.get(`auth:user:${userId}`)) ||
-          (await rideRedisClient.get(`user:${userId}`));
+        const userStr = await rideRedisClient.get(`auth:user:${userId}`);
         if (userStr) {
           user = JSON.parse(userStr) as Record<string, unknown>;
         }

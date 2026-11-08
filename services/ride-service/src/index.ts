@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import express from 'express';
 import http from 'http';
+import express, { NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { createLogger, AppError } from '@urbanfleet/common';
@@ -28,22 +28,20 @@ const server = http.createServer(app);
 
 const port = process.env.RIDE_PORT || process.env.PORT || 4004;
 
-// Connect Redis, Outbox Worker & Payment Kafka Consumer
-redis.connect().catch(err => logger.error('Redis connect error:', err));
-const outboxWorker = new OutboxWorker(prisma);
-outboxWorker.start().catch(err => logger.error('Outbox worker start error:', err));
-initRidePaymentConsumer(prisma).catch(err => logger.error('Ride payment consumer error:', err));
+// Initialize Infrastructure: Redis, Outbox Worker & Payment Kafka Consumer
+redis.connect().catch(err => logger.error('Ride Redis connection error:', err));
 
-// Middlewares
-app.use((req, res, next) => {
-  logger.info(`[HTTP IN] ${req.method} ${req.originalUrl}`);
-  next();
-});
+const outboxWorker = new OutboxWorker(prisma);
+outboxWorker.start().catch(err => logger.error('Outbox worker startup error:', err));
+
+initRidePaymentConsumer(prisma).catch(err => logger.error('Ride payment consumer startup error:', err));
+
+// Global Security & Parsing Middlewares
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
 app.use(express.json());
 
-// Services
+// Dependency Injection Wiring
 const rideRepo = new RideRepository(prisma);
 const ratingRepo = new RatingRepository(prisma);
 const outboxRepo = new OutboxRepository(prisma);
@@ -55,7 +53,7 @@ const dispatchService = new DispatchService(geoService);
 const rideService = new RideService(rideRepo, ratingRepo, outboxRepo, fareService, otpService);
 const rideController = new RideController(rideService, fareService, dispatchService);
 
-// Native WebSocket Server
+// Native WebSocket Server Initialization
 initRideWebSocketServer(
   server,
   redis,
@@ -66,7 +64,7 @@ initRideWebSocketServer(
   dispatchService
 );
 
-// Health check with active dependency validation (mounted before authenticated router)
+// Health Check with Active Dependency Validation (DB, Redis & Outbox Worker)
 const healthHandler = async (_req: express.Request, res: express.Response) => {
   let dbStatus = 'DOWN';
   let redisStatus = 'DOWN';
@@ -74,7 +72,7 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     dbStatus = 'UP';
-  } catch (err) {
+  } catch {
     dbStatus = 'DOWN';
   }
 
@@ -83,39 +81,38 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
       await redis.ping();
       redisStatus = 'UP';
     }
-  } catch (err) {
+  } catch {
     redisStatus = 'DOWN';
   }
 
   const isHealthy = dbStatus === 'UP' && redisStatus === 'UP';
-  const statusCode = isHealthy ? 200 : 503;
-
-  res.status(statusCode).json({
+  res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'UP' : 'DEGRADED',
     service: 'ride-service',
     timestamp: new Date().toISOString(),
     dependencies: {
       database: dbStatus,
       redis: redisStatus,
-      outbox: outboxWorker.isHealthy() ? 'UP' : 'DOWN'
-    }
+      outbox: outboxWorker.isHealthy() ? 'UP' : 'DOWN',
+    },
   });
 };
 
 app.get('/health', healthHandler);
 app.get('/v1/rides/health', healthHandler);
 
-// HTTP Routes (Single Canonical Endpoint)
+// Canonical API Routes
 const rideRouter = createRideRouter(rideController);
 app.use('/v1/rides', rideRouter);
 
-// Global Error Handler
-app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+// Centralized Global Error Handler
+app.use((err: unknown, req: express.Request, res: express.Response, _next: NextFunction) => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       success: false,
       code: err.code,
-      message: err.message
+      message: err.message,
+      errors: (err as { errors?: unknown }).errors,
     });
   }
   logger.error('Unhandled internal error:', err);
@@ -126,20 +123,20 @@ server.listen(port, () => {
   logger.info(`Ride Service running internally on port ${port}`);
 });
 
-// Graceful shutdown handling
-const shutdown = async (signal: string) => {
-  logger.info(`Received ${signal}. Initiating graceful shutdown...`);
+// Graceful Shutdown Handling
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`Received ${signal}. Shutting down Ride Service gracefully...`);
   await outboxWorker.stop();
   server.close(async () => {
-    logger.info('HTTP & WebSocket servers closed.');
     try {
       if (redis.isOpen) await redis.quit();
       await prisma.$disconnect();
-      logger.info('Database and Redis connections closed cleanly.');
+      logger.info('Ride Service shut down cleanly.');
+      process.exit(0);
     } catch (err) {
-      logger.error('Error during shutdown cleanup:', err);
+      logger.error('Error during graceful shutdown:', err);
+      process.exit(1);
     }
-    process.exit(0);
   });
 
   setTimeout(() => {
@@ -148,5 +145,5 @@ const shutdown = async (signal: string) => {
   }, 10000).unref();
 };
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

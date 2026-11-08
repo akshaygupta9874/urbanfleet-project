@@ -11,32 +11,7 @@ import type {
   PaymentStatus,
   PayoutMode,
   PayoutStatus,
-  RefundOrigin,
-  RefundStatus,
 } from "./payment.types.js";
-
-/** One refund attempt (sub-document of Payment.refunds). */
-export interface IRefundRecord {
-  id: string;
-  gatewayRefundId?: string;
-  amountPaise: Paise;
-  status: RefundStatus;
-  origin: RefundOrigin;
-  reason: string;
-  initiatedBy?: string;
-
-  driverReversalPaise: Paise;
-  platformReversalPaise: Paise;
-
-  ledgerTransactionId?: string;
-  compensationLedgerTransactionId?: string;
-
-  driverClawbackRequired: boolean;
-
-  failureReason?: string;
-  processedAt?: Date;
-  createdAt: Date;
-}
 
 export interface IPayment {
   id: string;
@@ -64,15 +39,11 @@ export interface IPayment {
   failureCode?: string;
   lastFailedGatewayPaymentId?: string;
 
-  refundedAmountPaise: Paise;
-  refunds: IRefundRecord[];
-
   ledgerTransactionId?: string;
 
   metadata: Record<string, unknown>;
 
   capturedAt?: Date;
-  refundedAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

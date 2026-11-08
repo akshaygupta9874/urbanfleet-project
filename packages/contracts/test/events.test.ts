@@ -58,7 +58,7 @@ describe('Event Contracts & Zod Schema Validation', () => {
       email: 'user@urbanfleet.com',
       firstName: 'John',
       lastName: 'Doe',
-      role: 'RIDER',
+      roles: ['RIDER'],
     };
     expect(() => UserRegisteredPayloadSchema.parse(valid)).not.toThrow();
   });

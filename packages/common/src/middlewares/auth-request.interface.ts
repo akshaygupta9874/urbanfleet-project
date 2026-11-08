@@ -1,5 +1,4 @@
 import { Request } from 'express';
-import { AppError } from '../errors/app-error.js';
 
 export interface AuthUser {
   userId: string;
