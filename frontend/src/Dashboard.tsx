@@ -250,8 +250,10 @@ export default function Dashboard() {
         const data: unknown = await response.json();
         if (isGeoapifyFeatureCollection(data) && data.features.length > 0) {
           const feature = data.features[0];
-          setRouteDistance(feature.properties.distance ?? null);
-          setRouteDuration(feature.properties.time ?? null);
+          const rawDistMeters = feature.properties.distance;
+          const rawTimeSeconds = feature.properties.time;
+          setRouteDistance(rawDistMeters != null ? rawDistMeters / 1000 : null);
+          setRouteDuration(rawTimeSeconds != null ? Math.max(1, Math.round(rawTimeSeconds / 60)) : null);
         }
       } catch (err) {
         console.error("Failed to fetch route details", err);

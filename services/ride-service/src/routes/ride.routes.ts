@@ -67,6 +67,7 @@ export function createRideRouter(controller: RideController): Router {
 
   // Single Ride details & fare preview (must stay after specific string paths like /current, /history)
   // Uses optionalAuth so peer microservices (e.g. payment-service) can resolve ride details without external user tokens
+  router.get('/:id/fare-preview', optionalAuth, validateRequest({ params: rideIdParamSchema }), controller.getRideFarePreview);
   router.get('/:id', optionalAuth, validateRequest({ params: rideIdParamSchema }), controller.getRideById);
 
   // Cancel ride (supports both POST and PATCH for client compatibility)

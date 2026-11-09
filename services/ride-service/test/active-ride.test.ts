@@ -205,4 +205,16 @@ describe('Active Ride Resolution for Dual-Role Users and Refresh', () => {
     expect(methods).toContain('post');
     expect(methods).toContain('patch');
   });
+
+  it('registers GET /:id/fare-preview route', () => {
+    const mockController: any = new Proxy({}, {
+      get: () => vi.fn((_req: any, res: any) => res?.status?.(200)?.json?.({})),
+    });
+    const router = createRideRouter(mockController);
+    const farePreviewRoute = router.stack.find(
+      (layer: any) => layer.route?.path === '/:id/fare-preview'
+    );
+    expect(farePreviewRoute).toBeDefined();
+    expect(farePreviewRoute?.route?.methods?.get).toBe(true);
+  });
 });

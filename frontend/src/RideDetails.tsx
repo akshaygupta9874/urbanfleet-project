@@ -31,7 +31,7 @@ import {
 } from "./lib/payment";
 import { useAuthContext } from "./context/auth-context";
 import CityMapBackground from "./components/CityMapBackground";
-import { formatFare, formatDistance, formatDuration } from "./lib/formatters";
+import { formatFare, formatDistance, formatDuration, calculateHaversineDistanceKm } from "./lib/formatters";
 import type { Coordinates } from "./types/location";
 import type { RideDto as Ride, RideStatus } from "./types/ride";
 
@@ -885,10 +885,22 @@ export default function RideDetails() {
       currentRide = response.data.data;
       setRide(currentRide);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { message?: string } } };
-      const serverMsg = axiosErr?.response?.data?.message;
-      setError(serverMsg || "Unable to calculate the final fare. Please try again.");
-      return;
+      // Resilient fallback: try fetching ride directly via /rides/:id
+      try {
+        const fallbackRes = await appApi.get<{ success: boolean; data: Ride }>(
+          `/rides/${currentRide.id}`
+        );
+        currentRide = fallbackRes.data.data;
+        setRide(currentRide);
+      } catch {
+        // If currentRide in state already contains a fare breakdown, continue without aborting
+        if (!currentRide.fare?.breakdown) {
+          const axiosErr = err as { response?: { data?: { message?: string } } };
+          const serverMsg = axiosErr?.response?.data?.message;
+          setError(serverMsg || "Unable to calculate the final fare. Please try again.");
+          return;
+        }
+      }
     }
 
     if (!currentRide.fare.breakdown) {
@@ -896,7 +908,7 @@ export default function RideDetails() {
       return;
     }
 
-    const driverId = currentRide.driver?.id ?? "";
+    const driverId = currentRide.driver?.id ?? currentRide.driverId ?? "";
     if (!driverId) {
       setError("Driver information is unavailable.");
       return;
@@ -947,8 +959,10 @@ export default function RideDetails() {
 
       const razorpayInstance = new Razorpay(options);
       razorpayInstance.open();
-    } catch {
-      setError("Unable to launch payment checkout. Please try again later.");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      const serverMsg = axiosErr?.response?.data?.message;
+      setError(serverMsg || "Unable to launch payment checkout. Please try again later.");
     } finally {
       setIsPaying(false);
     }
@@ -1037,8 +1051,77 @@ export default function RideDetails() {
   const vehicleType = ride.driver?.vehicle?.type || ride.vehicleCategory || "Car";
 
   const activeFareValue = ride.fare.final ?? ride.fare.estimated ?? 0;
-  const activeDistance = ride.distance.actual ?? ride.distance.estimated ?? 0;
-  const activeDuration = ride.duration.actual ?? ride.duration.estimated ?? 0;
+
+  const liveRiderMetrics = useMemo(() => {
+    const estTripDist = ride.distance.actual ?? ride.distance.estimated ?? 0;
+    const estTripDur = ride.duration.actual ?? ride.duration.estimated ?? 0;
+
+    if (ride.status === "DRIVER_ASSIGNED" || ride.status === "DRIVER_ARRIVING") {
+      if (driverLocation && ride.pickup?.coordinates) {
+        const straightKm = calculateHaversineDistanceKm(driverLocation, ride.pickup.coordinates);
+        const roadDistKm = straightKm * 1.3;
+        const etaMin = Math.max(1, Math.round(roadDistKm * 2.4));
+        return {
+          etaLabel: "Captain ETA",
+          etaValue: formatDuration(etaMin),
+          distanceLabel: "Distance Away",
+          distanceValue: formatDistance(roadDistKm),
+        };
+      }
+      return {
+        etaLabel: "Captain ETA",
+        etaValue: "2-4 min",
+        distanceLabel: "Distance Away",
+        distanceValue: formatDistance(estTripDist),
+      };
+    }
+
+    if (ride.status === "RIDE_STARTED") {
+      if (driverLocation && ride.destination?.coordinates) {
+        const straightKm = calculateHaversineDistanceKm(driverLocation, ride.destination.coordinates);
+        const roadDistKm = straightKm * 1.3;
+        const etaMin = Math.max(1, Math.round(roadDistKm * 2.2));
+        return {
+          etaLabel: "Trip ETA",
+          etaValue: formatDuration(etaMin),
+          distanceLabel: "Remaining Dist",
+          distanceValue: formatDistance(roadDistKm),
+        };
+      }
+      return {
+        etaLabel: "Trip ETA",
+        etaValue: formatDuration(estTripDur),
+        distanceLabel: "Trip Distance",
+        distanceValue: formatDistance(estTripDist),
+      };
+    }
+
+    if (ride.status === "ARRIVED_AT_DESTINATION") {
+      return {
+        etaLabel: "Status",
+        etaValue: "Arrived",
+        distanceLabel: "Trip Distance",
+        distanceValue: formatDistance(estTripDist),
+      };
+    }
+
+    if (ride.status === "COMPLETED") {
+      return {
+        etaLabel: "Trip Duration",
+        etaValue: formatDuration(estTripDur),
+        distanceLabel: "Total Distance",
+        distanceValue: formatDistance(estTripDist),
+      };
+    }
+
+    // SEARCHING / CANCELLED / default
+    return {
+      etaLabel: "Est. Time",
+      etaValue: formatDuration(estTripDur),
+      distanceLabel: "Est. Distance",
+      distanceValue: formatDistance(estTripDist),
+    };
+  }, [ride, driverLocation]);
 
   const canCancel =
     ride.status === "SEARCHING" ||
@@ -1331,13 +1414,13 @@ export default function RideDetails() {
               />
               <StatTile
                 icon={<Clock className="h-4 w-4" />}
-                label="ETA"
-                value={formatDuration(activeDuration)}
+                label={liveRiderMetrics.etaLabel}
+                value={liveRiderMetrics.etaValue}
               />
               <StatTile
                 icon={<RouteIcon className="h-4 w-4" />}
-                label="Distance"
-                value={formatDistance(activeDistance)}
+                label={liveRiderMetrics.distanceLabel}
+                value={liveRiderMetrics.distanceValue}
               />
             </div>
 

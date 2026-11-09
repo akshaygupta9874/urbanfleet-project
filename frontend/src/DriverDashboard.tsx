@@ -60,7 +60,7 @@ import DriverBankDetailsModal from "./components/DriverBankDetailsModal";
 import { useAuthContext } from "./context/auth-context";
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
 import CityMapBackground from "./components/CityMapBackground";
-import { formatFare, formatDistance, formatDuration, getDistanceKm } from "./lib/formatters";
+import { formatFare, formatDistance, formatDuration, getDistanceKm, calculateHaversineDistanceKm } from "./lib/formatters";
 import { type PaymentStatus } from "./lib/payment";
 import type { Coordinates } from "./types/location";
 import type { RiderLocationPayload, RideDto, RideStatus } from "./types/ride";
@@ -1351,7 +1351,7 @@ export default function DriverDashboard() {
     const metricKm = Number(driverMetrics?.totalDistanceKm ?? 0);
     const rawProfileDistance = Number(profile?.statistics?.totalDistance ?? 0);
     const profileDistanceKm =
-      rawProfileDistance > 100 ? rawProfileDistance / 1000 : rawProfileDistance;
+      rawProfileDistance > 10000 ? rawProfileDistance / 1000 : rawProfileDistance;
     return Math.max(metricKm, historyDistanceKm, profileDistanceKm);
   }, [driverMetrics?.totalDistanceKm, historyDistanceKm, profile?.statistics?.totalDistance]);
 
@@ -1559,6 +1559,69 @@ export default function DriverDashboard() {
     ? currentRide.fare.final ?? currentRide.fare.estimated ?? 0
     : 0;
   const breakdownData = currentRide?.fare?.breakdown ?? null;
+
+  const liveDriverMetrics = useMemo(() => {
+    if (!currentRide) return null;
+    const estTripDist = currentRide.distance?.actual ?? currentRide.distance?.estimated ?? 0;
+    const estTripDur = currentRide.duration?.actual ?? currentRide.duration?.estimated ?? 0;
+
+    if (currentRide.status === "DRIVER_ASSIGNED" || currentRide.status === "DRIVER_ARRIVING") {
+      if (driverLocation && currentRide.pickup?.coordinates) {
+        const straightKm = calculateHaversineDistanceKm(driverLocation, currentRide.pickup.coordinates);
+        const roadDistKm = straightKm * 1.3;
+        const etaMin = Math.max(1, Math.round(roadDistKm * 2.4));
+        return {
+          distanceLabel: "To Pickup",
+          distanceValue: formatDistance(roadDistKm),
+          timeLabel: "Pickup ETA",
+          timeValue: formatDuration(etaMin),
+        };
+      }
+      return {
+        distanceLabel: "To Pickup",
+        distanceValue: formatDistance(estTripDist),
+        timeLabel: "Pickup ETA",
+        timeValue: "2-5 min",
+      };
+    }
+
+    if (currentRide.status === "RIDE_STARTED") {
+      if (driverLocation && currentRide.destination?.coordinates) {
+        const straightKm = calculateHaversineDistanceKm(driverLocation, currentRide.destination.coordinates);
+        const roadDistKm = straightKm * 1.3;
+        const etaMin = Math.max(1, Math.round(roadDistKm * 2.2));
+        return {
+          distanceLabel: "To Drop-off",
+          distanceValue: formatDistance(roadDistKm),
+          timeLabel: "Trip ETA",
+          timeValue: formatDuration(etaMin),
+        };
+      }
+      return {
+        distanceLabel: "To Drop-off",
+        distanceValue: formatDistance(estTripDist),
+        timeLabel: "Trip ETA",
+        timeValue: formatDuration(estTripDur),
+      };
+    }
+
+    if (currentRide.status === "ARRIVED_AT_DESTINATION") {
+      return {
+        distanceLabel: "Trip Dist",
+        distanceValue: formatDistance(estTripDist),
+        timeLabel: "Trip Status",
+        timeValue: "Arrived",
+      };
+    }
+
+    // Default / COMPLETED
+    return {
+      distanceLabel: "Trip Dist",
+      distanceValue: formatDistance(estTripDist),
+      timeLabel: "Trip Duration",
+      timeValue: formatDuration(estTripDur),
+    };
+  }, [currentRide, driverLocation]);
 
   const statusDotColor =
     driverStatus === "AVAILABLE"
@@ -2302,18 +2365,18 @@ export default function DriverDashboard() {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                           <div className="rounded-xl border border-[#7a4416]/20 bg-[#fffdf9] p-3">
                             <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
-                              Distance
+                              {liveDriverMetrics?.distanceLabel ?? "Distance"}
                             </span>
                             <p className="mt-1 text-sm font-black text-[#2e1808] console-readout">
-                              {distance != null ? formatDistance(distance) : "--"}
+                              {liveDriverMetrics?.distanceValue ?? (distance != null ? formatDistance(distance) : "--")}
                             </p>
                           </div>
                           <div className="rounded-xl border border-[#7a4416]/20 bg-[#fffdf9] p-3">
                             <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
-                              Est. Time
+                              {liveDriverMetrics?.timeLabel ?? "Est. Time"}
                             </span>
                             <p className="mt-1 text-sm font-black text-[#2e1808] console-readout">
-                              {duration != null ? formatDuration(duration) : "--"}
+                              {liveDriverMetrics?.timeValue ?? (duration != null ? formatDuration(duration) : "--")}
                             </p>
                           </div>
                           <div className="rounded-xl border border-[#7a4416]/20 bg-[#fffdf9] p-3">

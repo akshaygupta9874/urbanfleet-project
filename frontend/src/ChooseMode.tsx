@@ -302,9 +302,16 @@ export default function ChooseMode() {
     setBookingError("");
     setIsCreatingRide(true);
     try {
-      const distanceKm = rideData.routeDistance
-        ? Number((rideData.routeDistance / 1000).toFixed(3))
-        : 5;
+      const rawDist = rideData.routeDistance ?? 5;
+      const distanceKm =
+        rawDist > 500
+          ? Number((rawDist / 1000).toFixed(3))
+          : Number(rawDist.toFixed(3));
+      const rawDur = rideData.routeDuration ?? 14;
+      const durationMinutes =
+        rawDur > 500
+          ? Math.max(1, Math.round(rawDur / 60))
+          : Math.max(1, Math.round(rawDur));
       const selectedMultiplier =
         RIDE_MODES.find((mode) => mode.id === selectedMode)?.multiplier ?? 1.2;
       const calculatedFare = Math.round(
@@ -327,7 +334,7 @@ export default function ChooseMode() {
         fare: { estimated: calculatedFare },
         distance: { estimated: distanceKm },
         duration: {
-          estimated: rideData.routeDuration ? Math.round(rideData.routeDuration / 60) : 14,
+          estimated: durationMinutes,
         },
       });
 
@@ -403,12 +410,16 @@ export default function ChooseMode() {
     );
   }
 
-  const distanceKm = rideData.routeDistance
-    ? Number((rideData.routeDistance / 1000).toFixed(3))
-    : 5;
-  const durationMinutes = rideData.routeDuration
-    ? Math.max(1, Math.round(rideData.routeDuration / 60))
-    : 14;
+  const rawDist = rideData.routeDistance ?? 5;
+  const distanceKm =
+    rawDist > 500
+      ? Number((rawDist / 1000).toFixed(3))
+      : Number(rawDist.toFixed(3));
+  const rawDur = rideData.routeDuration ?? 14;
+  const durationMinutes =
+    rawDur > 500
+      ? Math.max(1, Math.round(rawDur / 60))
+      : Math.max(1, Math.round(rawDur));
 
   const rawBasePaise = 2500;
   const rawDistancePaise = Math.round(distanceKm * 500);
