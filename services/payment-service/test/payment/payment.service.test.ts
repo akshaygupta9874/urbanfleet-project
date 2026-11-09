@@ -1085,7 +1085,6 @@ describe("createOrder", () => {
 
       vi.spyOn(prisma.ride, "findUnique")
         .mockResolvedValueOnce(ride as any)
-        .mockResolvedValueOnce(ride as any)
         .mockResolvedValue({ ...ride, paymentStatus: RidePaymentStatus.CAPTURED } as any);
 
       const create = vi.spyOn(

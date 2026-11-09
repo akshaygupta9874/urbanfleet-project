@@ -15,7 +15,12 @@ describe('Payment Service Order Creation & Verification', () => {
     findByRideId: vi.fn(),
     findById: vi.fn(),
     create: vi.fn(),
-    update: vi.fn()
+    update: vi.fn(),
+    findRideById: vi.fn(),
+    findByRide: vi.fn(),
+    findByIdempotencyKey: vi.fn(),
+    transaction: vi.fn(),
+    setGatewayOrderId: vi.fn(),
   };
   const mockLedgerService: any = { recordPaymentCapture: vi.fn().mockResolvedValue('tx-1') };
   const mockOutboxRepo: any = { stageEvent: vi.fn().mockResolvedValue({}) };
@@ -43,6 +48,24 @@ describe('Payment Service Order Creation & Verification', () => {
     };
 
     vi.spyOn(rideClient, 'getRideById').mockResolvedValue(validRide as any);
+    mockPaymentRepo.findRideById.mockResolvedValue(validRide as any);
+    mockPaymentRepo.findByRide.mockResolvedValue([]);
+    mockPaymentRepo.findByIdempotencyKey.mockResolvedValue(null);
+    mockPaymentRepo.create.mockImplementation((data: any) => Promise.resolve({ id: 'pay-1', ...data }));
+    mockPaymentRepo.setGatewayOrderId.mockImplementation(async (_id: any, gatewayOrderId: string) => ({
+      id: 'pay-1',
+      rideId: 'ride-123',
+      amountPaise: 15000,
+      gatewayOrderId,
+      status: 'PENDING'
+    } as any));
+    mockPaymentRepo.transaction.mockImplementation(async (cb: any) => {
+      return cb({
+        ride: {
+          findUnique: vi.fn().mockResolvedValue(validRide)
+        }
+      });
+    });
     vi.spyOn(paymentRepository, 'findRideById').mockResolvedValue(validRide as any);
     vi.spyOn(paymentRepository, 'findByRide').mockResolvedValue([]);
     vi.spyOn(paymentRepository, 'findByIdempotencyKey').mockResolvedValue(null);

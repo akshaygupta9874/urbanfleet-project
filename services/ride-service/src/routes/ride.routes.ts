@@ -69,8 +69,9 @@ export function createRideRouter(controller: RideController): Router {
   // Uses optionalAuth so peer microservices (e.g. payment-service) can resolve ride details without external user tokens
   router.get('/:id', optionalAuth, validateRequest({ params: rideIdParamSchema }), controller.getRideById);
 
-  // Cancel ride
+  // Cancel ride (supports both POST and PATCH for client compatibility)
   router.post('/:id/cancel', authMiddleware, validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRide);
+  router.patch('/:id/cancel', authMiddleware, validateRequest({ params: rideIdParamSchema, body: cancelRideSchema }), controller.cancelRide);
 
   // Driver action endpoints
   router.post('/:id/accept', authMiddleware, requireRole('DRIVER'), validateRequest({ params: rideIdParamSchema, body: acceptRideSchema }), controller.driverAcceptRide);

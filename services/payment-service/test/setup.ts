@@ -35,6 +35,12 @@ import { prisma } from "../src/db/client.js";
 (prisma as any).user = {
   findUnique: async () => null,
 };
+(prisma as any).outboxEvent = {
+  create: async (args: any) => ({ id: "mock-outbox-event-id", ...args?.data }),
+  findMany: async () => [],
+  update: async () => null,
+  updateMany: async () => ({ count: 1 }),
+};
 
 const originalTransaction = prisma.$transaction.bind(prisma);
 (prisma as any).$transaction = async (arg: any, options: any) => {

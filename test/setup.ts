@@ -70,6 +70,13 @@ import { redisClient } from "../services/payment-service/src/redis/client.js";
   },
 };
 
+(paymentPrisma as any).outboxEvent = {
+  create: async (args: any) => ({ id: "mock-outbox-event-id", ...args?.data }),
+  findMany: async () => [],
+  update: async () => null,
+  updateMany: async () => ({ count: 1 }),
+};
+
 const origTx = paymentPrisma.$transaction.bind(paymentPrisma);
 (paymentPrisma as any).$transaction = async (arg: any, options: any) => {
   if (typeof arg === "function") {

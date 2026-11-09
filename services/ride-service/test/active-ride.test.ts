@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RideController } from '../src/controllers/ride.controller.js';
+import { createRideRouter } from '../src/routes/ride.routes.js';
 
 describe('Active Ride Resolution for Dual-Role Users and Refresh', () => {
   it('returns active rider ride with OTP even when user has DRIVER in roles array', async () => {
@@ -189,5 +190,19 @@ describe('Active Ride Resolution for Dual-Role Users and Refresh', () => {
       success: true,
       data: null,
     });
+  });
+
+  it('registers both POST and PATCH routes for /:id/cancel', () => {
+    const mockController: any = new Proxy({}, {
+      get: () => vi.fn((_req: any, res: any) => res?.status?.(200)?.json?.({})),
+    });
+    const router = createRideRouter(mockController);
+    const cancelRoutes = router.stack.filter(
+      (layer: any) => layer.route?.path === '/:id/cancel'
+    );
+    expect(cancelRoutes.length).toBe(2);
+    const methods = cancelRoutes.map((layer: any) => Object.keys(layer.route.methods)[0]);
+    expect(methods).toContain('post');
+    expect(methods).toContain('patch');
   });
 });

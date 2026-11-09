@@ -841,9 +841,19 @@ export default function RideDetails() {
     if (!ride) return;
     setIsCancelling(true);
     try {
-      await appApi.patch(`/rides/${ride.id}/cancel`, {
-        cancellationReason: "Rider cancelled from ride details",
-      });
+      try {
+        await appApi.post(`/rides/${ride.id}/cancel`, {
+          cancellationReason: "Rider cancelled from ride details",
+        });
+      } catch (err: any) {
+        if (err?.response?.status === 404 || err?.response?.status === 405) {
+          await appApi.patch(`/rides/${ride.id}/cancel`, {
+            cancellationReason: "Rider cancelled from ride details",
+          });
+        } else {
+          throw err;
+        }
+      }
       setRide((p) => (p ? { ...p, status: "CANCELLED" } : p));
       setShowCancelConfirm(false);
     } catch {
