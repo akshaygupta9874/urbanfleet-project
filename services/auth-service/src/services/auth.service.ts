@@ -19,7 +19,7 @@ import {
   ServiceUnavailableError,
   InternalServerError,
 } from "@urbanfleet/common";
-import { Role, Session } from "../db/client.js";
+import { Role, Session, Prisma } from "../db/client.js";
 import {
   cacheTokens,
   revokeCachedTokens,
@@ -49,6 +49,19 @@ export class AuthService {
     this.outboxRepo = outboxRepo;
   }
 
+  private async runTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    if (typeof this.userRepo.executeTransaction === 'function') {
+      return this.userRepo.executeTransaction(fn);
+    }
+    const stubTx = {
+      user: {
+        create: (args: any) => this.userRepo.create(args.data),
+        update: (args: any) => this.userRepo.update(args.where.id, args.data),
+      },
+    } as unknown as Prisma.TransactionClient;
+    return fn(stubTx);
+  }
+
   async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, 12);
   }
@@ -65,6 +78,7 @@ export class AuthService {
     roles: Role[];
     ipAddress: string;
     userAgent: string;
+    frontendUrl?: string;
   }) {
     const existing = await this.userRepo.findByEmail(input.email);
     if (existing) {
@@ -81,19 +95,11 @@ export class AuthService {
     }
 
     const passwordHash = await this.hashPassword(input.password);
-    const user = await this.userRepo.create({
-      email: input.email,
-      passwordHash,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      roles: input.roles.filter((role) => role !== Role.ADMIN),
-      isEmailVerified: false,
-    });
 
     // Registration creates an unverified account. Tokens and sessions are only issued after email verification upon login.
-
     // Generate email verification token (24-hour expiration)
     const verifyToken = crypto.randomBytes(32).toString("hex");
+    const tempUserId = crypto.randomUUID();
     try {
       if (!authRedisClient || !authRedisClient.isOpen) {
         throw new ServiceUnavailableError(
@@ -103,7 +109,7 @@ export class AuthService {
       }
       await authRedisClient.set(
         authRedisKey(`verify:${verifyToken}`),
-        user.id,
+        tempUserId,
         { EX: 86400 },
       );
     } catch (err: unknown) {
@@ -111,7 +117,7 @@ export class AuthService {
         "Failed to store verification token in Redis during registration:",
         {
           error: err instanceof Error ? err.message : String(err),
-          userId: user.id,
+          userId: tempUserId,
         },
       );
       throw new ServiceUnavailableError(
@@ -121,53 +127,77 @@ export class AuthService {
       );
     }
 
-    const registrationEventId = crypto.randomUUID();
+    const user = await this.runTransaction(async (tx) => {
+      const createdUser = await this.userRepo.create({
+        email: input.email,
+        passwordHash,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        roles: input.roles.filter((role) => role !== Role.ADMIN),
+        isEmailVerified: false,
+      });
 
-    // Durable Outbox event staging (blocking guarantee for event-driven consistency)
-    if (this.outboxRepo) {
-      try {
-        await this.outboxRepo.stageEvent(null, {
-          topic: EventTopics.AUTH_EVENTS,
-          partitionKey: user.id,
-          eventType: "USER_REGISTERED",
-          aggregateType: "USER",
-          aggregateId: user.id,
-          aggregateSequence: 1,
-          payload: {
-              userId: user.id,
-              email: user.email,
-              firstName: user.firstName,
-              lastName: user.lastName,
-              roles: user.roles,
+      // Durable Outbox event staging (blocking guarantee for event-driven consistency)
+      if (this.outboxRepo) {
+        try {
+          await this.outboxRepo.stageEvent(tx, {
+            topic: EventTopics.AUTH_EVENTS,
+            partitionKey: createdUser.id,
+            eventType: "USER_REGISTERED",
+            aggregateType: "USER",
+            aggregateId: createdUser.id,
+            aggregateSequence: 1,
+            payload: {
+              userId: createdUser.id,
+              email: createdUser.email,
+              firstName: createdUser.firstName,
+              lastName: createdUser.lastName,
+              roles: createdUser.roles,
               verifyToken,
             },
-        });
+          });
 
-        // Stage email verification requested event for notification-service
-        await this.outboxRepo.stageEvent(null, {
-          topic: EventTopics.AUTH_EVENTS,
-          partitionKey: user.id,
-          eventType: "USER_EMAIL_VERIFICATION_REQUESTED",
-          aggregateType: "USER",
-          aggregateId: user.id,
-          aggregateSequence: 2,
-          payload: {
-              userId: user.id,
-              email: user.email,
+          const resolvedFrontendUrl =
+            input.frontendUrl || process.env.FRONTEND_URL || 'https://urbanfleet.duckdns.org';
+
+          // Stage email verification requested event for notification-service
+          await this.outboxRepo.stageEvent(tx, {
+            topic: EventTopics.AUTH_EVENTS,
+            partitionKey: createdUser.id,
+            eventType: "USER_EMAIL_VERIFICATION_REQUESTED",
+            aggregateType: "USER",
+            aggregateId: createdUser.id,
+            aggregateSequence: 2,
+            payload: {
+              userId: createdUser.id,
+              email: createdUser.email,
               verifyToken,
+              frontendUrl: resolvedFrontendUrl,
             },
-        });
-      } catch (err: unknown) {
-        logger.error("Failed to stage outbox event for registration:", {
-          error: err instanceof Error ? err.message : String(err),
-          userId: user.id,
-        });
-        throw new ServiceUnavailableError(
-          "Failed to queue registration confirmation. Please try again.",
-          "OUTBOX_STAGE_FAILED",
-          err instanceof Error ? err : undefined,
-        );
+          });
+        } catch (err: unknown) {
+          logger.error("Failed to stage outbox event for registration:", {
+            error: err instanceof Error ? err.message : String(err),
+            userId: createdUser.id,
+          });
+          throw new ServiceUnavailableError(
+            "Failed to queue registration confirmation. Please try again.",
+            "OUTBOX_STAGE_FAILED",
+            err instanceof Error ? err : undefined,
+          );
+        }
       }
+
+      return createdUser;
+    });
+
+    // Update Redis with the actual persisted userId if it differed from temp
+    if (user.id !== tempUserId && authRedisClient && authRedisClient.isOpen) {
+      await authRedisClient.set(
+        authRedisKey(`verify:${verifyToken}`),
+        user.id,
+        { EX: 86400 },
+      );
     }
 
     return {
@@ -238,18 +268,20 @@ export class AuthService {
     // Stage outbox event for OTP notification dispatch (blocking guarantee for email delivery)
     if (this.outboxRepo) {
       try {
-        await this.outboxRepo.stageEvent(null, {
-          topic: EventTopics.AUTH_EVENTS,
-          partitionKey: user.id,
-          eventType: "USER_LOGIN_OTP_REQUESTED",
-          aggregateType: "USER",
-          aggregateId: user.id,
-          aggregateSequence: 1,
-          payload: {
+        await this.runTransaction(async (tx) => {
+          await this.outboxRepo!.stageEvent(tx, {
+            topic: EventTopics.AUTH_EVENTS,
+            partitionKey: user.id,
+            eventType: "USER_LOGIN_OTP_REQUESTED",
+            aggregateType: "USER",
+            aggregateId: user.id,
+            aggregateSequence: 1,
+            payload: {
               userId: user.id,
               email: user.email,
               otp,
             },
+          });
         });
       } catch (err: unknown) {
         logger.error("Failed to stage outbox event for login OTP:", {
@@ -675,7 +707,7 @@ export class AuthService {
     return { success: true };
   }
 
-  async requestPasswordReset(email: string) {
+  async requestPasswordReset(email: string, requestedFrontendUrl?: string) {
     const user = await this.userRepo.findByEmail(email);
     if (!user) {
       return {
@@ -711,18 +743,24 @@ export class AuthService {
     // Durable Outbox event staging for password reset dispatch (blocking guarantee)
     if (this.outboxRepo) {
       try {
-        await this.outboxRepo.stageEvent(null, {
-          topic: EventTopics.AUTH_EVENTS,
-          partitionKey: user.id,
-          eventType: "USER_PASSWORD_RESET_REQUESTED",
-          aggregateType: "USER",
-          aggregateId: user.id,
-          aggregateSequence: 1,
-          payload: {
+        await this.runTransaction(async (tx) => {
+          const resolvedFrontendUrl =
+            requestedFrontendUrl || process.env.FRONTEND_URL || 'https://urbanfleet.duckdns.org';
+
+          await this.outboxRepo!.stageEvent(tx, {
+            topic: EventTopics.AUTH_EVENTS,
+            partitionKey: user.id,
+            eventType: "USER_PASSWORD_RESET_REQUESTED",
+            aggregateType: "USER",
+            aggregateId: user.id,
+            aggregateSequence: 1,
+            payload: {
               userId: user.id,
               email: user.email,
               resetToken,
+              frontendUrl: resolvedFrontendUrl,
             },
+          });
         });
       } catch (err: unknown) {
         logger.error("Failed to stage outbox event for password reset:", {
@@ -868,7 +906,7 @@ export class AuthService {
     };
   }
 
-  async resendVerificationToken(email: string) {
+  async resendVerificationToken(email: string, requestedFrontendUrl?: string) {
     const user = await this.userRepo.findByEmail(email);
     if (!user) throw new NotFoundError("User with this email was not found");
     if (user.isEmailVerified)
@@ -903,18 +941,24 @@ export class AuthService {
     // Durable Outbox event staging (blocking guarantee)
     if (this.outboxRepo) {
       try {
-        await this.outboxRepo.stageEvent(null, {
-          topic: EventTopics.AUTH_EVENTS,
-          partitionKey: user.id,
-          eventType: "USER_EMAIL_VERIFICATION_REQUESTED",
-          aggregateType: "USER",
-          aggregateId: user.id,
-          aggregateSequence: 1,
-          payload: {
+        await this.runTransaction(async (tx) => {
+          const resolvedFrontendUrl =
+            requestedFrontendUrl || process.env.FRONTEND_URL || 'https://urbanfleet.duckdns.org';
+
+          await this.outboxRepo!.stageEvent(tx, {
+            topic: EventTopics.AUTH_EVENTS,
+            partitionKey: user.id,
+            eventType: "USER_EMAIL_VERIFICATION_REQUESTED",
+            aggregateType: "USER",
+            aggregateId: user.id,
+            aggregateSequence: 1,
+            payload: {
               userId: user.id,
               email: user.email,
               verifyToken,
+              frontendUrl: resolvedFrontendUrl,
             },
+          });
         });
       } catch (err: unknown) {
         logger.error("Failed to stage outbox event for email verification:", {
@@ -1097,51 +1141,55 @@ export class AuthService {
         crypto.randomBytes(32).toString("hex"),
       );
 
-      user = await this.userRepo.create({
-        email,
-        firstName: firstName.slice(0, 50),
-        lastName: lastName.slice(0, 50),
-        passwordHash,
-        roles: targetRoles,
-        avatarUrl: payload.picture
-          ? String(payload.picture).slice(0, 500)
-          : undefined,
-        isEmailVerified: true,
-      });
+      user = await this.runTransaction(async (tx) => {
+        const createdUser = await this.userRepo.create({
+          email,
+          firstName: firstName.slice(0, 50),
+          lastName: lastName.slice(0, 50),
+          passwordHash,
+          roles: targetRoles,
+          avatarUrl: payload.picture
+            ? String(payload.picture).slice(0, 500)
+            : undefined,
+          isEmailVerified: true,
+        });
 
-      // Stage durable outbox event for user registration (blocking for dual-write consistency)
-      if (this.outboxRepo) {
-        try {
-          await this.outboxRepo.stageEvent(null, {
-            topic: EventTopics.AUTH_EVENTS,
-            partitionKey: user.id,
-            eventType: "USER_REGISTERED",
-            aggregateType: "USER",
-            aggregateId: user.id,
-            aggregateSequence: 1,
-            payload: {
-                userId: user.id,
-                email: user.email,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                roles: user.roles,
+        // Stage durable outbox event for user registration (blocking for dual-write consistency)
+        if (this.outboxRepo) {
+          try {
+            await this.outboxRepo.stageEvent(tx, {
+              topic: EventTopics.AUTH_EVENTS,
+              partitionKey: createdUser.id,
+              eventType: "USER_REGISTERED",
+              aggregateType: "USER",
+              aggregateId: createdUser.id,
+              aggregateSequence: 1,
+              payload: {
+                userId: createdUser.id,
+                email: createdUser.email,
+                firstName: createdUser.firstName,
+                lastName: createdUser.lastName,
+                roles: createdUser.roles,
               },
-          });
-        } catch (err: unknown) {
-          logger.error(
-            "Failed to stage outbox event for Google registration:",
-            {
-              error: err instanceof Error ? err.message : String(err),
-              userId: user.id,
-            },
-          );
-          throw new ServiceUnavailableError(
-            "Failed to complete account registration. Please try again.",
-            "OUTBOX_STAGE_FAILED",
-            err instanceof Error ? err : undefined,
-          );
+            });
+          } catch (err: unknown) {
+            logger.error(
+              "Failed to stage outbox event for Google registration:",
+              {
+                error: err instanceof Error ? err.message : String(err),
+                userId: createdUser.id,
+              },
+            );
+            throw new ServiceUnavailableError(
+              "Failed to complete account registration. Please try again.",
+              "OUTBOX_STAGE_FAILED",
+              err instanceof Error ? err : undefined,
+            );
+          }
         }
-      }
+
+        return createdUser;
+      });
 
     } else {
       // If user exists and specific roles were requested, merge if not already present

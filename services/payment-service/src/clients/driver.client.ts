@@ -8,7 +8,7 @@ export interface DriverProfile {
   userId: string;
   verificationStatus: string;
   isAvailable: boolean;
-  isOnline?: boolean;
+  isOnline: boolean;
 }
 
 export class DriverClient {

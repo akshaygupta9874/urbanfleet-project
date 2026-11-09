@@ -88,7 +88,10 @@ export class NotificationRepository {
 
   async recordFailure(id: string, error: string): Promise<NotificationRecord> {
     const existing = await this.prisma.notificationRecord.findUnique({ where: { id } });
-    const nextRetry = (existing?.retryCount || 0) + 1;
+    if (!existing) {
+      throw new Error(`Notification record ${id} not found`);
+    }
+    const nextRetry = existing.retryCount + 1;
     const isTerminal = nextRetry >= 5;
 
     return this.prisma.notificationRecord.update({

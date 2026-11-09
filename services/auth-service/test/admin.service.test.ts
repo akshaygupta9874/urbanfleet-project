@@ -49,7 +49,7 @@ describe('AdminService', () => {
             destinationAddress: 'Indiranagar',
             pickupLat: 12.9716,
             pickupLng: 77.5946,
-            driverId: 'usr-drv-1',
+            driverId: 'drv-1',
           },
         ],
         pagination: { total: 20 },

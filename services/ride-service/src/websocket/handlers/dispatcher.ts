@@ -1,9 +1,7 @@
-import { AuthenticatedSocket } from '../types.js';
+import { createLogger } from '@urbanfleet/common';
+import { AuthenticatedSocket } from '../types/index.js';
 import { SocketMessageSchema } from '../validators/socket.validator.js';
 import { sendSocketError } from '../utils/send-error.js';
-import { createLogger } from '@urbanfleet/common';
-
-const logger = createLogger('ride-websocket-dispatcher');
 import {
   DriverEvents,
   RiderEvents,
@@ -13,20 +11,30 @@ import {
 import { handleDriverEvent } from './driver.handler.js';
 import { handleRiderEvent } from './rider.handler.js';
 
+const logger = createLogger('ride-websocket-dispatcher');
+
+const DRIVER_EVENT_SET = new Set<string>(Object.values(DriverEvents));
+const RIDER_EVENT_SET = new Set<string>(Object.values(RiderEvents));
+
 export function registerDispatcher(socket: AuthenticatedSocket): void {
   socket.on('message', async (buffer) => {
     try {
-      const parsed = JSON.parse(buffer.toString());
+      const parsed: unknown = JSON.parse(buffer.toString());
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        sendSocketError(socket, 'Invalid WebSocket message.');
+        return;
+      }
+
+      const raw = parsed as Record<string, unknown>;
 
       // Support ping/pong keepalive
-      if (parsed.type === 'ping' || parsed.event === 'ping') {
+      if (raw.type === 'ping' || raw.event === 'ping') {
         socket.send(JSON.stringify({ type: 'pong' }));
         return;
       }
 
-      // Canonical event name
-      const eventName = parsed.event;
-      const eventData = parsed.data !== undefined ? parsed.data : parsed;
+      const eventName = raw.event ?? raw.type;
+      const eventData = raw.data !== undefined ? raw.data : raw;
 
       const result = SocketMessageSchema.safeParse({
         event: eventName,
@@ -44,7 +52,7 @@ export function registerDispatcher(socket: AuthenticatedSocket): void {
       const isRider = userRoles.includes('RIDER');
 
       // Handle driver events
-      if (Object.values(DriverEvents).includes(event as DriverEvent)) {
+      if (DRIVER_EVENT_SET.has(event)) {
         if (!isDriver) {
           sendSocketError(socket, 'Forbidden: Driver role required for this event.', 'FORBIDDEN');
           return;
@@ -54,7 +62,7 @@ export function registerDispatcher(socket: AuthenticatedSocket): void {
       }
 
       // Handle rider events
-      if (Object.values(RiderEvents).includes(event as RiderEvent)) {
+      if (RIDER_EVENT_SET.has(event)) {
         if (!isRider) {
           sendSocketError(socket, 'Forbidden: Rider role required for this event.', 'FORBIDDEN');
           return;
@@ -66,7 +74,7 @@ export function registerDispatcher(socket: AuthenticatedSocket): void {
       // Legacy fallback mapping for direct telemetry types
       if (event === 'location_update' || event === 'UPDATE_LOCATION') {
         if (!isDriver) {
-          sendSocketError(socket, 'Forbidden: Driver role required for this event.');
+          sendSocketError(socket, 'Forbidden: Driver role required for this event.', 'FORBIDDEN');
           return;
         }
         await handleDriverEvent(socket, DriverEvents.UPDATE_LOCATION, data);

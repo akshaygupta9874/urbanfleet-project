@@ -7,7 +7,7 @@ import {
     PaymentMethod,
     IFareBreakdown,
 } from "../types/payment.types.js";
-import { AppError } from '../utils/AppError.js';
+import { AppError } from '../errors/index.js';
 import { rideClient } from '../clients/ride.client.js';
 import type { RideDto } from "@urbanfleet/common";
 import { authClient } from '../clients/auth.client.js';

@@ -1,8 +1,6 @@
 import { Request, Response } from "express";
 
-import {
-    AppError,
-} from '../utils/AppError.js';
+import { AppError } from '../errors/index.js';
 
 import { webhookService } from "../services/webhook.service.js";
 

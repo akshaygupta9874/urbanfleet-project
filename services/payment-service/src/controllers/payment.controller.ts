@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { createHash } from "crypto";
-import { AppError } from '../utils/AppError.js';
+import { AppError } from '../errors/index.js';
 import asyncHandler from '../middlewares/asyncHandler.js';
 import { paymentService } from "../services/payment.service.js";
 import { payoutService } from "../services/payout.service.js";
@@ -18,10 +18,13 @@ function deriveIdempotencyKey(ride: string, rider: string): string {
   return createHash("sha256").update(`${ride}:${rider}`).digest("hex");
 }
 
-function isParticipant(payment: IPayment, userId: string): boolean {
+function isParticipant(payment: IPayment, userId?: string, driverId?: string): boolean {
   const riderId = payment.riderId || payment.rider;
-  const driverId = payment.driverId || payment.driver;
-  return riderId === userId || driverId === userId;
+  const paymentDriverId = payment.driverId || payment.driver;
+  return Boolean(
+    (riderId && userId && riderId === userId) ||
+    (paymentDriverId && driverId && paymentDriverId === driverId)
+  );
 }
 
 /**
@@ -98,7 +101,7 @@ export const getPayment = asyncHandler(async (req: AuthenticatedRequest, res: Re
   }
 
   const isAdmin = Boolean(req.roles?.includes('ADMIN') || req.user?.roles?.includes('ADMIN'));
-  if (!isParticipant(payment, req.userId) && !isAdmin) {
+  if (!isParticipant(payment, req.userId, req.driverId) && !isAdmin) {
     throw new AppError("Not authorized to view this payment", 403, "FORBIDDEN");
   }
 
@@ -115,7 +118,7 @@ export const getPaymentsByRide = asyncHandler(async (req: AuthenticatedRequest, 
   const payments = await paymentService.getPaymentsByRide(req.params.rideId);
   const isAdmin = Boolean(req.roles?.includes('ADMIN') || req.user?.roles?.includes('ADMIN'));
 
-  if (payments.length > 0 && !isAdmin && !isParticipant(payments[0], req.userId)) {
+  if (payments.length > 0 && !isAdmin && !isParticipant(payments[0], req.userId, req.driverId)) {
     throw new AppError("Not authorized to view these payments", 403, "FORBIDDEN");
   }
 

@@ -1,7 +1,5 @@
-import { AuthenticatedSocket } from '../types.js';
+import { AuthenticatedSocket } from '../types/index.js';
 import { createLogger } from '@urbanfleet/common';
-
-const logger = createLogger('driver-websocket-handler');
 import { DriverEvents, ServerEvents } from '../event.constants.js';
 import {
   UpdateDriverLocationSchema,
@@ -12,14 +10,24 @@ import {
   RideActionSchema,
   RideCancelSchema,
 } from '../validators/driver.validator.js';
-import { sendSocketError } from '../utils/send-error.js';
-import { emitDriverLocation, emitRideAccepted, emitDriverArrived, emitRideStarted, emitArrivedAtDestination, emitRideCompleted, emitRideCancelled } from '../emitters/rider.emitter.js';
+import { sendSocketError, sendSocketMessage } from '../utils/send-error.js';
+import {
+  emitDriverLocation,
+  emitRideAccepted,
+  emitDriverArrived,
+  emitRideStarted,
+  emitArrivedAtDestination,
+  emitRideCompleted,
+  emitRideCancelled,
+} from '../emitters/rider.emitter.js';
 import type { GeoService } from '../../services/geo.service.js';
 import type { DriverPresenceService } from '../../services/driver-presence.service.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { Ride } from '../../db/client.js';
 import { toRideDtoWithDriver } from '../../utils/ride-dto.js';
+
+const logger = createLogger('driver-websocket-handler');
 
 export interface DriverHandlerDeps {
   geoService: GeoService;
@@ -39,6 +47,18 @@ export type DriverEventHandler = (
   data: unknown,
   deps?: DriverHandlerDeps
 ) => Promise<void>;
+
+/**
+ * Extracts and verifies the primary driver profile ID from the socket session.
+ */
+function getDriverId(socket: AuthenticatedSocket): string | null {
+  const driverId = socket.user.driverId;
+  if (!driverId) {
+    sendSocketError(socket, 'Driver profile not found.', 'FORBIDDEN');
+    return null;
+  }
+  return driverId;
+}
 
 const handlers: Record<string, DriverEventHandler> = {
   [DriverEvents.GO_ONLINE]: handleGoOnline,
@@ -62,11 +82,8 @@ async function handleGoOnline(
   data: unknown,
   deps = globalDeps
 ) {
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   // Check if client requested to retain availability, or was previously available
   let shouldBeAvailable = false;
@@ -86,47 +103,34 @@ async function handleGoOnline(
       ? await deps.presenceService.setDriverAvailable(driverId, true)
       : await deps.presenceService.setDriverOnline(driverId);
 
-    socket.send(
-      JSON.stringify({
-        event: ServerEvents.DRIVER_STATUS,
-        data: {
-          status: shouldBeAvailable ? 'AVAILABLE' : 'ONLINE',
-          isOnline: current.online,
-          isAvailable: current.available,
-          driverId,
-          timestamp: current.lastSeen,
-        },
-      })
-    );
+    sendSocketMessage(socket, ServerEvents.DRIVER_STATUS, {
+      status: shouldBeAvailable ? 'AVAILABLE' : 'ONLINE',
+      isOnline: current.online,
+      isAvailable: current.available,
+      driverId,
+      timestamp: current.lastSeen,
+    });
   }
 }
 
 async function handleGoOffline(
   socket: AuthenticatedSocket,
-  data: unknown,
+  _data: unknown,
   deps = globalDeps
 ) {
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.presenceService) {
     await deps.presenceService.setDriverOffline(driverId);
   }
-  socket.send(
-    JSON.stringify({
-      event: ServerEvents.DRIVER_STATUS,
-      data: {
-        status: 'OFFLINE',
-        isOnline: false,
-        isAvailable: false,
-        driverId,
-        timestamp: Date.now(),
-      },
-    })
-  );
+  sendSocketMessage(socket, ServerEvents.DRIVER_STATUS, {
+    status: 'OFFLINE',
+    isOnline: false,
+    isAvailable: false,
+    driverId,
+    timestamp: Date.now(),
+  });
 }
 
 async function handleSetAvailability(
@@ -140,55 +144,39 @@ async function handleSetAvailability(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   const isAvailable = result.data?.available !== false;
   if (deps?.presenceService) {
     const current = await deps.presenceService.setDriverAvailable(driverId, isAvailable);
-    socket.send(
-      JSON.stringify({
-        event: ServerEvents.DRIVER_STATUS,
-        data: {
-          status: isAvailable ? 'AVAILABLE' : 'ONLINE',
-          isOnline: current.online,
-          isAvailable: current.available,
-          driverId,
-          timestamp: current.lastSeen,
-        },
-      })
-    );
+    sendSocketMessage(socket, ServerEvents.DRIVER_STATUS, {
+      status: isAvailable ? 'AVAILABLE' : 'ONLINE',
+      isOnline: current.online,
+      isAvailable: current.available,
+      driverId,
+      timestamp: current.lastSeen,
+    });
   }
 }
 
 async function handleSetBusy(
   socket: AuthenticatedSocket,
-  data: unknown,
+  _data: unknown,
   deps = globalDeps
 ) {
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.presenceService) {
     const current = await deps.presenceService.setDriverBusy(driverId);
-    socket.send(
-      JSON.stringify({
-        event: ServerEvents.DRIVER_STATUS,
-        data: {
-          status: 'BUSY',
-          isOnline: current.online,
-          isAvailable: current.available,
-          driverId,
-          timestamp: current.lastSeen,
-        },
-      })
-    );
+    sendSocketMessage(socket, ServerEvents.DRIVER_STATUS, {
+      status: 'BUSY',
+      isOnline: current.online,
+      isAvailable: current.available,
+      driverId,
+      timestamp: current.lastSeen,
+    });
   }
 }
 
@@ -203,21 +191,16 @@ async function handleHeartbeat(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
+  const driverId = getDriverId(socket);
   if (!driverId) return;
 
   if (deps?.presenceService) {
     const current = await deps.presenceService.updateHeartbeat(driverId);
-    socket.send(
-      JSON.stringify({
-        event: ServerEvents.HEARTBEAT_ACK,
-        data: {
-          timestamp: current?.lastSeen || Date.now(),
-          isOnline: current?.online ?? false,
-          isAvailable: current?.available ?? false,
-        },
-      })
-    );
+    sendSocketMessage(socket, ServerEvents.HEARTBEAT_ACK, {
+      timestamp: current?.lastSeen || Date.now(),
+      isOnline: current?.online ?? false,
+      isAvailable: current?.available ?? false,
+    });
   }
 }
 
@@ -232,11 +215,8 @@ async function handleUpdateLocation(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.geoService) {
     await deps.geoService.updateDriverLocation(
@@ -279,18 +259,15 @@ async function handleAcceptRide(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.acceptRide(result.data.rideId, driverId);
       const rideDto = await toRideDtoWithDriver(ride);
-      emitRideAccepted(ride.riderId, { ride: rideDto });
-      socket.send(JSON.stringify({ event: ServerEvents.RIDE_ACCEPTED, data: { ride: rideDto } }));
+      emitRideAccepted(ride.riderId, { rideId: ride.id, ride: rideDto });
+      sendSocketMessage(socket, ServerEvents.RIDE_ACCEPTED, { ride: rideDto });
       if (deps.presenceService) {
         await deps.presenceService.setDriverBusy(driverId);
       }
@@ -313,7 +290,9 @@ async function handleRejectRide(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
+
   if (deps?.dispatchService) {
     let ride: Ride | null = null;
     if (deps.rideService) {
@@ -329,11 +308,7 @@ async function handleRejectRide(
     await deps.dispatchService.handleDriverResponse(result.data.rideId, driverId, false, ride);
   }
 
-  // Acknowledge rejection
-  socket.send(JSON.stringify({
-    event: ServerEvents.RIDE_REJECTED,
-    data: { rideId: result.data.rideId },
-  }));
+  sendSocketMessage(socket, ServerEvents.RIDE_REJECTED, { rideId: result.data.rideId });
 }
 
 async function handleArrived(
@@ -347,11 +322,8 @@ async function handleArrived(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.rideService) {
     try {
@@ -360,8 +332,8 @@ async function handleArrived(
         driverId,
       });
       const rideDto = await toRideDtoWithDriver(ride);
-      emitDriverArrived(ride.riderId, { ride: rideDto });
-      socket.send(JSON.stringify({ event: ServerEvents.DRIVER_ARRIVED, data: { ride: rideDto } }));
+      emitDriverArrived(ride.riderId, { rideId: ride.id, ride: rideDto });
+      sendSocketMessage(socket, ServerEvents.DRIVER_ARRIVED, { ride: rideDto });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to record arrival.';
       logger.error('Failed to record arrival', { rideId: result.data.rideId, driverId, error: message });
@@ -381,11 +353,8 @@ async function handleArrivedAtDestination(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.rideService) {
     try {
@@ -394,8 +363,8 @@ async function handleArrivedAtDestination(
         driverId,
       });
       const rideDto = await toRideDtoWithDriver(ride);
-      emitArrivedAtDestination(ride.riderId, { ride: rideDto });
-      socket.send(JSON.stringify({ event: ServerEvents.ARRIVED_AT_DESTINATION, data: { ride: rideDto } }));
+      emitArrivedAtDestination(ride.riderId, { rideId: ride.id, ride: rideDto });
+      sendSocketMessage(socket, ServerEvents.ARRIVED_AT_DESTINATION, { ride: rideDto });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to record destination arrival.';
       logger.error('Failed to record destination arrival', { rideId: result.data.rideId, driverId, error: message });
@@ -415,18 +384,15 @@ async function handleStartRide(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.startRide(result.data.rideId, driverId, result.data.otp);
       const rideDto = await toRideDtoWithDriver(ride);
-      emitRideStarted(ride.riderId, { ride: rideDto });
-      socket.send(JSON.stringify({ event: ServerEvents.RIDE_STARTED, data: { ride: rideDto } }));
+      emitRideStarted(ride.riderId, { rideId: ride.id, ride: rideDto });
+      sendSocketMessage(socket, ServerEvents.RIDE_STARTED, { ride: rideDto });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to start ride.';
       logger.error('Failed to start ride', { rideId: result.data.rideId, driverId, error: message });
@@ -446,18 +412,15 @@ async function handleCompleteRide(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.completeRide(result.data.rideId, driverId);
       const rideDto = await toRideDtoWithDriver(ride);
-      emitRideCompleted(ride.riderId, { ride: rideDto });
-      socket.send(JSON.stringify({ event: ServerEvents.RIDE_COMPLETED, data: { ride: rideDto } }));
+      emitRideCompleted(ride.riderId, { rideId: ride.id, ride: rideDto });
+      sendSocketMessage(socket, ServerEvents.RIDE_COMPLETED, { ride: rideDto });
       if (deps.presenceService) {
         await deps.presenceService.setDriverAvailable(driverId, true);
       }
@@ -480,11 +443,8 @@ async function handleCancelRideByDriver(
     return;
   }
 
-  const driverId = socket.user.driverId || socket.user.userId;
-  if (!driverId) {
-    sendSocketError(socket, 'Driver profile not found.');
-    return;
-  }
+  const driverId = getDriverId(socket);
+  if (!driverId) return;
 
   if (deps?.rideService) {
     try {
@@ -498,12 +458,11 @@ async function handleCancelRideByDriver(
         cancelledBy: 'DRIVER',
         reason: result.data.reason,
       });
-      socket.send(
-        JSON.stringify({
-          event: ServerEvents.RIDE_CANCELLED,
-          data: { rideId: ride.id, cancelledBy: 'DRIVER', reason: result.data.reason },
-        })
-      );
+      sendSocketMessage(socket, ServerEvents.RIDE_CANCELLED, {
+        rideId: ride.id,
+        cancelledBy: 'DRIVER',
+        reason: result.data.reason,
+      });
       if (deps.presenceService) {
         await deps.presenceService.setDriverAvailable(driverId, true);
       }

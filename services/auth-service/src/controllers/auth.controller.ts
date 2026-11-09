@@ -22,6 +22,21 @@ import {
   asyncHandler,
 } from "@urbanfleet/common";
 
+function extractFrontendUrl(req: Request): string | undefined {
+  const origin = req.headers.origin;
+  if (typeof origin === 'string' && origin.startsWith('http') && !origin.includes('localhost')) {
+    return origin.replace(/\/+$/, '');
+  }
+  const referer = req.headers.referer;
+  if (typeof referer === 'string' && referer.startsWith('http') && !referer.includes('localhost')) {
+    try {
+      const url = new URL(referer);
+      return url.origin;
+    } catch {}
+  }
+  return process.env.FRONTEND_URL || 'https://urbanfleet.duckdns.org';
+}
+
 export class AuthController {
   private authService: AuthService;
   private userService: UserService;
@@ -33,11 +48,13 @@ export class AuthController {
 
   register = asyncHandler(async (req: Request, res: Response) => {
     const { userAgent, ipAddress } = extractClientMetadata(req);
+    const frontendUrl = extractFrontendUrl(req);
 
     const result = await this.authService.register({
       ...req.body,
       userAgent,
       ipAddress,
+      frontendUrl,
     });
 
     const statusCode = result.isExistingUser ? 200 : 201;
@@ -264,7 +281,8 @@ export class AuthController {
 
   forgotPassword = asyncHandler(async (req: Request, res: Response) => {
     const { email } = req.body;
-    const result = await this.authService.requestPasswordReset(email);
+    const frontendUrl = extractFrontendUrl(req);
+    const result = await this.authService.requestPasswordReset(email, frontendUrl);
     res.status(200).json({ success: true, data: result });
   });
 
@@ -286,7 +304,8 @@ export class AuthController {
   resendVerificationEmail = asyncHandler(
     async (req: Request, res: Response) => {
       const { email } = req.body;
-      const result = await this.authService.resendVerificationToken(email);
+      const frontendUrl = extractFrontendUrl(req);
+      const result = await this.authService.resendVerificationToken(email, frontendUrl);
       res.status(200).json({ success: true, data: result });
     },
   );

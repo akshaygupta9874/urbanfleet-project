@@ -13,23 +13,18 @@ import {
   ShieldCheck,
   FileText,
   ChevronRight,
-  Clock,
   Route as RouteIcon,
   MapPin,
   CheckCircle2,
   Power,
   History,
-  Settings,
   LogOut,
   AlertTriangle,
-  Zap,
-  Gem,
   Eye,
   Copy,
   Check,
   Camera,
   Calendar,
-  Palette,
   Award,
   MessageSquare,
   Laptop,
@@ -39,6 +34,8 @@ import {
   RefreshCw,
   Sparkles,
   Building2,
+  Radio,
+  Compass,
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";
 import MapView from "./components/MapView";
@@ -73,7 +70,7 @@ type VehicleType = "CAR" | "BIKE" | "AUTO";
 
 export type Ride = RideDto;
 
-type DashboardTab = "console" | "history" | "ratings" | "sessions" | "vehicle";
+type DashboardTab = "console" | "history" | "ratings" | "vehicle" | "sessions";
 
 interface DriverProfileData {
   id: string;
@@ -192,39 +189,39 @@ const RIDE_STATUS_CONFIG: Record<
   { label: string; badge: string; description: string; step: number }
 > = {
   SEARCHING: {
-    label: "Incoming Request",
+    label: "Incoming Dispatch",
     badge:
       "bg-amber-950/90 text-amber-200 border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.25)]",
-    description: "New passenger dispatch matched to your coordinates.",
+    description: "New passenger request matched to your coordinates.",
     step: 0,
   },
   DRIVER_ASSIGNED: {
-    label: "Assigned to You",
+    label: "En Route to Pickup",
     badge: "bg-[#3a1f0a]/90 text-[#ffd88a] border border-[#c58a3a]/50",
-    description: "Navigate to the passenger pickup point.",
+    description: "Navigate to the passenger pickup location.",
     step: 1,
   },
   DRIVER_ARRIVING: {
-    label: "At Pickup • Awaiting OTP",
+    label: "At Pickup • Verify PIN",
     badge: "bg-[#3a1f0a]/90 text-[#ffd88a] border border-[#c58a3a]/50",
-    description: "Verify the passenger's 4-digit PIN to begin the ride.",
+    description: "Enter the passenger's 4-digit PIN to start the trip.",
     step: 2,
   },
   RIDE_STARTED: {
-    label: "Trip in Progress",
+    label: "In Transit",
     badge:
       "bg-emerald-950/90 text-emerald-200 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]",
     description: "En route to destination drop-off.",
     step: 3,
   },
   ARRIVED_AT_DESTINATION: {
-    label: "Arrived at Destination",
+    label: "At Destination",
     badge: "bg-[#3a1f0a]/95 text-[#ffe9be] border border-[#c58a3a]/60",
     description: "Awaiting final payment settlement to close trip.",
     step: 4,
   },
   COMPLETED: {
-    label: "Completed",
+    label: "Trip Settled",
     badge: "bg-emerald-950/90 text-emerald-200 border border-emerald-500/40",
     description: "This trip has been settled and logged.",
     step: 5,
@@ -239,11 +236,11 @@ const RIDE_STATUS_CONFIG: Record<
 
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, { label: string; badge: string }> = {
   CREATED: {
-    label: "Payment Created",
+    label: "Created",
     badge: "text-blue-900 bg-blue-500/15 border border-blue-600/30",
   },
   PENDING: {
-    label: "Payment Pending",
+    label: "Pending",
     badge: "text-amber-900 bg-amber-500/15 border border-amber-600/30",
   },
   AUTHORIZED: {
@@ -255,7 +252,7 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, { label: string; badge: string
     badge: "text-emerald-950 bg-emerald-500/20 border border-emerald-600/40",
   },
   FAILED: {
-    label: "Payment Failed",
+    label: "Failed",
     badge: "text-rose-900 bg-rose-500/15 border border-rose-600/30",
   },
   CANCELLED: {
@@ -265,7 +262,7 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, { label: string; badge: string
 };
 
 const RIDE_STEPS: { key: RideStatus; label: string }[] = [
-  { key: "SEARCHING", label: "Request" },
+  { key: "SEARCHING", label: "Offer" },
   { key: "DRIVER_ASSIGNED", label: "Assigned" },
   { key: "DRIVER_ARRIVING", label: "Pickup" },
   { key: "RIDE_STARTED", label: "Transit" },
@@ -275,14 +272,14 @@ const RIDE_STEPS: { key: RideStatus; label: string }[] = [
 
 const formatPaise = formatFare;
 
-// --- Framer Motion Variants (GPU-Composited, No Height Collapse) ---
+// --- Framer Motion Variants ---
 const tabPanelVariants: Variants = {
-  hidden: { opacity: 0, y: 8 },
+  hidden: { opacity: 0, y: 10 },
   visible: {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 0.24,
+      duration: 0.28,
       ease: [0.16, 1, 0.3, 1],
     },
   },
@@ -297,43 +294,20 @@ const cardAppearVariants: Variants = {
   },
 };
 
-// --- Luxury Telemetry Skeleton Loader for Tabs (Prevents 0-value flash) ---
+// --- Luxury Telemetry Skeleton Loader ---
 function TabTelemetryLoader({
   title,
   subtitle,
-  showKpiSkeletons = true,
   cardCount = 3,
 }: {
   title: string;
   subtitle: string;
-  showKpiSkeletons?: boolean;
   cardCount?: number;
 }) {
   return (
-    <div className="w-full space-y-6 animate-in fade-in duration-200">
-      {showKpiSkeletons && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <div
-              key={idx}
-              className="relative overflow-hidden rounded-[1.5rem] sm:rounded-[1.75rem] border border-[#c58a3a]/30 bg-gradient-to-br from-[#fffdf9]/90 via-[#fff6e5]/85 to-[#f5dfb5]/85 p-4 sm:p-5 shadow-md backdrop-blur-xl"
-            >
-              <div className="uf-skeleton-shimmer pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-              <div className="flex items-center justify-between gap-2">
-                <div className="h-3 w-20 rounded-md bg-[#7a4416]/15" />
-                <div className="h-9 w-9 rounded-xl bg-[#3a1f0a]/15" />
-              </div>
-              <div className="mt-4 h-7 w-28 rounded-lg bg-[#3a1f0a]/20" />
-              <div className="mt-2 h-2.5 w-24 rounded-md bg-[#7a4416]/15" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="relative overflow-hidden rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-xl backdrop-blur-2xl">
+    <div className="w-full space-y-5 animate-in fade-in duration-200">
+      <div className="relative overflow-hidden rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-xl backdrop-blur-2xl">
         <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-
-        {/* Live Telemetry Header Banner */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#7a4416]/15 pb-5 mb-6">
           <div className="flex items-center gap-3.5">
             <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#241205] text-[#ffd88a] shadow-md">
@@ -341,23 +315,18 @@ function TabTelemetryLoader({
               <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#fffaf0] bg-amber-500 animate-ping" />
             </div>
             <div>
-              <h3
-                className="text-lg sm:text-xl font-black text-[#2e1808]"
-                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              >
+              <h3 className="console-display text-lg sm:text-xl font-black text-[#2e1808]">
                 {title}
               </h3>
               <p className="text-xs font-medium text-[#7a4416] mt-0.5">{subtitle}</p>
             </div>
           </div>
-
           <span className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-[#c58a3a]/40 bg-[#fffaf0] px-3.5 py-1.5 text-[11px] console-readout font-bold text-[#3a1f0a] shadow-2xs">
             <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
             SYNCING LEDGER…
           </span>
         </div>
 
-        {/* Shimmering Skeleton Rows */}
         <div className="space-y-3.5">
           {Array.from({ length: cardCount }).map((_, idx) => (
             <div
@@ -390,99 +359,43 @@ function TabTelemetryLoader({
   );
 }
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  trend,
-}: {
-  label: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  trend?: string;
-}) {
-  return (
-    <motion.div
-      variants={cardAppearVariants}
-      whileHover={{ y: -3 }}
-      className="group relative w-full overflow-hidden rounded-[1.5rem] sm:rounded-[1.75rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff6e5]/90 to-[#f5dfb5]/90 p-4 sm:p-5 shadow-[0_10px_30px_-10px_rgba(58,31,10,0.12)] backdrop-blur-xl text-[#2e1808] transition-colors duration-300 hover:border-[#b8722c] transform-gpu"
-    >
-      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-gradient-to-br from-[#c58a3a]/20 to-transparent blur-xl transition-transform duration-500 group-hover:scale-125" />
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-          {label}
-        </p>
-        <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#5c3211] to-[#241205] text-[#ffd88a] shadow-md ring-1 ring-[#c58a3a]/40 transition-transform duration-300 group-hover:scale-105">
-          <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-        </div>
-      </div>
-      <div className="mt-3 sm:mt-4 flex flex-wrap items-baseline justify-between gap-1.5">
-        <h3
-          className="text-xl sm:text-2xl font-black tracking-tight text-[#2e1808] console-readout"
-          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-        >
-          {value}
-        </h3>
-        {trend && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#3a1f0a]/10 px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-[#6b3a12] border border-[#7a4416]/20">
-            {trend}
-          </span>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
+// --- Precision Center-to-Center Stepper ---
 function RideStepper({ status }: { status: RideStatus }) {
-  const activeIdx = RIDE_STEPS.findIndex((s) => s.key === status);
+  const idx = RIDE_STEPS.findIndex((s) => s.key === status);
+  const activeIdx = idx === -1 ? 0 : idx;
+  const progress = RIDE_STEPS.length > 1 ? activeIdx / (RIDE_STEPS.length - 1) : 0;
+
   return (
-    <div className="w-full rounded-2xl border border-[#7a4416]/15 bg-[#fffdf8]/90 px-2 sm:px-3.5 py-3.5 shadow-inner">
-      <ol className="flex w-full items-center justify-between">
+    <div className="relative w-full overflow-hidden rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/95 px-2 sm:px-3 py-3.5 shadow-inner">
+      <div className="pointer-events-none absolute left-[8.333%] right-[8.333%] top-[27px] h-[2.5px] rounded-full bg-[#7a4416]/15">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-[#3a1f0a] via-[#b8722c] to-emerald-600 transition-all duration-500 ease-out"
+          style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%` }}
+        />
+      </div>
+
+      <ol className="relative z-10 grid grid-cols-6 items-start w-full">
         {RIDE_STEPS.map((s, i) => {
           const done = i <= activeIdx && status !== "CANCELLED";
           const current = i === activeIdx && status !== "CANCELLED";
           return (
-            <li key={s.key} className="relative flex flex-1 flex-col items-center min-w-0">
-              <div className="flex w-full items-center">
-                <span
-                  className={`h-[2px] flex-1 transition-colors duration-500 ${
-                    i === 0
-                      ? "bg-transparent"
-                      : done
-                        ? "bg-gradient-to-r from-[#3a1f0a] to-[#b8722c]"
-                        : "bg-[#7a4416]/20"
-                  }`}
-                />
-                <div
-                  className={`relative flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full border text-[10px] sm:text-[11px] font-bold transition-all duration-300 ${
-                    done
-                      ? "border-[#ffd88a] bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] shadow-sm"
-                      : "border-[#7a4416]/30 bg-[#fffaf0] text-[#7a4416]"
-                  } ${current ? "ring-3 sm:ring-4 ring-[#c58a3a]/30 scale-110" : ""}`}
-                >
-                  {done ? (
-                    <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#ffd88a]" />
-                  ) : (
-                    i + 1
-                  )}
-                </div>
-                <span
-                  className={`h-[2px] flex-1 transition-colors duration-500 ${
-                    i === RIDE_STEPS.length - 1
-                      ? "bg-transparent"
-                      : i < activeIdx && status !== "CANCELLED"
-                        ? "bg-gradient-to-r from-[#b8722c] to-[#3a1f0a]"
-                        : "bg-[#7a4416]/20"
-                  }`}
-                />
+            <li key={s.key} className="flex flex-col items-center gap-1.5 min-w-0 px-0.5">
+              <div
+                className={`grid h-6 w-6 sm:h-7 sm:w-7 shrink-0 place-items-center rounded-full border-2 text-[10px] font-bold transition-all duration-300 ${
+                  done
+                    ? "border-[#ffd88a] bg-gradient-to-br from-[#3a1f0a] to-[#2e1808] text-[#ffd88a] shadow-sm"
+                    : "border-[#7a4416]/30 bg-[#fffaf0] text-[#7a4416]"
+                } ${current ? "ring-4 ring-[#c58a3a]/30 scale-110" : ""}`}
+              >
+                {done ? <CheckCircle2 className="h-3.5 w-3.5 text-[#ffd88a]" /> : i + 1}
               </div>
               <span
-                className={`mt-1.5 truncate max-w-full px-0.5 text-center text-[8px] sm:text-[10px] uppercase tracking-wider transition-colors ${
+                className={`w-full truncate text-center text-[8.5px] sm:text-[9.5px] font-bold uppercase tracking-tight sm:tracking-wider transition-colors ${
                   current
-                    ? "font-black text-[#3a1f0a]"
+                    ? "text-[#2e1808] font-black"
                     : done
-                      ? "font-semibold text-[#6b3a12]"
-                      : "font-medium text-[#7a4416]/60"
+                      ? "text-[#6b3a12]"
+                      : "text-[#7a4416]/60"
                 }`}
               >
                 {s.label}
@@ -539,7 +452,9 @@ export default function DriverDashboard() {
 
   const syncWalletBalance = useCallback(async () => {
     try {
-      const res = await appApi.get<{ success: boolean; data: DriverBalance }>("/payments/payouts/balance");
+      const res = await appApi.get<{ success: boolean; data: DriverBalance }>(
+        "/payments/payouts/balance"
+      );
       if (res.data?.data) {
         setWalletBalance(res.data.data);
       }
@@ -547,13 +462,14 @@ export default function DriverDashboard() {
       // Non-blocking
     }
   }, []);
+
   const [isBankDetailsOpen, setIsBankDetailsOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [tripOtp, setTripOtp] = useState("");
   const [isStartingRide, setIsStartingRide] = useState(false);
   const [isAcceptingRide, setIsAcceptingRide] = useState(false);
 
-  // Decoupled Driver Feature States: Tabs, History, Ratings, Sessions
+  // Tabs & Data States
   const [activeTab, setActiveTab] = useState<DashboardTab>("console");
   const [rideHistory, setRideHistory] = useState<DriverRideItem[]>([]);
   const [driverMetrics, setDriverMetrics] = useState<DriverRideMetrics | null>(null);
@@ -617,7 +533,6 @@ export default function DriverDashboard() {
     }
   }, []);
 
-  // Synchronous tab transition handler: sets loading flags BEFORE first paint of new tab
   const handleSelectTab = useCallback(
     (nextTab: DashboardTab) => {
       if (nextTab === activeTab) return;
@@ -633,7 +548,6 @@ export default function DriverDashboard() {
       setActiveTab(nextTab);
 
       if (nextTab === "console") {
-        // Trigger Leaflet resize recalculation when returning to console
         setTimeout(() => {
           window.dispatchEvent(new Event("resize"));
         }, 60);
@@ -684,7 +598,6 @@ export default function DriverDashboard() {
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
-
   const driverStatusRef = useRef<DriverStatus>(driverStatus);
 
   useEffect(() => {
@@ -695,6 +608,7 @@ export default function DriverDashboard() {
       driverStatusRef.current = "AVAILABLE";
     }
   }, [user?.id]);
+
   const currentRideRef = useRef<Ride | null>(null);
   const hasEmittedOnlineRef = useRef(false);
   const routeRequestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -781,6 +695,7 @@ export default function DriverDashboard() {
   useEffect(() => {
     driverStatusRef.current = driverStatus;
   }, [driverStatus]);
+
   useEffect(() => {
     currentRideRef.current = currentRide;
   }, [currentRide]);
@@ -800,7 +715,6 @@ export default function DriverDashboard() {
   }, [currentRide]);
 
   useEffect(() => {
-    // If user is exclusively a rider and not a driver, redirect to rider dashboard
     if (user?.roles?.includes("RIDER") && !user?.roles?.includes("DRIVER")) {
       navigate("/dashboard", { replace: true });
       return;
@@ -810,7 +724,6 @@ export default function DriverDashboard() {
   useEffect(() => {
     async function loadProfileAndRide() {
       try {
-        // 1. If user is also a rider, check if they are actively in a ride as a passenger
         if (user?.roles?.includes("RIDER")) {
           const riderRes = await appApi
             .get<{ success: boolean; data: Ride }>("/rides/current")
@@ -826,14 +739,24 @@ export default function DriverDashboard() {
           }
         }
 
-        const [profileResponse, rideResponse, ratingsResponse, historyResponse, metricsResponse, balanceResponse] = await Promise.all([
+        const [
+          profileResponse,
+          rideResponse,
+          ratingsResponse,
+          historyResponse,
+          metricsResponse,
+          balanceResponse,
+        ] = await Promise.all([
           fetchDriverProfile().catch(() => null),
           appApi.get<{ success: boolean; data: Ride }>("/rides/driver/current").catch(() => null),
           fetchDriverRatings().catch(() => null),
           fetchDriverRideHistory().catch(() => []),
           fetchDriverRideMetrics().catch(() => null),
-          appApi.get<{ success: boolean; data: DriverBalance }>("/payments/payouts/balance").catch(() => null),
+          appApi
+            .get<{ success: boolean; data: DriverBalance }>("/payments/payouts/balance")
+            .catch(() => null),
         ]);
+
         if (profileResponse) setProfile(profileResponse);
         if (ratingsResponse) {
           setRatingsSummary(ratingsResponse);
@@ -851,6 +774,7 @@ export default function DriverDashboard() {
         if (balanceResponse?.data?.data) {
           setWalletBalance(balanceResponse.data.data);
         }
+
         const hasBusyRide = Boolean(
           rideResponse?.data?.data && BUSY_RIDE_STATUSES.includes(rideResponse.data.data.status)
         );
@@ -885,7 +809,6 @@ export default function DriverDashboard() {
             ? (err as { response?: { status?: number; data?: { message?: unknown } } }).response
             : undefined;
         if (response?.status === 404) {
-          // Driver has not created a driver profile yet; guide via DriverCTA
           setProfile(null);
         } else {
           const message = response?.data?.message;
@@ -1063,7 +986,8 @@ export default function DriverDashboard() {
               if (
                 data.status === "ONLINE" &&
                 isPersistedAvailable &&
-                (!currentRideRef.current || !BUSY_RIDE_STATUSES.includes(currentRideRef.current.status))
+                (!currentRideRef.current ||
+                  !BUSY_RIDE_STATUSES.includes(currentRideRef.current.status))
               ) {
                 setDriverStatus("AVAILABLE");
                 driverStatusRef.current = "AVAILABLE";
@@ -1077,8 +1001,8 @@ export default function DriverDashboard() {
                       data.status === "AVAILABLE" ? "true" : "false"
                     );
                   } catch (err) {
-                console.warn("Failed to save driver availability to localStorage:", err);
-              }
+                    console.warn("Failed to save driver availability to localStorage:", err);
+                  }
                 }
               }
             }
@@ -1133,16 +1057,19 @@ export default function DriverDashboard() {
               return updated;
             });
             setRiderLocation(null);
-            // Re-fetch authoritative driver statistics from database to sync persistent earnings
             void Promise.all([
-              fetchDriverProfile().then((fresh) => { if (fresh) setProfile(fresh); }),
+              fetchDriverProfile().then((fresh) => {
+                if (fresh) setProfile(fresh);
+              }),
               syncWalletBalance(),
               loadDriverHistory(),
               loadDriverRatings(),
             ]);
             setTimeout(() => {
               void Promise.all([
-                fetchDriverProfile().then((fresh) => { if (fresh) setProfile(fresh); }),
+                fetchDriverProfile().then((fresh) => {
+                  if (fresh) setProfile(fresh);
+                }),
                 syncWalletBalance(),
                 loadDriverHistory(),
                 loadDriverRatings(),
@@ -1196,7 +1123,14 @@ export default function DriverDashboard() {
       hasEmittedOnlineRef.current = false;
       driverSocket.close();
     };
-  }, [applyCompletedRideStats, loadDriverHistory, loadDriverRatings, profile, syncWalletBalance, user?.id]);
+  }, [
+    applyCompletedRideStats,
+    loadDriverHistory,
+    loadDriverRatings,
+    profile,
+    syncWalletBalance,
+    user?.id,
+  ]);
 
   const currentRideStatus = currentRide?.status;
 
@@ -1285,11 +1219,9 @@ export default function DriverDashboard() {
     const nextIsAvailable = driverStatus !== "AVAILABLE";
     const nextStatus: DriverStatus = nextIsAvailable ? "AVAILABLE" : "ONLINE";
 
-    // 1. Immediate optimistic UI transition
     setDriverStatus(nextStatus);
     driverStatusRef.current = nextStatus;
 
-    // 2. Persist in localStorage so refresh never resets state
     if (user?.id) {
       try {
         localStorage.setItem(
@@ -1301,7 +1233,6 @@ export default function DriverDashboard() {
       }
     }
 
-    // 3. Persist in driver-service database
     try {
       void appApi
         .post("/drivers/availability", { isAvailable: nextIsAvailable })
@@ -1315,7 +1246,6 @@ export default function DriverDashboard() {
       console.warn("Failed to dispatch driver availability request:", err);
     }
 
-    // 4. Send socket event to ride-service
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(
         JSON.stringify({
@@ -1392,12 +1322,11 @@ export default function DriverDashboard() {
     socketRef.current.send(JSON.stringify({ event, data: { rideId, ...extraData } }));
   };
 
-  // 1. Completed rides from history
+  // --- Computed Metrics ---
   const completedRides = useMemo(() => {
     return rideHistory.filter((r) => r.status === "COMPLETED");
   }, [rideHistory]);
 
-  // 2. Total distance in km from completed rides
   const historyDistanceKm = useMemo(() => {
     return completedRides.reduce((acc, r) => {
       const d = r.distance?.actual ?? r.distance?.estimated ?? 0;
@@ -1405,7 +1334,6 @@ export default function DriverDashboard() {
     }, 0);
   }, [completedRides]);
 
-  // 3. Driver earnings in paise from completed rides
   const historyEarningsPaise = useMemo(() => {
     return completedRides.reduce((acc, r) => {
       const earning =
@@ -1419,44 +1347,51 @@ export default function DriverDashboard() {
     }, 0);
   }, [completedRides]);
 
-  // 4. Effective Total Distance (km): highest truthful value from ride history, profile stats, or ride metrics
   const effectiveTotalDistanceKm = useMemo(() => {
     const metricKm = Number(driverMetrics?.totalDistanceKm ?? 0);
     const rawProfileDistance = Number(profile?.statistics?.totalDistance ?? 0);
-    const profileDistanceKm = rawProfileDistance > 100 ? rawProfileDistance / 1000 : rawProfileDistance;
+    const profileDistanceKm =
+      rawProfileDistance > 100 ? rawProfileDistance / 1000 : rawProfileDistance;
     return Math.max(metricKm, historyDistanceKm, profileDistanceKm);
   }, [driverMetrics?.totalDistanceKm, historyDistanceKm, profile?.statistics?.totalDistance]);
 
-  // 5. Effective Net Earnings (paise): highest truthful value from wallet balance ledger, ride history, or profile stats
   const effectiveNetEarningsPaise = useMemo(() => {
     const ledgerEarned = Number(walletBalance?.earnedPaise ?? 0);
     const metricEarnings = Number(driverMetrics?.totalEarningsPaise ?? 0);
-    const profileEarnings = Number(profile?.statistics?.totalEarnings ?? profile?.totalEarningsPaise ?? 0);
+    const profileEarnings = Number(
+      profile?.statistics?.totalEarnings ?? profile?.totalEarningsPaise ?? 0
+    );
     return Math.max(ledgerEarned, metricEarnings, historyEarningsPaise, profileEarnings);
-  }, [walletBalance?.earnedPaise, driverMetrics?.totalEarningsPaise, historyEarningsPaise, profile?.statistics?.totalEarnings, profile?.totalEarningsPaise]);
+  }, [
+    walletBalance?.earnedPaise,
+    driverMetrics?.totalEarningsPaise,
+    historyEarningsPaise,
+    profile?.statistics?.totalEarnings,
+    profile?.totalEarningsPaise,
+  ]);
 
-  // 6. Effective Completed Trips
   const effectiveCompletedTrips = useMemo(() => {
     const metricCompleted = Number(driverMetrics?.completedTrips ?? 0);
     const profileCompleted = Number(profile?.statistics?.completedTrips ?? 0);
     return Math.max(metricCompleted, completedRides.length, profileCompleted);
   }, [driverMetrics?.completedTrips, completedRides.length, profile?.statistics?.completedTrips]);
 
-  // 7. Effective Total Trips
   const effectiveTotalTrips = useMemo(() => {
     const metricTotal = Number(driverMetrics?.totalTrips ?? 0);
     const profileTotal = Number(profile?.statistics?.totalTrips ?? profile?.totalTrips ?? 0);
     return Math.max(metricTotal, rideHistory.length, profileTotal, effectiveCompletedTrips);
-  }, [driverMetrics?.totalTrips, rideHistory.length, profile?.statistics?.totalTrips, profile?.totalTrips, effectiveCompletedTrips]);
+  }, [
+    driverMetrics?.totalTrips,
+    rideHistory.length,
+    profile?.statistics?.totalTrips,
+    profile?.totalTrips,
+    effectiveCompletedTrips,
+  ]);
 
-  // 8. Effective Completion / Acceptance Rate
   const effectiveAcceptanceRate = useMemo(() => {
     if (effectiveTotalTrips <= 0) return 100;
     return Math.min(100, Math.round((effectiveCompletedTrips / effectiveTotalTrips) * 100));
   }, [effectiveCompletedTrips, effectiveTotalTrips]);
-
-  // Backwards compatibility alias for acceptanceRate
-  const acceptanceRate = effectiveAcceptanceRate;
 
   const fallbackRatingsFromHistory: DriverReviewItem[] = useMemo(() => {
     const list: DriverReviewItem[] = [];
@@ -1497,7 +1432,12 @@ export default function DriverDashboard() {
       return Number((sum / fallbackRatingsFromHistory.length).toFixed(2));
     }
     return effectiveTotalRatings > 0 ? Number(profile?.rating?.average ?? 5.0) : 5.0;
-  }, [ratingsSummary, fallbackRatingsFromHistory, effectiveTotalRatings, profile?.rating?.average]);
+  }, [
+    ratingsSummary,
+    fallbackRatingsFromHistory,
+    effectiveTotalRatings,
+    profile?.rating?.average,
+  ]);
 
   const effectiveDistribution = useMemo(() => {
     if (ratingsSummary?.distribution) {
@@ -1523,7 +1463,7 @@ export default function DriverDashboard() {
   }, [ratingsSummary, fallbackRatingsFromHistory]);
 
   if (loading) {
-    return <LoadingScreen label="Loading driver dashboard" />;
+    return <LoadingScreen label="Loading driver cockpit" />;
   }
 
   const isApprovedDriver = isDriverApproved(profile);
@@ -1557,7 +1497,7 @@ export default function DriverDashboard() {
           lat: currentRide.pickup.coordinates.latitude,
           lng: currentRide.pickup.coordinates.longitude,
         }
-      : { lat: 12.9716, lng: 77.5946 };
+      : { lat: 22.5726, lng: 88.3639 };
 
   const mapMarkers = [
     ...(driverLocation
@@ -1620,13 +1560,6 @@ export default function DriverDashboard() {
     : 0;
   const breakdownData = currentRide?.fare?.breakdown ?? null;
 
-  const driverStatusCopy: Record<DriverStatus, string> = {
-    OFFLINE: "Radar disengaged. Your vehicle is hidden from passenger dispatch.",
-    ONLINE: "Connected to telemetry server. Toggle availability to start receiving rides.",
-    AVAILABLE: "Live GPS radar active • Broadcasting coordinates for nearby ride requests.",
-    BUSY: "Active dispatch locked • Telemetry streaming live to passenger.",
-  };
-
   const statusDotColor =
     driverStatus === "AVAILABLE"
       ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.85)]"
@@ -1638,6 +1571,9 @@ export default function DriverDashboard() {
 
   const vehicleType = profile?.vehicle?.type || "CAR";
   const VehicleIcon = VEHICLE_TYPE_ICON[vehicleType] || Car;
+  const driverFullName = user?.firstName
+    ? `${user.firstName} ${user.lastName || ""}`.trim()
+    : "Captain Partner";
 
   const NAV_TABS: Array<{
     id: DashboardTab;
@@ -1649,75 +1585,79 @@ export default function DriverDashboard() {
   }> = [
     {
       id: "console",
-      label: "Live Radar & Console",
-      shortLabel: "Live Radar",
-      icon: Navigation,
+      label: "Radar & Dispatch",
+      shortLabel: "Radar",
+      icon: Compass,
       pulse: Boolean(currentRide),
     },
     {
       id: "history",
-      label: "Ride History",
-      shortLabel: "History",
+      label: "Trip Ledger",
+      shortLabel: "Ledger",
       icon: History,
       badge: hasLoadedHistory && rideHistory.length > 0 ? rideHistory.length : undefined,
     },
     {
       id: "ratings",
-      label: "Ratings & Reviews",
+      label: "Ratings",
       shortLabel: "Ratings",
       icon: Star,
-      badge: effectiveTotalRatings > 0 ? `${effectiveAverage.toFixed(1)}★` : "New",
-    },
-    {
-      id: "sessions",
-      label: "Security & Devices",
-      shortLabel: "Security",
-      icon: ShieldCheck,
+      badge: effectiveTotalRatings > 0 ? `${effectiveAverage.toFixed(1)}★` : undefined,
     },
     {
       id: "vehicle",
-      label: "Fleet & Documents",
-      shortLabel: "Fleet & Docs",
+      label: "Fleet & RTO",
+      shortLabel: "Fleet",
       icon: Car,
+    },
+    {
+      id: "sessions",
+      label: "Security",
+      shortLabel: "Security",
+      icon: ShieldCheck,
     },
   ];
 
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-[#f5e6c8] font-sans text-[#2e1808] selection:bg-[#3a1f0a] selection:text-[#ffd88a]">
-      {/* FIXED VIEWPORT BACKGROUND: Never rescales or zooms when tab height changes */}
+      {/* Fixed Viewport Background */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <CityMapBackground />
       </div>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap');
-
-        .rd-scroll-fade::-webkit-scrollbar { width: 6px; height: 6px; }
-        .rd-scroll-fade::-webkit-scrollbar-thumb { background: #c58a3a; border-radius: 999px; }
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700;800&display=swap');
 
         .console-display { font-family: 'Fraunces', ui-serif, Georgia, serif; }
         .console-readout { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 
-        @keyframes radar-pulse {
-          0% { transform: scale(0.85); opacity: 0.75; }
-          70% { transform: scale(1.65); opacity: 0; }
-          100% { transform: scale(1.65); opacity: 0; }
+        @keyframes ufRadarRing {
+          0% { transform: scale(0.8); opacity: 0.75; }
+          75% { transform: scale(1.75); opacity: 0; }
+          100% { transform: scale(1.75); opacity: 0; }
         }
-        @keyframes uf-shimmer {
+        @keyframes ufRadarSweep {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes ufShimmer {
           100% { transform: translateX(200%); }
         }
-        .animate-radar-slow {
-          animation: radar-pulse 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        .animate-radar-ring-1 {
+          animation: ufRadarRing 2.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
         }
-        .animate-radar-delayed {
-          animation: radar-pulse 2.6s cubic-bezier(0.16, 1, 0.3, 1) 1.3s infinite;
+        .animate-radar-ring-2 {
+          animation: ufRadarRing 2.8s cubic-bezier(0.16, 1, 0.3, 1) 1.4s infinite;
+        }
+        .animate-radar-sweep {
+          animation: ufRadarSweep 5s linear infinite;
         }
         .uf-skeleton-shimmer {
-          animation: uf-shimmer 1.8s infinite ease-in-out;
+          animation: ufShimmer 1.8s infinite ease-in-out;
         }
       `}</style>
 
-      {/* Earnings Toast Alert */}
+      {/* Earnings Toast Flash */}
       <AnimatePresence>
         {showEarningsFlash !== null && (
           <motion.div
@@ -1734,344 +1674,256 @@ export default function DriverDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Main Full-Width Content Container */}
-      <div className="relative z-10 mx-auto w-full max-w-[1600px] px-3.5 sm:px-6 lg:px-10 py-4 sm:py-5 space-y-5 sm:space-y-6">
-        {/* Sticky Top Command Bar — Cleanly Aligned on Mobile & Desktop */}
+      {/* Main Container */}
+      <div className="relative z-10 mx-auto w-full max-w-[1600px] px-3.5 sm:px-6 lg:px-10 py-3.5 sm:py-5 space-y-4 sm:space-y-5">
+        {/* =====================================================================
+            1. UNIFIED STICKY COCKPIT COMMAND BAR (Identity + Tabs + Quick Actions)
+           ===================================================================== */}
         <header className="sticky top-2.5 z-40 w-full">
           <motion.div
-            initial={{ opacity: 0, y: -12 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
-            className="w-full rounded-[1.5rem] sm:rounded-[1.75rem] border border-[#fff4dc]/85 bg-gradient-to-r from-[#fffdf9]/95 via-[#fff5e0]/92 to-[#f7e2b8]/92 backdrop-blur-2xl shadow-[0_12px_32px_-8px_rgba(46,24,8,0.16)] px-3.5 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2"
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="w-full rounded-[1.5rem] sm:rounded-[1.85rem] border border-[#fff4dc]/90 bg-gradient-to-r from-[#fffdf9]/95 via-[#fff5e2]/92 to-[#f6e0b5]/92 backdrop-blur-2xl shadow-[0_14px_34px_-10px_rgba(46,24,8,0.16)] p-2.5 sm:px-5 sm:py-3 space-y-2.5 xl:space-y-0"
           >
-            {/* Brand & Live Beacon */}
-            <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-              <div className="relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#241205] text-[#ffd88a] shadow-md ring-1 ring-[#c58a3a]/50">
-                <VehicleIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span
-                  className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 rounded-full border-2 border-[#fffaf0] ${statusDotColor}`}
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <p className="truncate text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.24em] text-[#7a4416] flex items-center gap-1">
-                    <Gem className="h-3 w-3 text-[#b8722c] shrink-0" />
-                    <span>UrbanFleet Driver</span>
-                  </p>
-                  <span className="hidden md:inline-flex items-center gap-1 rounded-full bg-[#3a1f0a]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#3a1f0a]">
-                    {VEHICLE_TYPE_LABEL[vehicleType]} Tier
-                  </span>
-                </div>
-                <p className="truncate text-xs sm:text-sm font-bold text-[#2e1808] tracking-tight">
-                  Driver Activity{" "}
-                  <span className="hidden sm:inline text-[#7a4416] font-semibold">
-                    • Live status
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            {/* Right Quick Actions — Proportioned for Mobile & Desktop */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* Live Balance / Wallet Pill */}
-              <button
-                type="button"
-                onClick={() => setIsWalletOpen(true)}
-                className="group flex items-center gap-1.5 sm:gap-2 h-9 sm:h-10 px-3 sm:px-4 rounded-xl border border-[#c58a3a]/50 bg-gradient-to-br from-[#3a1f0a] via-[#59300e] to-[#241205] text-[#ffe9be] text-xs font-bold shadow-md hover:shadow-lg hover:border-[#ffd88a]/60 active:scale-95 transition-all"
-                title="Driver Wallet & Instant Payouts"
-              >
-                <Wallet className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#ffd88a] transition-transform group-hover:scale-110 shrink-0" />
-                <span>Wallet</span>
-                <span className="hidden lg:inline-block rounded-md bg-white/10 px-1.5 py-0.5 console-readout text-[11px] text-[#ffd88a]">
-                  {formatPaise(walletBalance?.availablePaise ?? effectiveNetEarningsPaise)}
-                </span>
-              </button>
-
-              {/* Bank & UPI Quick Button */}
-              <button
-                type="button"
-                onClick={() => setIsBankDetailsOpen(true)}
-                className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all shadow-2xs"
-                aria-label="Bank & UPI Details"
-                title="Bank & UPI Payout Settings"
-              >
-                <Building2 className="h-4 w-4 text-[#b8722c]" />
-              </button>
-
-              {/* Switch to Rider Console (for Dual-Role Users) */}
-              {user?.roles?.includes("RIDER") && (
+            <div className="flex items-center justify-between gap-2.5">
+              {/* Left: Driver Avatar + Name + HSRP Plate */}
+              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                 <button
                   type="button"
-                  onClick={() => navigate("/dashboard")}
-                  className="flex items-center gap-1.5 h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all shadow-2xs text-xs font-bold"
-                  title="Switch to Passenger Dashboard"
+                  onClick={() =>
+                    profile?.profilePhoto?.url &&
+                    setPreviewImage({
+                      url: profile.profilePhoto.url,
+                      title: `${driverFullName} • Verified Captain`,
+                    })
+                  }
+                  className="relative group h-10 w-10 sm:h-12 sm:w-12 shrink-0 rounded-2xl overflow-hidden border-2 border-[#c58a3a] bg-gradient-to-br from-[#3a1f0a] to-[#241205] text-[#ffd88a] shadow-md focus:outline-none"
+                  title="Inspect Captain Portrait"
                 >
-                  <Navigation className="h-3.5 w-3.5 text-[#b8722c] shrink-0" />
-                  <span className="hidden md:inline">Passenger Dashboard</span>
-                </button>
-              )}
-
-              {/* Secure Driver Logout */}
-              <button
-                type="button"
-                onClick={() => void logout().finally(() => navigate("/login", { replace: true }))}
-                className="group relative grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-xl border border-rose-500/30 bg-rose-950/15 text-rose-900 shadow-2xs hover:bg-rose-950/25 active:scale-95 transition-all"
-                aria-label="Logout"
-                title="Sign out of Driver Dashboard"
-              >
-                <LogOut className="h-4 w-4 text-rose-800 transition-colors group-hover:text-rose-950" />
-              </button>
-            </div>
-          </motion.div>
-        </header>
-
-        {/* Driver identity banner */}
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="w-full rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/85 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff5e1]/90 to-[#f5dfb5]/90 p-5 sm:p-7 shadow-[0_16px_40px_-12px_rgba(46,24,8,0.14)] backdrop-blur-2xl relative overflow-hidden"
-        >
-          <div className="pointer-events-none absolute inset-x-10 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-          <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-gradient-to-br from-[#c58a3a]/15 to-transparent blur-2xl" />
-
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-5 sm:gap-6">
-            {/* Left: Avatar & Core Credentials */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5 min-w-0">
-              <div className="flex items-center gap-4 w-full sm:w-auto">
-                <div className="relative group shrink-0">
                   {profile?.profilePhoto?.url ? (
-                    <div
-                      onClick={() =>
-                        setPreviewImage({
-                          url: profile.profilePhoto.url,
-                          title: "Driver Profile Photo",
-                        })
-                      }
-                      className="relative h-18 w-18 sm:h-24 sm:w-24 rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-[#c58a3a] shadow-lg cursor-pointer"
-                    >
-                      <img
-                        src={profile.profilePhoto.url}
-                        alt="Driver Avatar"
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
-                      />
-                      <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Eye className="h-5 w-5 text-[#ffd88a]" />
-                      </div>
-                    </div>
+                    <img
+                      src={profile.profilePhoto.url}
+                      alt={driverFullName}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+                    />
                   ) : (
-                    <div className="h-18 w-18 sm:h-24 sm:w-24 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] flex items-center justify-center text-[#ffd88a] font-bold text-2xl sm:text-3xl border-2 border-[#c58a3a] shadow-lg">
-                      {user?.firstName?.[0]?.toUpperCase() || "D"}
-                    </div>
+                    <span className="console-display grid h-full w-full place-items-center text-lg font-black">
+                      {driverFullName[0]?.toUpperCase() || "C"}
+                    </span>
                   )}
                   <span
-                    className={`absolute -bottom-1 -right-1 h-4.5 w-4.5 sm:h-5 sm:w-5 rounded-full border-2 border-[#fffaf0] ${statusDotColor}`}
+                    className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full border-2 border-[#fffaf0] ${statusDotColor}`}
                   />
-                </div>
+                </button>
 
-                {/* Mobile-only Name & Verification Stack next to Avatar */}
-                <div className="sm:hidden min-w-0 flex-1 space-y-1.5">
-                  <h1
-                    className="truncate text-xl font-black text-[#2e1808] tracking-tight"
-                    style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                  >
-                    {user?.firstName
-                      ? `${user.firstName} ${user.lastName || ""}`.trim()
-                      : "Driver Partner"}
-                  </h1>
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold border shadow-2xs ${
-                      isApprovedDriver
-                        ? "bg-emerald-950/15 text-emerald-950 border-emerald-600/35"
-                        : profile?.verificationStatus === "REJECTED" ||
-                            profile?.verificationStatus === "SUSPENDED"
-                          ? "bg-rose-950/15 text-rose-950 border-rose-600/35"
-                          : "bg-amber-950/15 text-amber-950 border-amber-600/35"
-                    }`}
-                  >
-                    <Shield className="h-3 w-3 text-emerald-700 shrink-0" />
-                    {isApprovedDriver ? "Verified Partner" : profile?.verificationStatus}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2.5 min-w-0 w-full sm:w-auto">
-                {/* Desktop Name & Badge Row */}
-                <div className="hidden sm:flex items-center gap-2.5 flex-wrap">
-                  <h1
-                    className="text-2xl sm:text-3xl font-black text-[#2e1808] tracking-tight"
-                    style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                  >
-                    {user?.firstName
-                      ? `${user.firstName} ${user.lastName || ""}`.trim()
-                      : "Driver Partner"}
-                  </h1>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border shadow-xs ${
-                      isApprovedDriver
-                        ? "bg-emerald-950/15 text-emerald-950 border-emerald-600/35"
-                        : profile?.verificationStatus === "REJECTED" ||
-                            profile?.verificationStatus === "SUSPENDED"
-                          ? "bg-rose-950/15 text-rose-950 border-rose-600/35"
-                          : "bg-amber-950/15 text-amber-950 border-amber-600/35"
-                    }`}
-                  >
-                    <Shield className="h-3.5 w-3.5 text-emerald-700" />
-                    {isApprovedDriver
-                      ? "Verified Fleet Partner"
-                      : profile?.verificationStatus === "REJECTED"
-                        ? "Verification Rejected"
-                        : profile?.verificationStatus === "SUSPENDED"
-                          ? "Verification Suspended"
-                          : profile?.verificationStatus === "UNDER_REVIEW"
-                            ? "Application Under Review"
-                            : "Pending Verification"}
-                  </span>
-                </div>
-
-                {/* Metadata Pills: ID, Vehicle Make, License Plate */}
-                <div className="flex items-center gap-2 text-xs text-[#7a4416] flex-wrap">
-                  <span className="console-readout bg-[#3a1f0a]/10 border border-[#7a4416]/20 px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-[#3a1f0a] font-semibold">
-                    ID: {profile?.id ? `${profile.id.slice(0, 8)}…${profile.id.slice(-4)}` : "UF-DRIVER"}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (profile?.id) {
-                          navigator.clipboard.writeText(profile.id);
-                          setCopiedId(true);
-                          setTimeout(() => setCopiedId(false), 2000);
-                        }
-                      }}
-                      className="hover:text-[#2e1808] transition-colors"
-                      title="Copy full driver ID"
-                    >
-                      {copiedId ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-700" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </span>
-
-                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#fffaf0] border border-[#7a4416]/20 px-2.5 py-1 font-bold text-[#2e1808] shadow-2xs">
-                    <VehicleIcon className="h-3.5 w-3.5 text-[#b8722c] shrink-0" />
-                    <span className="truncate">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <h1 className="console-display truncate text-sm sm:text-lg font-black text-[#2e1808] tracking-tight">
+                      {driverFullName}
+                    </h1>
+                    <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-950/15 border border-emerald-600/30 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                      <Shield className="h-2.5 w-2.5 text-emerald-700" /> Verified
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    {/* Indian High-Security Registration Plate Badge */}
+                    <span className="inline-flex items-center gap-1 rounded-md border border-[#3a1f0a] bg-[#ffd88a] px-1.5 py-0.2 console-readout text-[10px] font-extrabold tracking-wider text-[#2e1808] shadow-2xs">
+                      <span className="text-[8px] font-black text-[#7a4416]">IND</span>
+                      <span>{profile?.vehicle?.registrationNumber || "FLEET"}</span>
+                    </span>
+                    <span className="hidden md:inline truncate text-[11px] font-semibold text-[#6b3a12]">
+                      •{" "}
                       {profile?.vehicle
                         ? `${profile.vehicle.brand} ${profile.vehicle.model}`
-                        : "No Vehicle Assigned"}
+                        : VEHICLE_TYPE_LABEL[vehicleType]}
                     </span>
-                  </span>
-
-                  {/* High-Contrast Number Plate Pill */}
-                  <span className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#3a1f0a] bg-[#ffd88a] px-2.5 py-0.5 console-readout text-xs font-extrabold tracking-wider text-[#2e1808] shadow-xs">
-                    <span className="text-[9px] font-black text-[#7a4416]">IND</span>
-                    {profile?.vehicle?.registrationNumber || "NOT ASSIGNED"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Symmetrical 3-Column Rating, Reviews & Completion Readout */}
-            <div className="grid grid-cols-3 divide-x divide-[#7a4416]/20 bg-[#fffdf9]/95 border border-[#c58a3a]/35 rounded-2xl py-3 px-2 sm:px-5 shadow-sm w-full lg:w-auto shrink-0">
-              <div className="px-2 sm:px-4 text-center">
-                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-                  Rating
-                </p>
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <Star className="h-3.5 w-3.5 sm:h-4 sm:w-4 fill-amber-500 text-amber-500 shrink-0" />
-                  <span className="text-base sm:text-xl font-black text-[#2e1808] console-readout">
-                    {effectiveTotalRatings > 0 ? effectiveAverage.toFixed(1) : "—"}
-                  </span>
+                  </div>
                 </div>
               </div>
 
-              <div className="px-2 sm:px-4 text-center">
-                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-                  Reviews
-                </p>
-                <p className="text-base sm:text-xl font-black text-[#2e1808] console-readout mt-1">
-                  {effectiveTotalRatings}
-                </p>
-              </div>
-
-              <div className="px-2 sm:px-4 text-center">
-                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-                  Completion
-                </p>
-                <p className="text-base sm:text-xl font-black text-emerald-900 console-readout mt-1">
-                  {acceptanceRate}%
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.section>
-
-        {/* Responsive Segmented Navigation Dock — 2-Col Mobile Grid / Full Flex Desktop Bar */}
-        <section className="w-full">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:items-center gap-1.5 sm:gap-2 rounded-2xl border border-[#fff4dc]/85 bg-[#fffaf0]/85 p-1.5 shadow-md backdrop-blur-xl">
-            {NAV_TABS.map((tab) => {
-              const isActive = activeTab === tab.id;
-              const TabIcon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => handleSelectTab(tab.id)}
-                  className={`relative flex items-center justify-center lg:justify-start gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                    isActive
-                      ? "text-[#ffe9be]"
-                      : "text-[#6b3a12] hover:bg-[#fff4dc]/80 hover:text-[#2e1808]"
-                  }`}
-                >
-                  {isActive && (
-                    <motion.span
-                      layoutId="driverConsoleTab"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                      className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] shadow-md ring-1 ring-[#c58a3a]/50"
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center gap-2 truncate">
-                    <TabIcon
-                      className={`h-4 w-4 shrink-0 ${
+              {/* Center (XL+): Segmented Navigation Pills */}
+              <nav
+                aria-label="Driver Console Sections"
+                className="hidden xl:flex items-center gap-1 rounded-2xl border border-[#7a4416]/15 bg-[#fffaf0]/90 p-1 shadow-inner"
+              >
+                {NAV_TABS.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  const TabIcon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => handleSelectTab(tab.id)}
+                      className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
                         isActive
-                          ? "text-[#ffd88a]"
-                          : tab.id === "ratings"
-                            ? "text-amber-500 fill-amber-500"
-                            : "text-[#b8722c]"
+                          ? "text-[#ffe9be]"
+                          : "text-[#6b3a12] hover:bg-[#fff4dc]/80 hover:text-[#2e1808]"
                       }`}
-                    />
-                    <span className="sm:hidden truncate">{tab.shortLabel}</span>
-                    <span className="hidden sm:inline truncate">{tab.label}</span>
-                    {tab.pulse && (
-                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                    )}
-                    {tab.badge !== undefined && (
-                      <span
-                        className={`rounded-full px-1.5 py-0.2 text-[10px] console-readout font-bold ${
-                          isActive
-                            ? "bg-white/15 text-[#ffd88a]"
-                            : "bg-[#3a1f0a]/10 text-[#3a1f0a]"
-                        }`}
-                      >
-                        {tab.badge}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="driverCockpitNavDesktop"
+                          transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                          className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#241205] shadow-md ring-1 ring-[#c58a3a]/50"
+                        />
+                      )}
+                      <span className="relative z-10 flex items-center gap-1.5">
+                        <TabIcon
+                          className={`h-3.5 w-3.5 ${
+                            isActive
+                              ? "text-[#ffd88a]"
+                              : tab.id === "ratings"
+                                ? "text-amber-500 fill-amber-500"
+                                : "text-[#b8722c]"
+                          }`}
+                        />
+                        <span>{tab.label}</span>
+                        {tab.pulse && (
+                          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                        )}
+                        {tab.badge !== undefined && (
+                          <span
+                            className={`rounded-full px-1.5 py-0.2 text-[10px] console-readout font-bold ${
+                              isActive
+                                ? "bg-white/15 text-[#ffd88a]"
+                                : "bg-[#3a1f0a]/10 text-[#3a1f0a]"
+                            }`}
+                          >
+                            {tab.badge}
+                          </span>
+                        )}
                       </span>
-                    )}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {/* Right: Quick Action Controls */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                {/* Master Availability Pill Button */}
+                <button
+                  type="button"
+                  onClick={handleToggleAvailability}
+                  disabled={driverStatus === "BUSY"}
+                  className={`flex items-center gap-1.5 h-9 sm:h-10 px-3 sm:px-3.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm border ${
+                    driverStatus === "AVAILABLE"
+                      ? "bg-gradient-to-br from-emerald-800 to-emerald-950 text-emerald-50 border-emerald-400/40 shadow-[0_6px_20px_-6px_rgba(16,185,129,0.5)]"
+                      : driverStatus === "BUSY"
+                        ? "bg-amber-950/90 text-amber-100 border-amber-500/40 cursor-not-allowed"
+                        : "bg-[#fffaf0] text-[#3a1f0a] border-[#7a4416]/30 hover:bg-[#fff4dc]"
+                  }`}
+                  title="Toggle Radar Dispatch Status"
+                >
+                  <Power className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">
+                    {driverStatus === "AVAILABLE"
+                      ? "Scanning • Online"
+                      : driverStatus === "BUSY"
+                        ? "On Active Trip"
+                        : "Go Online"}
                   </span>
                 </button>
-              );
-            })}
 
-            {/* 6th Grid Slot on Mobile/Tablet + Right-Aligned Pill on Desktop */}
-            <button
-              type="button"
-              onClick={() => setIsWalletOpen(true)}
-              className="lg:ml-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-xs font-bold transition-all border border-[#c58a3a]/40 bg-[#fffdf9] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-[0.98] shadow-2xs"
+                {/* Wallet Vault Pill */}
+                <button
+                  type="button"
+                  onClick={() => setIsWalletOpen(true)}
+                  className="group flex items-center gap-1.5 h-9 sm:h-10 px-3 sm:px-3.5 rounded-xl border border-[#c58a3a]/50 bg-gradient-to-br from-[#3a1f0a] via-[#59300e] to-[#241205] text-[#ffe9be] text-xs font-bold shadow-md hover:border-[#ffd88a]/60 active:scale-95 transition-all"
+                  title="Open Driver Wallet & Instant Payouts"
+                >
+                  <Wallet className="h-3.5 w-3.5 text-[#ffd88a] shrink-0" />
+                  <span className="console-readout text-[11px] sm:text-xs text-[#ffd88a]">
+                    {formatPaise(walletBalance?.availablePaise ?? effectiveNetEarningsPaise)}
+                  </span>
+                </button>
+
+                {/* Bank & UPI Modal Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setIsBankDetailsOpen(true)}
+                  className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all shadow-2xs"
+                  aria-label="Bank & UPI Details"
+                  title="Bank & UPI Payout Settings"
+                >
+                  <Building2 className="h-4 w-4 text-[#b8722c]" />
+                </button>
+
+                {/* Dual-Role Passenger Switch */}
+                {user?.roles?.includes("RIDER") && (
+                  <button
+                    type="button"
+                    onClick={() => navigate("/dashboard")}
+                    className="hidden sm:flex items-center gap-1.5 h-9 sm:h-10 px-3 rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all shadow-2xs text-xs font-bold"
+                    title="Switch to Passenger Mode"
+                  >
+                    <Navigation className="h-3.5 w-3.5 text-[#b8722c]" />
+                    <span className="hidden lg:inline">Rider Mode</span>
+                  </button>
+                )}
+
+                {/* Sign Out */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    void logout().finally(() => navigate("/login", { replace: true }))
+                  }
+                  className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-xl border border-rose-500/30 bg-rose-950/15 text-rose-900 hover:bg-rose-950/25 active:scale-95 transition-all"
+                  aria-label="Logout"
+                  title="Sign out"
+                >
+                  <LogOut className="h-4 w-4 text-rose-800" />
+                </button>
+              </div>
+            </div>
+
+            {/* Mobile/Tablet Segmented Navigation Dock (Hidden on XL+) */}
+            <nav
+              aria-label="Driver Console Sections Mobile"
+              className="grid grid-cols-5 xl:hidden gap-1 rounded-xl border border-[#7a4416]/15 bg-[#fffaf0]/90 p-1 shadow-inner"
             >
-              <Wallet className="h-4 w-4 text-[#b8722c] shrink-0" />
-              <span className="truncate">Wallet & Payouts</span>
-            </button>
-          </div>
-        </section>
+              {NAV_TABS.map((tab) => {
+                const isActive = activeTab === tab.id;
+                const TabIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleSelectTab(tab.id)}
+                    className={`relative flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 px-1 rounded-lg text-[10px] sm:text-xs font-bold transition-colors ${
+                      isActive
+                        ? "text-[#ffe9be]"
+                        : "text-[#6b3a12] hover:bg-[#fff4dc]/80 hover:text-[#2e1808]"
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.span
+                        layoutId="driverCockpitNavMobile"
+                        transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                        className="pointer-events-none absolute inset-0 rounded-lg bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#241205] shadow-sm"
+                      />
+                    )}
+                    <span className="relative z-10 flex items-center gap-1">
+                      <TabIcon
+                        className={`h-3.5 w-3.5 shrink-0 ${
+                          isActive
+                            ? "text-[#ffd88a]"
+                            : tab.id === "ratings"
+                              ? "text-amber-500 fill-amber-500"
+                              : "text-[#b8722c]"
+                        }`}
+                      />
+                      <span className="truncate">{tab.shortLabel}</span>
+                      {tab.pulse && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          </motion.div>
+        </header>
 
         {/* System Error Banner */}
         <AnimatePresence>
@@ -2080,10 +1932,10 @@ export default function DriverDashboard() {
               initial={{ opacity: 0, y: -8, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              className="w-full flex items-center justify-between gap-3 rounded-2xl border border-rose-500/40 bg-rose-950/20 px-4 sm:px-5 py-3.5 text-xs sm:text-sm text-rose-950 shadow-md backdrop-blur-md"
+              className="w-full flex items-center justify-between gap-3 rounded-2xl border border-rose-500/40 bg-rose-950/20 px-4 sm:px-5 py-3 text-xs sm:text-sm text-rose-950 shadow-md backdrop-blur-md"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <AlertTriangle className="h-5 w-5 shrink-0 text-rose-700" />
+                <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0 text-rose-700" />
                 <span className="font-semibold break-words">{error}</span>
               </div>
               <button
@@ -2098,175 +1950,230 @@ export default function DriverDashboard() {
           )}
         </AnimatePresence>
 
-        {/* LOCKED-HEIGHT TAB WORKSPACE: Prevents height collapse, scroll jumps & map tile reloads */}
-        <div className="relative w-full min-h-[680px]">
-          {/* TAB 1: LIVE RADAR & CONSOLE (Kept mounted in DOM so MapView never reloads tiles) */}
+        {/* =====================================================================
+            2. UNIFIED 4-TILE BENTO TELEMETRY RIBBON (Clean, Non-Redundant KPIs)
+           ===================================================================== */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full">
+          {/* Tile 1: Interactive Dispatch Status */}
+          <div
+            className={`relative overflow-hidden rounded-[1.5rem] border p-4 sm:p-5 shadow-md backdrop-blur-xl transition-all ${
+              driverStatus === "AVAILABLE"
+                ? "border-emerald-600/45 bg-gradient-to-br from-[#fffdf9]/95 via-[#f2fbf6]/90 to-[#dff5e8]/90"
+                : driverStatus === "BUSY"
+                  ? "border-amber-600/45 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff6e5]/90 to-[#fbe6c2]/90"
+                  : "border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff6e5]/90 to-[#f5dfb5]/90"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
+                Radar Telemetry
+              </span>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                  driverStatus === "AVAILABLE"
+                    ? "bg-emerald-950/15 text-emerald-900 border border-emerald-600/30"
+                    : driverStatus === "BUSY"
+                      ? "bg-amber-950/15 text-amber-900 border border-amber-600/30"
+                      : "bg-[#3a1f0a]/10 text-[#3a1f0a]"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor}`} />
+                {driverStatus}
+              </span>
+            </div>
+            <div className="mt-3 flex items-end justify-between gap-2">
+              <div>
+                <p className="console-display text-lg sm:text-xl font-black text-[#2e1808]">
+                  {driverStatus === "AVAILABLE"
+                    ? "Broadcasting"
+                    : driverStatus === "BUSY"
+                      ? "In Mission"
+                      : "Standby"}
+                </p>
+                <p className="text-[11px] font-medium text-[#6b3a12] mt-0.5 truncate">
+                  {driverLocation
+                    ? `${driverLocation.latitude.toFixed(3)}°N, ${driverLocation.longitude.toFixed(3)}°E`
+                    : "Awaiting GPS lock"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleAvailability}
+                disabled={driverStatus === "BUSY"}
+                className="rounded-xl bg-[#3a1f0a] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#ffd88a] shadow-xs hover:opacity-90 disabled:opacity-50"
+              >
+                {driverStatus === "AVAILABLE" ? "Pause" : "Scan"}
+              </button>
+            </div>
+          </div>
+
+          {/* Tile 2: Net Earnings & Payout Vault */}
+          <div
+            onClick={() => setIsWalletOpen(true)}
+            className="group cursor-pointer relative overflow-hidden rounded-[1.5rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff6e5]/90 to-[#f5dfb5]/90 p-4 sm:p-5 shadow-md backdrop-blur-xl hover:border-[#b8722c] transition-all"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
+                Net Earnings
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] to-[#5c3211] text-[#ffd88a] shadow-xs group-hover:scale-105 transition-transform">
+                <Wallet className="h-3.5 w-3.5" />
+              </div>
+            </div>
+            <p className="mt-2.5 console-display text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
+              {formatPaise(effectiveNetEarningsPaise)}
+            </p>
+            <div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-[#6b3a12]">
+              <span>80% Captain Share</span>
+              <span className="inline-flex items-center text-[#b8722c] font-bold group-hover:translate-x-0.5 transition-transform">
+                Payouts <ChevronRight className="h-3 w-3" />
+              </span>
+            </div>
+          </div>
+
+          {/* Tile 3: Completed Trips & Distance */}
+          <div
+            onClick={() => handleSelectTab("history")}
+            className="group cursor-pointer relative overflow-hidden rounded-[1.5rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff6e5]/90 to-[#f5dfb5]/90 p-4 sm:p-5 shadow-md backdrop-blur-xl hover:border-[#b8722c] transition-all"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
+                Completed Trips
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] to-[#5c3211] text-[#ffd88a] shadow-xs group-hover:scale-105 transition-transform">
+                <RouteIcon className="h-3.5 w-3.5" />
+              </div>
+            </div>
+            <div className="mt-2.5 flex items-baseline gap-2">
+              <p className="console-display text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
+                {effectiveCompletedTrips}
+              </p>
+              <span className="text-xs font-bold text-emerald-900 console-readout">
+                ({effectiveAcceptanceRate}% rate)
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] font-semibold text-[#6b3a12] truncate">
+              {formatDistance(effectiveTotalDistanceKm)} total navigated
+            </p>
+          </div>
+
+          {/* Tile 4: Captain Rating & Driver ID */}
+          <div
+            onClick={() => handleSelectTab("ratings")}
+            className="group cursor-pointer relative overflow-hidden rounded-[1.5rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff6e5]/90 to-[#f5dfb5]/90 p-4 sm:p-5 shadow-md backdrop-blur-xl hover:border-[#b8722c] transition-all"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
+                Captain Standing
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] to-[#5c3211] text-[#ffd88a] shadow-xs">
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              </div>
+            </div>
+            <div className="mt-2.5 flex items-baseline gap-2">
+              <p className="console-display text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
+                {effectiveTotalRatings > 0 ? effectiveAverage.toFixed(2) : "New"}
+              </p>
+              <span className="text-xs font-semibold text-[#7a4416]">
+                • {effectiveTotalRatings} {effectiveTotalRatings === 1 ? "review" : "reviews"}
+              </span>
+            </div>
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                if (profile?.id) {
+                  navigator.clipboard.writeText(profile.id);
+                  setCopiedId(true);
+                  setTimeout(() => setCopiedId(false), 2000);
+                }
+              }}
+              className="mt-1 inline-flex items-center gap-1.5 text-[10.5px] console-readout font-bold text-[#3a1f0a] hover:text-[#b8722c]"
+              title="Copy Driver ID"
+            >
+              <span>ID: #{profile?.id?.slice(-6) || "DRIVER"}</span>
+              {copiedId ? (
+                <Check className="h-3 w-3 text-emerald-700" />
+              ) : (
+                <Copy className="h-3 w-3 opacity-70" />
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* =====================================================================
+            3. TAB WORKSPACE CONTAINER
+           ===================================================================== */}
+        <div className="relative w-full min-h-[620px]">
+          {/* -------------------------------------------------------------------
+              TAB 1: LIVE RADAR & DISPATCH CONSOLE (5 / 7 Split-Screen)
+             ------------------------------------------------------------------- */}
           <div
             className={
               activeTab === "console"
-                ? "block space-y-5 sm:space-y-6 animate-in fade-in duration-200"
+                ? "block space-y-5 animate-in fade-in duration-200"
                 : "hidden"
             }
           >
-            {/* Availability Command Bar */}
-            <section
-              className={`w-full rounded-[2rem] border p-5 sm:p-6 shadow-xl backdrop-blur-2xl relative overflow-hidden transition-all duration-300 ${
-                driverStatus === "AVAILABLE"
-                  ? "border-emerald-600/40 bg-gradient-to-r from-[#fffdf9]/95 via-[#f4fbf7]/90 to-[#e6f7ed]/90"
-                  : driverStatus === "BUSY"
-                    ? "border-amber-600/45 bg-gradient-to-r from-[#fffdf9]/95 via-[#fff6e5]/90 to-[#fbe6c2]/90"
-                    : "border-[#fff4dc]/80 bg-gradient-to-r from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90"
-              }`}
-            >
-              <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-              <div className="w-full flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start sm:items-center gap-3.5 sm:gap-4">
-                  <div className="relative flex items-center justify-center shrink-0">
-                    {driverStatus === "AVAILABLE" && (
-                      <span className="pointer-events-none absolute inset-0 rounded-2xl bg-emerald-500/30 animate-ping" />
-                    )}
-                    <div
-                      className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all shadow-md ${
-                        driverStatus === "OFFLINE"
-                          ? "bg-[#7a4416]/20 text-[#7a4416]"
-                          : driverStatus === "AVAILABLE"
-                            ? "bg-gradient-to-br from-emerald-800 to-emerald-950 text-emerald-100 ring-2 ring-emerald-500/40"
-                            : "bg-gradient-to-br from-[#3a1f0a] to-[#7a4416] text-[#ffd88a]"
-                      }`}
-                    >
-                      <Power className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2
-                        className="text-base font-black text-[#2e1808]"
-                        style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                      >
-                        Dispatch Availability Control
-                      </h2>
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-[10px] font-black uppercase tracking-widest ${
-                          driverStatus === "AVAILABLE"
-                            ? "bg-emerald-950/15 text-emerald-900 border border-emerald-600/30"
-                            : driverStatus === "BUSY"
-                              ? "bg-amber-950/15 text-amber-900 border border-amber-600/30"
-                              : "bg-[#7a4416]/15 text-[#3a1f0a] border border-[#7a4416]/30"
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            driverStatus === "AVAILABLE"
-                              ? "bg-emerald-600"
-                              : driverStatus === "BUSY"
-                                ? "bg-amber-600"
-                                : "bg-[#7a4416]"
-                          }`}
-                        />
-                        {driverStatus}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs font-medium text-[#6b3a12]">
-                      {driverStatusCopy[driverStatus]}
-                    </p>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleToggleAvailability}
-                  disabled={driverStatus === "BUSY"}
-                  className={`h-12 rounded-2xl px-7 text-xs font-bold uppercase tracking-wider shadow-lg transition-all active:scale-[0.98] w-full sm:w-auto shrink-0 ${
-                    driverStatus === "AVAILABLE"
-                      ? "border border-[#7a4416]/35 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc]"
-                      : "bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#241205] text-[#ffe9be] hover:opacity-95 border border-[#c58a3a]/50"
-                  }`}
-                >
-                  {driverStatus === "AVAILABLE" ? (
-                    "Go Offline"
-                  ) : driverStatus === "BUSY" ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> On Active Trip
-                    </>
-                  ) : (
-                    "Go Online & Scan"
-                  )}
-                </Button>
-              </div>
-            </section>
-
-            {/* Analytics Stat Cards — 2x2 Bento Grid on Mobile / 4-Column on Desktop */}
-            <section className="w-full grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <StatCard
-                label="Total Trips"
-                value={String(effectiveTotalTrips)}
-                icon={RouteIcon}
-                trend="+4% wk"
-              />
-              <StatCard
-                label="Driver Rating"
-                value={effectiveTotalRatings > 0 ? effectiveAverage.toFixed(1) : "New"}
-                icon={Star}
-                trend={effectiveTotalRatings > 0 ? (effectiveAverage >= 4.8 ? "Top Tier" : "Good Standing") : "Unrated"}
-              />
-              <StatCard
-                label="Total Earnings"
-                value={formatPaise(effectiveNetEarningsPaise)}
-                icon={Wallet}
-                trend="Verified"
-              />
-              <StatCard
-                label="Completion Rate"
-                value={`${effectiveAcceptanceRate}%`}
-                icon={CheckCircle2}
-                trend="Reliable"
-              />
-            </section>
-
-            {/* Split-Screen Command Workspace: Active Dispatch (Left) + Live Telemetry Map (Right) */}
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch">
-              {/* Left Column: Current Active Ride / Radar Scanner */}
-              <section className="xl:col-span-6 flex flex-col justify-between overflow-hidden rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-2xl backdrop-blur-2xl relative">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 sm:gap-6 items-stretch">
+              {/* LEFT COLUMN (5 Cols): Active Mission Deck OR Radar Scanner */}
+              <section className="xl:col-span-5 flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/92 to-[#f7e2b8]/92 p-5 sm:p-7 shadow-2xl backdrop-blur-2xl relative">
                 <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
 
-                <div>
-                  <div className="w-full flex flex-wrap items-center justify-between gap-3 border-b border-[#7a4416]/20 pb-4 mb-6">
-                    <div>
-                      <h2
-                        className="text-lg font-black text-[#2e1808]"
-                        style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                      >
-                        Current Trip Management
-                      </h2>
-                      <p className="text-xs font-medium text-[#7a4416]">
-                        {statusConfig
-                          ? statusConfig.description
-                          : "Awaiting ride requests or dispatch instructions."}
-                      </p>
+                <div className="flex-1 flex flex-col">
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between gap-3 border-b border-[#7a4416]/15 pb-4 mb-5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-xs">
+                        <Radio className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h2 className="console-display truncate text-base sm:text-lg font-black text-[#2e1808]">
+                          {currentRide ? "Active Mission Control" : "Geospatial Dispatch Radar"}
+                        </h2>
+                        <p className="truncate text-xs font-medium text-[#7a4416]">
+                          {statusConfig
+                            ? statusConfig.description
+                            : driverStatus === "AVAILABLE"
+                              ? "Listening for proximity-matched passenger requests"
+                              : "Switch radar to Online to receive ride offers"}
+                        </p>
+                      </div>
                     </div>
+
                     {statusConfig && (
                       <span
-                        className={`rounded-full px-3.5 py-1 text-xs font-bold shadow-xs ${statusConfig.badge}`}
+                        className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold shadow-xs ${statusConfig.badge}`}
                       >
                         {statusConfig.label}
                       </span>
                     )}
                   </div>
 
+                  {/* Mission Body */}
                   <AnimatePresence mode="wait">
                     {!currentRide ? (
                       <motion.div
-                        key="no-active-ride"
+                        key="idle-radar-deck"
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.98 }}
-                        className="w-full px-4 py-12 sm:py-14 text-center flex flex-col items-center justify-center"
+                        className="flex-1 flex flex-col items-center justify-between py-4 text-center"
                       >
-                        {/* Animated Multi-Ring Radar Visual */}
-                        <div className="relative flex h-28 w-28 items-center justify-center">
+                        {/* Concentric Radar Sweep Graphic */}
+                        <div className="relative my-4 flex h-36 w-36 items-center justify-center">
+                          <div className="absolute inset-0 rounded-full border border-[#7a4416]/20 bg-[#fffaf0]/50" />
+                          <div className="absolute inset-4 rounded-full border border-dashed border-[#b8722c]/35" />
                           {driverStatus === "AVAILABLE" && (
                             <>
-                              <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-[#b8722c]/45 animate-radar-slow" />
-                              <span className="pointer-events-none absolute inset-2 rounded-full border border-emerald-600/35 animate-radar-delayed" />
+                              <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-emerald-500/40 animate-radar-ring-1" />
+                              <span className="pointer-events-none absolute inset-2 rounded-full border border-[#b8722c]/45 animate-radar-ring-2" />
+                              <div
+                                className="pointer-events-none absolute inset-2 rounded-full animate-radar-sweep"
+                                style={{
+                                  background:
+                                    "conic-gradient(from 0deg, transparent 70%, rgba(16, 185, 129, 0.22) 100%)",
+                                }}
+                              />
                             </>
                           )}
                           <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#5c3211] to-[#241205] text-[#ffd88a] shadow-xl border border-[#c58a3a]/50">
@@ -2278,27 +2185,79 @@ export default function DriverDashboard() {
                           </div>
                         </div>
 
-                        <h3
-                          className="mt-5 text-lg font-black text-[#2e1808]"
-                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                        >
-                          {driverStatus === "AVAILABLE"
-                            ? "Scanning for nearby riders..."
-                            : "Driver console is on standby"}
-                        </h3>
-                        <p className="mx-auto mt-1.5 max-w-sm text-xs font-medium text-[#7a4416] leading-relaxed">
-                          {driverStatus === "AVAILABLE"
-                            ? "Keep your console open. Incoming passenger requests are matched automatically via real-time Redis geospatial proximity."
-                            : "Switch your availability status to online above to start receiving live ride dispatch notifications."}
-                        </p>
+                        <div className="max-w-sm space-y-1.5">
+                          <h3 className="console-display text-lg sm:text-xl font-black text-[#2e1808]">
+                            {driverStatus === "AVAILABLE"
+                              ? "Scanning Kolkata Sector…"
+                              : "Radar Transceiver Standby"}
+                          </h3>
+                          <p className="text-xs font-medium text-[#7a4416] leading-relaxed">
+                            {driverStatus === "AVAILABLE"
+                              ? "Your coordinates are indexed in Redis Geo. Incoming passenger dispatches will lock onto this console automatically."
+                              : "You are currently hidden from passenger dispatch. Engage your radar below when ready to accept trips."}
+                          </p>
+                        </div>
 
-                        {driverLocation && (
-                          <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-[#7a4416]/20 bg-[#fffaf0] px-3.5 py-1.5 text-[11px] console-readout font-semibold text-[#3a1f0a] shadow-2xs">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                            GPS: {driverLocation.latitude.toFixed(4)}° N,{" "}
-                            {driverLocation.longitude.toFixed(4)}° E
-                          </div>
-                        )}
+                        {/* 4-Point Pre-Flight Telemetry Checklist */}
+                        <div className="mt-6 w-full grid grid-cols-2 gap-2.5 text-left">
+                          {[
+                            {
+                              label: "GPS Transceiver",
+                              status: driverLocation ? "Locked" : "Acquiring",
+                              ok: Boolean(driverLocation),
+                            },
+                            {
+                              label: "Dispatch Socket",
+                              status: driverStatus !== "OFFLINE" ? "Connected" : "Standby",
+                              ok: driverStatus !== "OFFLINE",
+                            },
+                            {
+                              label: "RTO Credentials",
+                              status: "4/4 Verified",
+                              ok: true,
+                            },
+                            {
+                              label: "Payout Channel",
+                              status:
+                                profile?.upiId || profile?.accountNumber ? "Linked" : "Setup Needed",
+                              ok: Boolean(profile?.upiId || profile?.accountNumber),
+                            },
+                          ].map((item) => (
+                            <div
+                              key={item.label}
+                              className="flex items-center justify-between rounded-xl border border-[#7a4416]/15 bg-[#fffdf9]/90 px-3 py-2.5 shadow-2xs"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416] truncate">
+                                  {item.label}
+                                </p>
+                                <p className="text-xs font-extrabold text-[#2e1808] mt-0.5">
+                                  {item.status}
+                                </p>
+                              </div>
+                              <span
+                                className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                  item.ok ? "bg-emerald-500" : "bg-amber-500 animate-pulse"
+                                }`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Master CTA Button */}
+                        <Button
+                          onClick={handleToggleAvailability}
+                          className={`mt-5 h-12 w-full rounded-2xl text-xs font-bold uppercase tracking-wider shadow-lg transition-all active:scale-[0.98] ${
+                            driverStatus === "AVAILABLE"
+                              ? "border border-[#7a4416]/35 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc]"
+                              : "bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#241205] text-[#ffe9be] border border-[#c58a3a]/50"
+                          }`}
+                        >
+                          <Power className="mr-2 h-4 w-4" />
+                          {driverStatus === "AVAILABLE"
+                            ? "Pause Radar & Go Standby"
+                            : "Engage Radar & Go Online"}
+                        </Button>
                       </motion.div>
                     ) : (
                       <motion.div
@@ -2306,30 +2265,30 @@ export default function DriverDashboard() {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="w-full space-y-5"
+                        className="w-full space-y-4"
                       >
                         <RideStepper status={currentRide.status} />
 
-                        {/* Route Details Box */}
-                        <div className="w-full rounded-2xl border border-[#7a4416]/25 bg-[#fffdf9] p-4 sm:p-5 shadow-sm">
-                          <div className="flex gap-3.5 sm:gap-4">
+                        {/* Route Pickup & Drop-off Timeline Box */}
+                        <div className="w-full rounded-2xl border border-[#7a4416]/25 bg-[#fffdf9] p-4 shadow-xs">
+                          <div className="flex gap-3.5">
                             <div className="flex shrink-0 flex-col items-center pt-1.5">
-                              <span className="h-3.5 w-3.5 rounded-full bg-emerald-600 ring-4 ring-emerald-500/20" />
-                              <span className="my-1.5 h-12 w-0.5 border-l-2 border-dashed border-[#b8722c]/60" />
+                              <span className="h-3 w-3 rounded-full bg-emerald-600 ring-4 ring-emerald-500/20" />
+                              <span className="my-1.5 h-10 w-0.5 border-l-2 border-dashed border-[#b8722c]/60" />
                               <MapPin className="h-4 w-4 text-rose-600" />
                             </div>
-                            <div className="flex-1 space-y-4 min-w-0">
+                            <div className="flex-1 space-y-3 min-w-0">
                               <div>
                                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-800">
-                                  Pickup Location
+                                  Pickup Point
                                 </p>
                                 <p className="text-xs sm:text-sm font-bold text-[#2e1808] mt-0.5 break-words">
                                   {currentRide.pickup.address}
                                 </p>
                               </div>
-                              <div className="border-t border-[#7a4416]/10 pt-3">
+                              <div className="border-t border-[#7a4416]/10 pt-2.5">
                                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-800">
-                                  Destination Drop-off
+                                  Destination Drop-Off
                                 </p>
                                 <p className="text-xs sm:text-sm font-bold text-[#2e1808] mt-0.5 break-words">
                                   {currentRide.destination.address}
@@ -2339,58 +2298,38 @@ export default function DriverDashboard() {
                           </div>
                         </div>
 
-                        {/* Ride Metrics Grid — Crisp 2x2 on Mobile / 4-Col on SM+ */}
-                        <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-                          <div className="w-full rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-3.5 shadow-2xs">
-                            <div className="flex items-center justify-between text-[#7a4416]">
-                              <span className="text-[10px] font-bold uppercase tracking-wider">
-                                Distance
-                              </span>
-                              <RouteIcon className="h-3.5 w-3.5 text-[#b8722c]" />
-                            </div>
-                            <p className="mt-1.5 text-sm sm:text-base font-black text-[#2e1808] console-readout">
+                        {/* 4-Tile Trip Metrics Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          <div className="rounded-xl border border-[#7a4416]/20 bg-[#fffdf9] p-3">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
+                              Distance
+                            </span>
+                            <p className="mt-1 text-sm font-black text-[#2e1808] console-readout">
                               {distance != null ? formatDistance(distance) : "--"}
                             </p>
                           </div>
-
-                          <div className="w-full rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-3.5 shadow-2xs">
-                            <div className="flex items-center justify-between text-[#7a4416]">
-                              <span className="text-[10px] font-bold uppercase tracking-wider">
-                                Duration
-                              </span>
-                              <Clock className="h-3.5 w-3.5 text-[#b8722c]" />
-                            </div>
-                            <p className="mt-1.5 text-sm sm:text-base font-black text-[#2e1808] console-readout">
+                          <div className="rounded-xl border border-[#7a4416]/20 bg-[#fffdf9] p-3">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
+                              Est. Time
+                            </span>
+                            <p className="mt-1 text-sm font-black text-[#2e1808] console-readout">
                               {duration != null ? formatDuration(duration) : "--"}
                             </p>
                           </div>
-
-                          <div className="w-full rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-3.5 shadow-2xs">
-                            <div className="flex items-center justify-between text-[#7a4416]">
-                              <span className="text-[10px] font-bold uppercase tracking-wider">
-                                Est. Payout
-                              </span>
-                              <Wallet className="h-3.5 w-3.5 text-[#b8722c]" />
-                            </div>
-                            <p className="mt-1.5 text-sm sm:text-base font-black text-emerald-900 console-readout">
+                          <div className="rounded-xl border border-[#7a4416]/20 bg-[#fffdf9] p-3">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
+                              Your Payout
+                            </span>
+                            <p className="mt-1 text-sm font-black text-emerald-900 console-readout">
                               {fare != null ? formatPaise(fare) : "--"}
                             </p>
-                            {totalTripFare > 0 && (
-                              <p className="text-[10px] font-semibold text-[#7a4416]/80 mt-0.5 truncate">
-                                Total: {formatPaise(totalTripFare)}
-                              </p>
-                            )}
                           </div>
-
-                          <div className="w-full rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-3.5 shadow-2xs">
-                            <div className="flex items-center justify-between text-[#7a4416]">
-                              <span className="text-[10px] font-bold uppercase tracking-wider">
-                                Settlement
-                              </span>
-                              <Zap className="h-3.5 w-3.5 text-[#b8722c]" />
-                            </div>
+                          <div className="rounded-xl border border-[#7a4416]/20 bg-[#fffdf9] p-3">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
+                              Settlement
+                            </span>
                             <p
-                              className={`mt-1.5 inline-flex rounded-md px-2 py-0.5 text-[10px] sm:text-[11px] font-bold ${
+                              className={`mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
                                 paymentInfo?.badge ??
                                 "text-[#3a1f0a] bg-[#7a4416]/15 border border-[#7a4416]/30"
                               }`}
@@ -2400,101 +2339,94 @@ export default function DriverDashboard() {
                           </div>
                         </div>
 
-                        {/* Primary Dispatch Action Controls */}
-                        <div className="w-full space-y-3 pt-1">
+                        {/* Stage-Specific Mission Controls */}
+                        <div className="space-y-3 pt-1">
                           {currentRide.status === "SEARCHING" && (
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                               <Button
                                 onClick={() => handleAcceptRide(currentRide.id)}
                                 disabled={isAcceptingRide}
-                                className="sm:col-span-2 w-full bg-gradient-to-br from-emerald-800 via-emerald-900 to-emerald-950 text-emerald-50 hover:opacity-95 border border-emerald-400/40 h-12 rounded-xl active:scale-[0.98] transition-all font-bold shadow-lg"
+                                className="sm:col-span-2 bg-gradient-to-br from-emerald-800 via-emerald-900 to-emerald-950 text-emerald-50 border border-emerald-400/40 h-12 rounded-xl font-bold shadow-lg"
                               >
                                 {isAcceptingRide ? (
                                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 ) : (
                                   <CheckCircle2 className="mr-2 h-4 w-4" />
                                 )}
-                                {isAcceptingRide
-                                  ? "Accepting Dispatch..."
-                                  : "Accept Ride Request"}
+                                {isAcceptingRide ? "Accepting…" : "Accept Dispatch"}
                               </Button>
                               <Button
                                 onClick={() => handleRejectRide(currentRide.id)}
                                 variant="outline"
-                                className="w-full border-rose-500/35 bg-rose-950/15 text-rose-950 hover:bg-rose-950/25 h-12 rounded-xl active:scale-[0.98] transition-all font-bold"
+                                className="border-rose-500/35 bg-rose-950/15 text-rose-950 hover:bg-rose-950/25 h-12 rounded-xl font-bold"
                               >
-                                <X className="mr-2 h-4 w-4" /> Decline
+                                <X className="mr-1.5 h-4 w-4" /> Decline
                               </Button>
                             </div>
                           )}
 
                           {currentRide.status === "DRIVER_ASSIGNED" && (
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                               <Button
                                 onClick={() =>
                                   sendRideAction(DriverEvents.ARRIVED_AT_PICKUP, currentRide.id)
                                 }
-                                className="sm:col-span-2 w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-95 border border-[#c58a3a]/50 h-12 rounded-xl active:scale-[0.98] transition-all font-bold shadow-md"
+                                className="sm:col-span-2 bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] border border-[#c58a3a]/50 h-12 rounded-xl font-bold shadow-md"
                               >
-                                <MapPin className="mr-2 h-4 w-4 text-[#ffd88a]" /> Mark Arrived at
-                                Pickup
+                                <MapPin className="mr-2 h-4 w-4 text-[#ffd88a]" /> Arrived at Pickup
                               </Button>
                               <Button
                                 onClick={() => handleCancelRide(currentRide.id)}
                                 variant="outline"
-                                className="w-full border-rose-500/35 bg-rose-950/15 text-rose-950 hover:bg-rose-950/25 h-12 rounded-xl active:scale-[0.98] transition-all font-bold"
+                                className="border-rose-500/35 bg-rose-950/15 text-rose-950 hover:bg-rose-950/25 h-12 rounded-xl font-bold"
                               >
-                                <X className="mr-1.5 h-4 w-4" /> Cancel Ride
+                                <X className="mr-1.5 h-4 w-4" /> Cancel
                               </Button>
                             </div>
                           )}
 
                           {currentRide.status === "DRIVER_ARRIVING" && (
-                            <div className="w-full space-y-3">
-                              <div className="w-full space-y-3 rounded-2xl border border-[#c58a3a]/40 bg-[#fffaf0] p-4 shadow-inner">
-                                <label className="block space-y-2">
-                                  <span className="text-xs font-bold uppercase tracking-wider text-[#3a1f0a] flex flex-wrap items-center justify-between gap-1">
-                                    <span>Passenger 4-Digit Verification PIN</span>
-                                    <span className="text-[10px] font-semibold text-[#7a4416]">
-                                      Required to start meter
-                                    </span>
+                            <div className="space-y-3 rounded-2xl border-2 border-[#c58a3a]/50 bg-[#fffaf0] p-4 shadow-inner">
+                              <label className="block space-y-2">
+                                <span className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#3a1f0a]">
+                                  <span>Boarding 4-Digit PIN</span>
+                                  <span className="text-[10px] font-semibold text-[#7a4416]">
+                                    Ask passenger for PIN
                                   </span>
-                                  <input
-                                    aria-label="Trip start OTP"
-                                    autoComplete="one-time-code"
-                                    className="h-12 w-full rounded-xl border-2 border-[#7a4416]/30 bg-[#fffdf9] px-4 text-center console-readout text-xl font-black tracking-[0.6em] text-[#2e1808] outline-none transition-all focus:border-[#3a1f0a] focus:ring-4 focus:ring-[#c58a3a]/25"
-                                    inputMode="numeric"
-                                    maxLength={4}
-                                    onChange={(event) =>
-                                      setTripOtp(event.target.value.replace(/\D/gu, "").slice(0, 4))
-                                    }
-                                    placeholder="••••"
-                                    value={tripOtp}
-                                  />
-                                </label>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                                  <Button
-                                    onClick={() => handleStartRide(currentRide.id)}
-                                    disabled={tripOtp.length !== 4 || isStartingRide}
-                                    className="sm:col-span-2 w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-95 border border-[#c58a3a]/50 h-12 rounded-xl active:scale-[0.98] transition-all font-bold shadow-md"
-                                  >
-                                    {isStartingRide ? (
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <ChevronRight className="mr-2 h-4 w-4" />
-                                    )}
-                                    {isStartingRide
-                                      ? "Verifying PIN..."
-                                      : "Verify PIN & Start Trip"}
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleCancelRide(currentRide.id)}
-                                    variant="outline"
-                                    className="w-full border-rose-500/35 bg-rose-950/15 text-rose-950 hover:bg-rose-950/25 h-12 rounded-xl active:scale-[0.98] transition-all font-bold"
-                                  >
-                                    <X className="mr-1.5 h-4 w-4" /> Cancel Ride
-                                  </Button>
-                                </div>
+                                </span>
+                                <input
+                                  aria-label="Trip start OTP"
+                                  autoComplete="one-time-code"
+                                  className="h-12 w-full rounded-xl border-2 border-[#7a4416]/30 bg-[#fffdf9] px-4 text-center console-readout text-xl font-black tracking-[0.6em] text-[#2e1808] outline-none transition-all focus:border-[#3a1f0a] focus:ring-4 focus:ring-[#c58a3a]/25"
+                                  inputMode="numeric"
+                                  maxLength={4}
+                                  onChange={(event) =>
+                                    setTripOtp(event.target.value.replace(/\D/gu, "").slice(0, 4))
+                                  }
+                                  placeholder="••••"
+                                  value={tripOtp}
+                                />
+                              </label>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <Button
+                                  onClick={() => handleStartRide(currentRide.id)}
+                                  disabled={tripOtp.length !== 4 || isStartingRide}
+                                  className="sm:col-span-2 bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] border border-[#c58a3a]/50 h-12 rounded-xl font-bold shadow-md"
+                                >
+                                  {isStartingRide ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <ChevronRight className="mr-2 h-4 w-4" />
+                                  )}
+                                  {isStartingRide ? "Verifying…" : "Verify & Start Trip"}
+                                </Button>
+                                <Button
+                                  onClick={() => handleCancelRide(currentRide.id)}
+                                  variant="outline"
+                                  className="border-rose-500/35 bg-rose-950/15 text-rose-950 hover:bg-rose-950/25 h-12 rounded-xl font-bold"
+                                >
+                                  <X className="mr-1.5 h-4 w-4" /> Cancel
+                                </Button>
                               </div>
                             </div>
                           )}
@@ -2507,7 +2439,7 @@ export default function DriverDashboard() {
                                   currentRide.id
                                 )
                               }
-                              className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] hover:opacity-95 border border-[#c58a3a]/50 h-12 rounded-xl active:scale-[0.98] transition-all font-bold shadow-md"
+                              className="w-full bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] border border-[#c58a3a]/50 h-12 rounded-xl font-bold shadow-md"
                             >
                               <MapPin className="mr-2 h-4 w-4 text-[#ffd88a]" /> Mark Arrived at
                               Destination
@@ -2520,63 +2452,63 @@ export default function DriverDashboard() {
                                 sendRideAction(DriverEvents.COMPLETE_RIDE, currentRide.id)
                               }
                               disabled={!canCompleteCurrentRide}
-                              className="w-full bg-gradient-to-br from-emerald-800 via-emerald-900 to-emerald-950 text-emerald-50 hover:opacity-95 border border-emerald-400/40 h-12 rounded-xl active:scale-[0.98] transition-all font-bold shadow-lg disabled:opacity-50"
+                              className="w-full bg-gradient-to-br from-emerald-800 via-emerald-900 to-emerald-950 text-emerald-50 border border-emerald-400/40 h-12 rounded-xl font-bold shadow-lg disabled:opacity-50"
                             >
                               <CheckCircle2 className="mr-2 h-4 w-4" />
                               {canCompleteCurrentRide
                                 ? "Complete Trip & Settle Ledger"
-                                : "Awaiting Rider Payment Capture..."}
+                                : "Awaiting Rider Payment Capture…"}
                             </Button>
                           )}
                         </div>
 
-                        {/* Detailed Fare Breakdown Ledger */}
+                        {/* Audited Fare Split */}
                         {breakdownData && (
-                          <div className="w-full rounded-2xl border border-[#7a4416]/25 bg-[#fffdf9]/95 p-4 shadow-xs">
-                            <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#7a4416]/15">
-                              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7a4416]">
-                                Trip Fare Breakdown Ledger
-                              </p>
-                              <span className="text-[10px] font-bold text-emerald-900 bg-emerald-500/15 px-2 py-0.5 rounded-md">
-                                Audited Split
+                          <div className="rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/95 p-3.5 shadow-2xs">
+                            <div className="flex items-center justify-between mb-2.5 pb-1.5 border-b border-[#7a4416]/10">
+                              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-[#7a4416]">
+                                Audited Fare Split
+                              </span>
+                              <span className="text-[10px] font-bold text-[#6b3a12] console-readout">
+                                Gross: {formatPaise(totalTripFare || breakdownData.totalPaise)}
                               </span>
                             </div>
-                            <div className="w-full grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
-                              {[
-                                ["Base", breakdownData.baseFarePaise],
-                                ["Distance", breakdownData.distanceFarePaise],
-                                ["Time", breakdownData.timeFarePaise],
-                                ["Surge", breakdownData.surgePaise],
-                                ["Fee", -breakdownData.platformCommissionPaise],
-                                ["You Earn", breakdownData.driverEarningPaise],
-                                ["Total", breakdownData.totalPaise],
-                              ].map(([k, v]) => (
-                                <div
-                                  key={k as string}
-                                  className="flex flex-col rounded-xl bg-[#fffaf0] p-2 border border-[#7a4416]/10"
-                                >
-                                  <span className="text-[9px] uppercase font-bold tracking-wider text-[#7a4416]">
-                                    {k}
-                                  </span>
-                                  <span
-                                    className={`mt-0.5 font-bold console-readout ${
-                                      k === "You Earn"
-                                        ? "text-emerald-900 font-black"
-                                        : "text-[#2e1808]"
-                                    }`}
-                                  >
-                                    {formatPaise(Number(v))}
-                                  </span>
-                                </div>
-                              ))}
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div className="rounded-lg bg-[#fffaf0] p-2 border border-[#7a4416]/10">
+                                <span className="text-[9px] uppercase font-bold text-[#7a4416]">
+                                  Base + Dist
+                                </span>
+                                <p className="console-readout font-bold text-[#2e1808] mt-0.5">
+                                  {formatPaise(
+                                    (breakdownData.baseFarePaise || 0) +
+                                      (breakdownData.distanceFarePaise || 0)
+                                  )}
+                                </p>
+                              </div>
+                              <div className="rounded-lg bg-[#fffaf0] p-2 border border-[#7a4416]/10">
+                                <span className="text-[9px] uppercase font-bold text-[#7a4416]">
+                                  Platform Fee
+                                </span>
+                                <p className="console-readout font-bold text-rose-800 mt-0.5">
+                                  -{formatPaise(breakdownData.platformCommissionPaise)}
+                                </p>
+                              </div>
+                              <div className="rounded-lg bg-emerald-950/10 p-2 border border-emerald-600/25">
+                                <span className="text-[9px] uppercase font-bold text-emerald-900">
+                                  Net Payout
+                                </span>
+                                <p className="console-readout font-black text-emerald-950 mt-0.5">
+                                  {formatPaise(breakdownData.driverEarningPaise)}
+                                </p>
+                              </div>
                             </div>
                           </div>
                         )}
 
                         {currentRide.status === "CANCELLED" && (
-                          <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-rose-500/35 bg-rose-950/15 p-4 text-sm text-rose-950">
-                            <span className="font-semibold">
-                              Trip cancelled
+                          <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-500/35 bg-rose-950/15 p-3.5 text-xs font-semibold text-rose-950">
+                            <span>
+                              Cancelled
                               {currentRide.cancelledBy
                                 ? ` by ${currentRide.cancelledBy.toLowerCase()}`
                                 : ""}
@@ -2586,7 +2518,7 @@ export default function DriverDashboard() {
                               variant="outline"
                               size="sm"
                               onClick={() => setCurrentRide(null)}
-                              className="border-[#7a4416]/30 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-[0.98] rounded-xl font-bold"
+                              className="border-[#7a4416]/30 bg-[#fffaf0] text-[#3a1f0a] rounded-xl font-bold"
                             >
                               Back to Radar
                             </Button>
@@ -2594,27 +2526,24 @@ export default function DriverDashboard() {
                         )}
 
                         {currentRide.status === "COMPLETED" && (
-                          <div className="w-full rounded-2xl border border-emerald-600/35 bg-emerald-950/15 p-6 text-center">
-                            <p className="text-xs font-black uppercase tracking-widest text-emerald-900">
-                              Trip Successfully Completed
+                          <div className="rounded-2xl border border-emerald-600/35 bg-emerald-950/15 p-5 text-center">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-900">
+                              Trip Settled & Credited
                             </p>
-                            <p className="mt-1.5 text-3xl font-black text-emerald-950 console-readout">
+                            <p className="mt-1 text-2xl font-black text-emerald-950 console-readout">
                               {breakdownData
                                 ? formatPaise(breakdownData.driverEarningPaise)
                                 : fare != null
                                   ? formatPaise(fare)
                                   : "₹0.00"}
                             </p>
-                            <p className="mt-1 text-xs font-medium text-emerald-900/80">
-                              Net earnings credited to your UrbanFleet driver ledger.
-                            </p>
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => setCurrentRide(null)}
-                              className="mt-4 border-emerald-600/35 bg-[#fffaf0] text-emerald-950 hover:bg-emerald-50 active:scale-[0.98] rounded-xl font-bold px-5"
+                              className="mt-3 border-emerald-600/35 bg-[#fffaf0] text-emerald-950 rounded-xl font-bold px-5"
                             >
-                              Return to Dispatch Radar
+                              Return to Radar
                             </Button>
                           </div>
                         )}
@@ -2622,36 +2551,27 @@ export default function DriverDashboard() {
                     )}
                   </AnimatePresence>
                 </div>
-
-                <div className="pointer-events-none absolute inset-x-8 bottom-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
               </section>
 
-              {/* Right Column: Interactive Live Map Section */}
-              <section className="xl:col-span-6 flex flex-col overflow-hidden rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 shadow-2xl backdrop-blur-2xl relative">
-                <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                <div className="w-full flex flex-wrap items-center justify-between gap-2 border-b border-[#7a4416]/20 px-5 sm:px-6 py-4 sm:py-5">
-                  <div>
-                    <h2
-                      className="text-lg font-black text-[#2e1808]"
-                      style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                    >
-                      Live Navigation & Telemetry Map
-                    </h2>
-                    <p className="text-xs font-medium text-[#7a4416]">
-                      Real-time GPS vector routing and marker tracking.
-                    </p>
+              {/* RIGHT COLUMN (7 Cols): Expansive Telemetry Map Canvas */}
+              <section className="xl:col-span-7 flex flex-col overflow-hidden rounded-[2rem] border border-[#fff4dc]/85 bg-[#fffaf0] shadow-2xl relative min-h-[380px] sm:min-h-[520px] xl:min-h-[600px]">
+                {/* Floating Top Map HUD */}
+                <div className="pointer-events-none absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 rounded-2xl border border-[#fff4dc]/80 bg-[#2e1808]/90 px-4 py-2 text-xs font-bold text-[#ffe9be] shadow-lg backdrop-blur-md">
+                    <span className={`h-2 w-2 rounded-full ${statusDotColor}`} />
+                    <span>Live Vector Telemetry</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {driverLocation && (
-                      <span className="rounded-full border border-[#7a4416]/25 bg-[#fffaf0] px-3 py-1 text-xs console-readout font-semibold text-[#3a1f0a] shadow-2xs">
-                        {driverLocation.latitude.toFixed(4)},{" "}
-                        {driverLocation.longitude.toFixed(4)}
-                      </span>
-                    )}
-                  </div>
+
+                  {driverLocation && (
+                    <div className="rounded-2xl border border-[#fff4dc]/80 bg-[#fffdf9]/90 px-3.5 py-2 text-[11px] console-readout font-bold text-[#2e1808] shadow-lg backdrop-blur-md">
+                      {driverLocation.latitude.toFixed(4)}° N,{" "}
+                      {driverLocation.longitude.toFixed(4)}° E
+                    </div>
+                  )}
                 </div>
 
-                <div className="relative flex-1 min-h-[320px] sm:min-h-[460px] w-full">
+                {/* Map Instance */}
+                <div className="relative flex-1 w-full h-full min-h-[380px]">
                   <MapView
                     center={mapCenter}
                     zoom={13}
@@ -2662,505 +2582,319 @@ export default function DriverDashboard() {
                         : []
                     }
                   />
-                  {/* Floating Map Legend Overlay */}
-                  <div className="pointer-events-none absolute bottom-3.5 left-3.5 right-3.5 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-3 rounded-xl border border-[#fff4dc]/70 bg-[#2e1808]/90 px-3.5 py-2 text-[11px] font-semibold text-[#ffe9be] shadow-lg backdrop-blur-md">
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-sky-400" /> DR: You
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400" /> P: Pickup
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-rose-400" /> D: Drop
-                      </span>
-                    </div>
+                </div>
+
+                {/* Floating Bottom Map Legend HUD */}
+                <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#fff4dc]/70 bg-[#2e1808]/90 px-4 py-2 text-[11px] font-semibold text-[#ffe9be] shadow-lg backdrop-blur-md">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-sky-400" /> DR: Captain
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" /> P: Pickup
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-rose-400" /> D: Drop-Off
+                    </span>
                   </div>
                 </div>
-                <div className="pointer-events-none absolute inset-x-8 bottom-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
               </section>
             </div>
-
-            {/* Interactive Quick Shortcut Hub — Evenly Aligned Across Mobile, Tablet & Desktop */}
-            <section className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-              {[
-                {
-                  label: "Ride History",
-                  sub: "Past trips & history",
-                  icon: History,
-                  onClick: () => handleSelectTab("history"),
-                },
-                {
-                  label: "Earnings Wallet",
-                  sub: "Balance & instant payouts",
-                  icon: Wallet,
-                  onClick: () => setIsWalletOpen(true),
-                },
-                {
-                  label: "Bank & UPI",
-                  sub: "Update payout & passbook",
-                  icon: Building2,
-                  onClick: () => setIsBankDetailsOpen(true),
-                },
-                {
-                  label: "Vehicle Specs",
-                  sub: "Photos & RTO credentials",
-                  icon: Car,
-                  onClick: () => handleSelectTab("vehicle"),
-                },
-                {
-                  label: "Account Security",
-                  sub: "Active device sessions",
-                  icon: Settings,
-                  onClick: () => handleSelectTab("sessions"),
-                },
-              ].map((action, idx) => (
-                <motion.button
-                  key={action.label}
-                  type="button"
-                  whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={action.onClick}
-                  className={`group w-full flex items-center justify-between rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 text-left shadow-md transition-colors duration-200 hover:border-[#b8722c] hover:shadow-xl backdrop-blur-xl ${
-                    idx === 4 ? "sm:col-span-2 lg:col-span-1" : ""
-                  }`}
-                >
-                  <span className="flex items-center gap-3.5 min-w-0">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a] shadow-sm transition-transform group-hover:scale-105">
-                      <action.icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-bold text-[#2e1808]">
-                        {action.label}
-                      </span>
-                      <span className="block truncate text-[11px] font-medium text-[#7a4416]">
-                        {action.sub}
-                      </span>
-                    </span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-[#b8722c] transition-transform group-hover:translate-x-1" />
-                </motion.button>
-              ))}
-            </section>
           </div>
 
-          {/* TAB 2: RIDE HISTORY VIEW (Shows Full Shimmer Loader until API finishes — Never Flashes 0) */}
+          {/* -------------------------------------------------------------------
+              TAB 2: AUDITED TRIP LEDGER & RIDE HISTORY
+             ------------------------------------------------------------------- */}
           {activeTab === "history" && (
             <motion.div
               key="tab-history"
               variants={tabPanelVariants}
               initial="hidden"
               animate="visible"
-              className="w-full space-y-6"
+              className="w-full space-y-5"
             >
               {historyLoading ? (
                 <TabTelemetryLoader
-                  title="Synchronizing Driver Ride History…"
-                  subtitle="Fetching audited trip dispatches, route metrics, and settled payouts."
-                  showKpiSkeletons={true}
+                  title="Synchronizing Driver Trip Ledger…"
+                  subtitle="Fetching audited dispatches, route metrics, and settled payouts."
                   cardCount={3}
                 />
               ) : (
-                <>
-                  {/* History Metrics Banner — 2x2 Grid on Mobile */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                    <div className="rounded-[1.5rem] sm:rounded-[1.75rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-lg backdrop-blur-xl">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-                          Completed
-                        </span>
-                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl bg-emerald-950/15 text-emerald-800 border border-emerald-600/25">
-                          <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
-                        </div>
-                      </div>
-                      <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        {effectiveCompletedTrips}
-                      </p>
-                      <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">
-                        Verified dispatches
+                <div className="rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
+                  <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
+
+                  {/* Header & Filter Bar */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-[#7a4416]/15 pb-5 mb-6">
+                    <div>
+                      <h2 className="console-display text-xl sm:text-2xl font-black text-[#2e1808]">
+                        Audited Trip Ledger & Dispatch Log
+                      </h2>
+                      <p className="text-xs text-[#7a4416] mt-0.5">
+                        Complete record of passenger dispatches, route distances, and net 80%
+                        driver settlements.
                       </p>
                     </div>
-
-                    <div className="rounded-[1.5rem] sm:rounded-[1.75rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-lg backdrop-blur-xl">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-                          Net Earnings
-                        </span>
-                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl bg-amber-950/15 text-amber-800 border border-amber-600/25">
-                          <Wallet className="h-4 w-4 sm:h-5 sm:w-5" />
-                        </div>
-                      </div>
-                      <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        {formatFare(effectiveNetEarningsPaise)}
-                      </p>
-                      <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">Settled payouts</p>
-                    </div>
-
-                    <div className="rounded-[1.5rem] sm:rounded-[1.75rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-lg backdrop-blur-xl">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-                          Total Distance
-                        </span>
-                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl bg-[#3a1f0a] text-[#ffd88a]">
-                          <RouteIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                        </div>
-                      </div>
-                      <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        {formatDistance(effectiveTotalDistanceKm)}
-                      </p>
-                      <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">
-                        Distance navigated
-                      </p>
-                    </div>
-
-                    <div className="rounded-[1.5rem] sm:rounded-[1.75rem] border border-[#c58a3a]/35 bg-gradient-to-br from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-lg backdrop-blur-xl">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#7a4416]">
-                          Driver Rating
-                        </span>
-                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl bg-amber-500/20 text-amber-600 border border-amber-500/30">
-                          <Star className="h-4 w-4 sm:h-5 sm:w-5 fill-amber-500 text-amber-500" />
-                        </div>
-                      </div>
-                      <p className="mt-3 text-xl sm:text-2xl font-black text-[#2e1808] console-readout">
-                        {effectiveTotalRatings > 0 ? `${effectiveAverage.toFixed(1)} / 5.0` : "Not rated yet"}
-                      </p>
-                      <p className="mt-1 text-[11px] font-medium text-[#6b3a12]">
-                        {effectiveTotalRatings} {effectiveTotalRatings === 1 ? "review" : "reviews"}
-                      </p>
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                      {(["ALL", "COMPLETED", "CANCELLED"] as const).map((filter) => (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => setHistoryFilter(filter)}
+                          className={`flex-1 sm:flex-initial px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-2xs ${
+                            historyFilter === filter
+                              ? "bg-gradient-to-br from-[#3a1f0a] to-[#6b3a12] text-[#ffd88a]"
+                              : "border border-[#7a4416]/20 bg-[#fffaf0] text-[#6b3a12] hover:bg-[#fff4dc]"
+                          }`}
+                        >
+                          {filter === "ALL"
+                            ? `All (${rideHistory.length})`
+                            : filter === "COMPLETED"
+                              ? `Completed (${completedRides.length})`
+                              : "Cancelled"}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => void loadDriverHistory()}
+                        disabled={historyLoading}
+                        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#7a4416]/20 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all"
+                        title="Refresh Ledger"
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 text-[#b8722c] ${
+                            historyLoading ? "animate-spin" : ""
+                          }`}
+                        />
+                      </button>
                     </div>
                   </div>
 
-                  {/* Filter Tabs & Refresh Header */}
-                  <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
-                    <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-[#7a4416]/20 pb-5 mb-6">
-                      <div>
-                        <h2
-                          className="text-xl font-black text-[#2e1808]"
-                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                        >
-                          Driver Ride History & Dispatch Log
-                        </h2>
-                        <p className="text-xs text-[#7a4416] mt-1">
-                          Audited ledger of past passenger rides, trip routes, earnings, and rider
-                          reviews.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-                        {(["ALL", "COMPLETED", "CANCELLED"] as const).map((filter) => (
-                          <button
-                            key={filter}
-                            type="button"
-                            onClick={() => setHistoryFilter(filter)}
-                            className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-2xs ${
-                              historyFilter === filter
-                                ? "bg-gradient-to-br from-[#3a1f0a] to-[#7a4416] text-[#ffd88a] border border-[#c58a3a]/40"
-                                : "border border-[#7a4416]/20 bg-[#fffaf0] text-[#6b3a12] hover:bg-[#fff4dc]"
-                            }`}
-                          >
-                            {filter === "ALL"
-                              ? "All"
-                              : filter === "COMPLETED"
-                                ? "Completed"
-                                : "Cancelled"}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => void loadDriverHistory()}
-                          disabled={historyLoading}
-                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#7a4416]/20 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] active:scale-95 transition-all"
-                          title="Refresh ride history"
-                        >
-                          <RefreshCw
-                            className={`h-4 w-4 text-[#b8722c] ${
-                              historyLoading ? "animate-spin" : ""
-                            }`}
-                          />
-                        </button>
-                      </div>
+                  {/* Filtered List */}
+                  {rideHistory.filter(
+                    (r) => historyFilter === "ALL" || r.status === historyFilter
+                  ).length === 0 ? (
+                    <div className="py-14 text-center rounded-2xl border border-dashed border-[#7a4416]/25 bg-[#fffaf0]/60 p-6">
+                      <History className="mx-auto h-10 w-10 text-[#7a4416]/70" />
+                      <h3 className="console-display mt-3 text-base font-bold text-[#2e1808]">
+                        No matching dispatches found
+                      </h3>
+                      <p className="mt-1 text-xs text-[#7a4416] max-w-md mx-auto">
+                        Switch to the Radar tab and go online to receive live passenger ride
+                        requests.
+                      </p>
                     </div>
+                  ) : (
+                    <div className="space-y-3.5">
+                      {rideHistory
+                        .filter((r) => historyFilter === "ALL" || r.status === historyFilter)
+                        .map((ride) => {
+                          const isCompleted = ride.status === "COMPLETED";
+                          const isCancelled = ride.status === "CANCELLED";
+                          const earningPaise =
+                            ride.fare?.breakdown?.driverEarningPaise ??
+                            (ride.fare?.final
+                              ? Math.round(ride.fare.final * 0.8)
+                              : ride.fare?.estimated
+                                ? Math.round(ride.fare.estimated * 0.8)
+                                : 0);
+                          const tripDate = new Date(ride.createdAt).toLocaleString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
 
-                    {/* Ride History Cards List */}
-                    {rideHistory.filter((r) => historyFilter === "ALL" || r.status === historyFilter)
-                      .length === 0 ? (
-                      <div className="py-14 text-center rounded-2xl border border-dashed border-[#7a4416]/25 bg-[#fffaf0]/60 p-6 sm:p-8">
-                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3a1f0a]/10 text-[#7a4416]">
-                          <History className="h-7 w-7" />
-                        </div>
-                        <h3
-                          className="mt-4 text-base font-bold text-[#2e1808]"
-                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                        >
-                          No rides recorded
-                        </h3>
-                        <p className="mt-1 text-xs text-[#7a4416] max-w-md mx-auto">
-                          {historyFilter === "ALL"
-                            ? "You haven't completed any dispatch rides yet. Switch to Live Radar & Console and toggle to Online to begin receiving requests."
-                            : `No ${historyFilter.toLowerCase()} rides found in your history log.`}
-                        </p>
-                        <Button
-                          onClick={() => handleSelectTab("console")}
-                          className="mt-5 rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffe9be] text-xs font-semibold px-5 shadow-md"
-                        >
-                          Go to Live Console
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {rideHistory
-                          .filter((r) => historyFilter === "ALL" || r.status === historyFilter)
-                          .map((ride) => {
-                            const isCompleted = ride.status === "COMPLETED";
-                            const isCancelled = ride.status === "CANCELLED";
-                            const earningPaise =
-                              ride.fare?.breakdown?.driverEarningPaise ??
-                              (ride.fare?.final
-                                ? Math.round(ride.fare.final * 0.8)
-                                : ride.fare?.estimated
-                                  ? Math.round(ride.fare.estimated * 0.8)
-                                  : 0);
-                            const distanceDisplay = formatDistance(ride.distance);
-                            const durationDisplay = formatDuration(ride.duration);
-                            const tripDate = new Date(ride.createdAt).toLocaleString("en-IN", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            });
+                          return (
+                            <motion.div
+                              key={ride.id}
+                              variants={cardAppearVariants}
+                              className="relative overflow-hidden rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-4 sm:p-5 shadow-xs hover:border-[#b8722c]/60 transition-all"
+                            >
+                              {/* Left Status Spine */}
+                              <div
+                                className={`absolute left-0 top-0 bottom-0 w-1.5 ${
+                                  isCompleted
+                                    ? "bg-emerald-600"
+                                    : isCancelled
+                                      ? "bg-rose-600"
+                                      : "bg-amber-500"
+                                }`}
+                              />
 
-                            return (
-                              <motion.div
-                                key={ride.id}
-                                variants={cardAppearVariants}
-                                className="rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-4 sm:p-5 shadow-sm hover:border-[#b8722c]/60 hover:shadow-md transition-all"
-                              >
-                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#7a4416]/15 pb-3 mb-4">
-                                  <div className="flex items-center gap-2">
-                                    <span className="console-readout text-xs font-bold text-[#3a1f0a] bg-[#3a1f0a]/10 px-2.5 py-0.5 rounded-md">
+                              <div className="pl-2 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="space-y-2.5 min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="console-readout text-xs font-bold text-[#3a1f0a] bg-[#3a1f0a]/10 px-2 py-0.5 rounded-md">
                                       #{ride.id.slice(0, 8)}
                                     </span>
-                                    <span className="text-xs font-medium text-[#6b3a12]">
+                                    <span
+                                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                        isCompleted
+                                          ? "bg-emerald-950/15 text-emerald-900 border border-emerald-500/30"
+                                          : isCancelled
+                                            ? "bg-rose-950/15 text-rose-900 border border-rose-500/30"
+                                            : "bg-amber-950/15 text-amber-900 border border-amber-500/30"
+                                      }`}
+                                    >
+                                      {ride.status}
+                                    </span>
+                                    <span className="text-xs font-medium text-[#7a4416]">
                                       • {tripDate}
                                     </span>
                                   </div>
-                                  <span
-                                    className={`inline-flex items-center gap-1 rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                                      isCompleted
-                                        ? "bg-emerald-950/15 text-emerald-900 border border-emerald-500/30"
-                                        : isCancelled
-                                          ? "bg-rose-950/15 text-rose-900 border border-rose-500/30"
-                                          : "bg-amber-950/15 text-amber-900 border border-amber-500/30"
-                                    }`}
-                                  >
-                                    {ride.status}
-                                  </span>
-                                </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                  {/* Route details */}
-                                  <div className="md:col-span-2 space-y-3">
-                                    <div className="flex items-start gap-3">
-                                      <div className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-600 ring-4 ring-emerald-500/15 shrink-0" />
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                                    <div className="flex items-start gap-2 min-w-0">
+                                      <span className="mt-1 h-2 w-2 rounded-full bg-emerald-600 shrink-0" />
                                       <div className="min-w-0">
-                                        <p className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">
-                                          Pickup Point
+                                        <p className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
+                                          Pickup
                                         </p>
-                                        <p className="text-xs font-semibold text-[#2e1808] line-clamp-1">
+                                        <p className="text-xs font-semibold text-[#2e1808] truncate">
                                           {ride.pickup.address}
                                         </p>
                                       </div>
                                     </div>
-                                    <div className="flex items-start gap-3">
-                                      <div className="mt-1 h-2.5 w-2.5 rounded-full bg-rose-600 ring-4 ring-rose-500/15 shrink-0" />
+                                    <div className="flex items-start gap-2 min-w-0">
+                                      <span className="mt-1 h-2 w-2 rounded-full bg-rose-600 shrink-0" />
                                       <div className="min-w-0">
-                                        <p className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">
-                                          Destination Drop-off
+                                        <p className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
+                                          Destination
                                         </p>
-                                        <p className="text-xs font-semibold text-[#2e1808] line-clamp-1">
+                                        <p className="text-xs font-semibold text-[#2e1808] truncate">
                                           {ride.destination.address}
                                         </p>
                                       </div>
                                     </div>
                                   </div>
-
-                                  {/* Trip Metrics & Earnings */}
-                                  <div className="flex md:flex-col justify-between items-center md:items-end border-t md:border-t-0 md:border-l border-[#7a4416]/15 pt-3 md:pt-0 md:pl-4">
-                                    <div className="text-left md:text-right">
-                                      <p className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">
-                                        Driver Net Earning
-                                      </p>
-                                      <p className="text-lg font-black text-emerald-900 console-readout">
-                                        {formatFare(earningPaise)}
-                                      </p>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-xs text-[#7a4416] console-readout font-semibold">
-                                      <span>{distanceDisplay}</span>
-                                      <span>•</span>
-                                      <span>{durationDisplay}</span>
-                                    </div>
-                                  </div>
                                 </div>
 
-                                {/* Rider Feedback if present */}
-                                {ride.ratings && ride.ratings.length > 0 && (
-                                  <div className="mt-3.5 pt-3 border-t border-[#7a4416]/10 flex items-center gap-3 bg-[#fff4dc]/70 rounded-xl p-2.5">
-                                    <div className="flex items-center gap-1 text-amber-500 shrink-0">
-                                      <Star className="h-4 w-4 fill-amber-500" />
-                                      <span className="text-xs font-black console-readout">
-                                        {ride.ratings[0].score}.0
-                                      </span>
-                                    </div>
-                                    {ride.ratings[0].feedback && (
-                                      <p className="text-xs italic text-[#3a1f0a] truncate">
-                                        "{ride.ratings[0].feedback}"
-                                      </p>
-                                    )}
+                                {/* Right Payout & Telemetry Box */}
+                                <div className="flex md:flex-col items-center md:items-end justify-between gap-2 border-t md:border-t-0 md:border-l border-[#7a4416]/15 pt-3 md:pt-0 md:pl-5 shrink-0">
+                                  <div className="text-left md:text-right">
+                                    <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#7a4416]">
+                                      Net Payout
+                                    </span>
+                                    <p className="text-lg font-black text-emerald-900 console-readout">
+                                      {formatFare(earningPaise)}
+                                    </p>
                                   </div>
-                                )}
-                              </motion.div>
-                            );
-                          })}
-                      </div>
-                    )}
-                  </div>
-                </>
+                                  <div className="flex items-center gap-1.5 text-[11px] console-readout font-semibold text-[#6b3a12]">
+                                    <span>{formatDistance(ride.distance)}</span>
+                                    <span>•</span>
+                                    <span>{formatDuration(ride.duration)}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {ride.ratings && ride.ratings.length > 0 && (
+                                <div className="mt-3 ml-2 pt-2.5 border-t border-[#7a4416]/10 flex items-center gap-2.5 text-xs">
+                                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 font-black text-amber-900 console-readout">
+                                    <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                                    {ride.ratings[0].score}.0
+                                  </span>
+                                  {ride.ratings[0].feedback && (
+                                    <span className="italic text-[#3a1f0a] truncate">
+                                      "{ride.ratings[0].feedback}"
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
               )}
             </motion.div>
           )}
 
-          {/* TAB 3: RATINGS & REVIEWS VIEW */}
+          {/* -------------------------------------------------------------------
+              TAB 3: RATINGS & PASSENGER FEEDBACK BENTO
+             ------------------------------------------------------------------- */}
           {activeTab === "ratings" && (
             <motion.div
               key="tab-ratings"
               variants={tabPanelVariants}
               initial="hidden"
               animate="visible"
-              className="w-full space-y-6"
+              className="w-full space-y-5"
             >
               {ratingsLoading && !hasLoadedRatings ? (
                 <TabTelemetryLoader
-                  title="Synchronizing Driver Ratings & Reviews…"
-                  subtitle="Retrieving verified passenger telemetry, star ratings, and ride feedback."
-                  showKpiSkeletons={true}
+                  title="Synchronizing Captain Ratings…"
+                  subtitle="Retrieving verified passenger star ratings and compliments."
                   cardCount={3}
                 />
               ) : (
                 <>
-                  {/* Rating Overview Card */}
-                  <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-10 shadow-xl backdrop-blur-2xl relative">
-                    <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-
-                    {/* Header with Refresh button */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 mb-6 border-b border-[#7a4416]/20">
+                  {/* Top 12-Col Bento: Score Medallion (4 Cols) + Distribution (8 Cols) */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    <div className="lg:col-span-4 rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-br from-[#3a1f0a] via-[#59300e] to-[#241205] p-6 sm:p-8 text-[#ffe9be] shadow-xl flex flex-col justify-between">
                       <div>
-                        <h2
-                          className="text-xl sm:text-2xl font-black text-[#2e1808]"
-                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                        >
-                          Performance, Ratings & Feedback
-                        </h2>
-                        <p className="text-xs sm:text-sm text-[#7a4416] mt-0.5">
-                          Real passenger feedback and satisfaction metrics for your driver account.
-                        </p>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#ffd88a]/30 bg-white/10 px-3 py-1 text-[11px] font-bold text-[#ffd88a]">
+                          <Award className="h-3.5 w-3.5" />
+                          {effectiveTotalRatings > 0
+                            ? effectiveAverage >= 4.8
+                              ? "Top Tier Fleet Captain"
+                              : "Verified Captain"
+                            : "Newly Onboarded"}
+                        </span>
+                        <div className="mt-5 flex items-baseline gap-2.5">
+                          <span className="console-display text-5xl sm:text-6xl font-black text-[#ffd88a] console-readout">
+                            {effectiveTotalRatings > 0 ? effectiveAverage.toFixed(2) : "—"}
+                          </span>
+                          <span className="text-lg font-bold text-[#ffe9be]/70">/ 5.0</span>
+                        </div>
+                        <div className="mt-3 flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Star
+                              key={star}
+                              className={`h-5 w-5 ${
+                                effectiveTotalRatings > 0 && star <= Math.round(effectiveAverage)
+                                  ? "fill-amber-400 text-amber-400"
+                                  : "text-white/25"
+                              }`}
+                            />
+                          ))}
+                        </div>
                       </div>
-                      <Button
-                        onClick={() => void loadDriverRatings()}
-                        disabled={ratingsLoading}
-                        variant="outline"
-                        size="sm"
-                        className="h-10 border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] text-xs font-bold rounded-xl shrink-0"
-                      >
-                        <RefreshCw
-                          className={`mr-1.5 h-3.5 w-3.5 text-[#b8722c] ${
-                            ratingsLoading ? "animate-spin" : ""
-                          }`}
-                        />
-                        Refresh
-                      </Button>
+                      <p className="mt-6 text-xs text-[#ffe9be]/80 leading-relaxed">
+                        Calculated from {effectiveTotalRatings} audited passenger{" "}
+                        {effectiveTotalRatings === 1 ? "review" : "reviews"} across{" "}
+                        {effectiveCompletedTrips} completed trips.
+                      </p>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
-                      {/* Big Score Box */}
-                      <div className="text-center lg:text-left border-b lg:border-b-0 lg:border-r border-[#7a4416]/20 pb-6 lg:pb-0 lg:pr-8">
-                        {effectiveTotalRatings > 0 ? (
-                          <>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-950 shadow-2xs mb-3">
-                              <Award className="h-3.5 w-3.5 text-amber-600" />
-                              {effectiveAverage >= 4.8
-                                ? "Top Rated Captain"
-                                : effectiveAverage >= 4.0
-                                ? "High Performer"
-                                : "Active Captain"}
-                            </span>
-                            <div className="flex items-baseline justify-center lg:justify-start gap-3">
-                              <span
-                                className="text-5xl sm:text-6xl font-black text-[#2e1808] console-readout tracking-tight"
-                                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                              >
-                                {effectiveAverage.toFixed(2)}
-                              </span>
-                              <span className="text-xl font-bold text-[#7a4416]">/ 5.0</span>
-                            </div>
-                            <div className="flex items-center justify-center lg:justify-start gap-1.5 mt-3">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star
-                                  key={star}
-                                  className={`h-5 w-5 sm:h-6 sm:w-6 drop-shadow-xs ${
-                                    star <= Math.round(effectiveAverage)
-                                      ? "fill-amber-500 text-amber-500"
-                                      : "fill-amber-500/20 text-amber-500/30"
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <p className="mt-2 text-xs font-semibold text-[#6b3a12]">
-                              Based on {effectiveTotalRatings} verified rider {effectiveTotalRatings === 1 ? "review" : "reviews"}
-                            </p>
-                            <p className="mt-1 text-[11px] text-[#7a4416]">
-                              {effectiveAverage >= 4.8
-                                ? "Exceptional satisfaction score across completed trips"
-                                : "Genuine feedback calculated directly from completed trips"}
-                            </p>
-                          </>
-                        ) : (
-                          <>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-950 shadow-2xs mb-3">
-                              <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                              Newly Onboarded
-                            </span>
-                            <div className="flex items-baseline justify-center lg:justify-start gap-3">
-                              <span
-                                className="text-5xl sm:text-6xl font-black text-[#2e1808] console-readout tracking-tight"
-                                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                              >
-                                —
-                              </span>
-                              <span className="text-xl font-bold text-[#7a4416]">/ 5.0</span>
-                            </div>
-                            <div className="flex items-center justify-center lg:justify-start gap-1.5 mt-3">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star
-                                  key={star}
-                                  className="h-5 w-5 sm:h-6 sm:w-6 fill-amber-500/20 text-amber-500/30 drop-shadow-xs"
-                                />
-                              ))}
-                            </div>
-                            <p className="mt-2 text-xs font-semibold text-[#6b3a12]">
-                              No verified rider reviews submitted yet
-                            </p>
-                            <p className="mt-1 text-[11px] text-[#7a4416]">
-                              Accept and complete trip requests to build your genuine captain rating
-                            </p>
-                          </>
-                        )}
+                    <div className="lg:col-span-8 rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-xl backdrop-blur-2xl flex flex-col justify-between">
+                      <div className="flex items-center justify-between border-b border-[#7a4416]/15 pb-4 mb-4">
+                        <div>
+                          <h3 className="console-display text-lg font-black text-[#2e1808]">
+                            Star Rating Distribution
+                          </h3>
+                          <p className="text-xs text-[#7a4416]">
+                            Breakdown of passenger satisfaction scores
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => void loadDriverRatings()}
+                          disabled={ratingsLoading}
+                          variant="outline"
+                          size="sm"
+                          className="h-9 border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] text-xs font-bold rounded-xl"
+                        >
+                          <RefreshCw
+                            className={`mr-1.5 h-3.5 w-3.5 text-[#b8722c] ${
+                              ratingsLoading ? "animate-spin" : ""
+                            }`}
+                          />
+                          Sync
+                        </Button>
                       </div>
 
-                      {/* Star Distribution Progress Bars */}
-                      <div className="lg:col-span-2 space-y-2.5">
-                        <h3 className="text-sm font-bold text-[#2e1808] mb-3">Rating Distribution</h3>
+                      <div className="space-y-3 my-auto">
                         {[5, 4, 3, 2, 1].map((stars) => {
                           const item = effectiveDistribution[stars] || { count: 0, pct: 0 };
                           return (
@@ -3172,11 +2906,11 @@ export default function DriverDashboard() {
                                 <motion.div
                                   initial={{ width: 0 }}
                                   animate={{ width: `${item.pct}%` }}
-                                  transition={{ duration: 0.7, ease: "easeOut" }}
-                                  className="h-full bg-gradient-to-r from-[#b8722c] to-[#e6a84f] rounded-full"
+                                  transition={{ duration: 0.6, ease: "easeOut" }}
+                                  className="h-full bg-gradient-to-r from-[#3a1f0a] via-[#b8722c] to-amber-500 rounded-full"
                                 />
                               </div>
-                              <span className="w-16 text-right console-readout font-bold text-[#6b3a12]">
+                              <span className="w-20 text-right console-readout font-bold text-[#6b3a12]">
                                 {item.count} ({item.pct}%)
                               </span>
                             </div>
@@ -3186,140 +2920,75 @@ export default function DriverDashboard() {
                     </div>
                   </div>
 
-                  {/* Recognition Badges — Genuine stats */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
-                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-emerald-800 bg-emerald-950/15 mb-3">
-                        <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />
-                      </div>
-                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Trip Completion</h4>
-                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
-                        {effectiveAcceptanceRate}% completion rate ({effectiveCompletedTrips} trips)
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
-                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-purple-800 bg-purple-950/15 mb-3">
-                        <RouteIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                      </div>
-                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Distance Logged</h4>
-                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
-                        {effectiveTotalDistanceKm.toFixed(1)} km navigated
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
-                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-amber-800 bg-amber-950/15 mb-3">
-                        <Star className="h-4 w-4 sm:h-5 sm:w-5 fill-amber-500 text-amber-500" />
-                      </div>
-                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Passenger Feedback</h4>
-                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
-                        {effectiveTotalRatings > 0
-                          ? `${effectiveAverage.toFixed(1)} avg across ${effectiveTotalRatings} reviews`
-                          : "Awaiting first completed trip rating"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-[#c58a3a]/35 bg-gradient-to-b from-[#fffdf9]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-4 sm:p-5 shadow-md">
-                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-blue-800 bg-blue-950/15 mb-3">
-                        <Award className="h-4 w-4 sm:h-5 sm:w-5" />
-                      </div>
-                      <h4 className="text-xs sm:text-sm font-bold text-[#2e1808]">Platform Standing</h4>
-                      <p className="mt-1 text-[11px] sm:text-xs text-[#7a4416]">
-                        {profile?.isVerified ? "Verified & Certified Captain" : "Documents in Review"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Verified Passenger Testimonials */}
-                  <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
-                    <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                    <div className="flex items-center justify-between border-b border-[#7a4416]/20 pb-4 mb-6">
-                      <div className="flex items-center gap-3">
+                  {/* Verified Rider Compliments List */}
+                  <div className="rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl">
+                    <div className="flex items-center justify-between border-b border-[#7a4416]/15 pb-4 mb-5">
+                      <div className="flex items-center gap-2.5">
                         <MessageSquare className="h-5 w-5 text-[#b8722c]" />
-                        <h3
-                          className="text-lg font-bold text-[#2e1808]"
-                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                        >
-                          Verified Rider Feedback & Compliments
+                        <h3 className="console-display text-lg font-black text-[#2e1808]">
+                          Passenger Compliments & Notes
                         </h3>
                       </div>
-                      <span className="rounded-full bg-[#3a1f0a]/10 px-3 py-1 text-xs font-bold text-[#6b3a12] console-readout">
-                        {effectiveReviews.length} {effectiveReviews.length === 1 ? "Review" : "Reviews"}
+                      <span className="rounded-full bg-[#3a1f0a]/10 px-3 py-1 text-xs font-bold text-[#3a1f0a] console-readout">
+                        {effectiveReviews.length} Entries
                       </span>
                     </div>
 
                     {effectiveReviews.length === 0 ? (
-                      <div className="py-12 px-4 text-center rounded-2xl border border-dashed border-[#7a4416]/25 bg-[#fffdf9]/60">
-                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3a1f0a]/10 text-[#b8722c] mb-4">
-                          <MessageSquare className="h-7 w-7" />
-                        </div>
-                        <h4
-                          className="text-base font-bold text-[#2e1808]"
-                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                        >
-                          No Rider Reviews Yet
-                        </h4>
-                        <p className="text-xs text-[#7a4416] max-w-md mx-auto mt-1 leading-relaxed">
-                          Once passengers rate your completed trips and leave comments, their genuine feedback and ratings will appear here in real-time.
+                      <div className="py-12 text-center rounded-2xl border border-dashed border-[#7a4416]/25 bg-[#fffdf9]/60">
+                        <Sparkles className="mx-auto h-8 w-8 text-[#b8722c] mb-2" />
+                        <p className="text-sm font-bold text-[#2e1808]">No written reviews yet</p>
+                        <p className="text-xs text-[#7a4416] mt-1">
+                          Passenger compliments will appear here automatically after completed
+                          trips.
                         </p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {effectiveReviews.map((review, idx) => {
-                          const dateStr = review.createdAt
-                            ? new Date(review.createdAt).toLocaleDateString(undefined, {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric",
-                              })
-                            : "Recent";
-                          return (
-                            <div
-                              key={review.id || idx}
-                              className="rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-5 shadow-sm flex flex-col justify-between"
-                            >
-                              <div>
-                                <div className="flex items-center justify-between gap-2 mb-2">
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#3a1f0a] text-[#ffd88a] font-bold text-xs">
-                                      {review.passengerLabel?.[0] || "P"}
-                                    </div>
-                                    <div>
-                                      <p className="text-xs font-bold text-[#2e1808]">
-                                        {review.passengerLabel || "Verified Passenger"}
-                                      </p>
-                                      <p className="text-[10px] text-[#7a4416]">{dateStr}</p>
-                                    </div>
+                        {effectiveReviews.map((review, idx) => (
+                          <div
+                            key={review.id || idx}
+                            className="rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-5 shadow-xs flex flex-col justify-between"
+                          >
+                            <div>
+                              <div className="flex items-center justify-between gap-2 mb-2.5">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] font-bold text-xs">
+                                    {review.passengerLabel?.[0] || "P"}
                                   </div>
-                                  <div className="flex items-center gap-1 text-amber-500 console-readout text-xs font-bold">
-                                    <Star className="h-3.5 w-3.5 fill-amber-500" />
-                                    <span>{review.score.toFixed(1)}</span>
+                                  <div>
+                                    <p className="text-xs font-bold text-[#2e1808]">
+                                      {review.passengerLabel || "Verified Passenger"}
+                                    </p>
+                                    <p className="text-[10px] text-[#7a4416]">
+                                      {review.createdAt
+                                        ? new Date(review.createdAt).toLocaleDateString("en-IN", {
+                                            day: "numeric",
+                                            month: "short",
+                                            year: "numeric",
+                                          })
+                                        : "Recent Trip"}
+                                    </p>
                                   </div>
                                 </div>
-                                {review.comment ? (
-                                  <p className="text-xs text-[#3a1f0a] italic mt-2 leading-relaxed">
-                                    "{review.comment}"
-                                  </p>
-                                ) : (
-                                  <p className="text-xs text-[#7a4416]/70 italic mt-2">
-                                    Passenger submitted a {review.score}-star rating.
-                                  </p>
-                                )}
-                              </div>
-                              <div className="mt-4 pt-3 border-t border-[#7a4416]/10 flex flex-wrap items-center justify-between gap-2">
-                                <span className="rounded-full bg-emerald-950/15 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-900">
-                                  ✓ {review.score >= 5 ? "Top Rating" : review.score >= 4 ? "Great Experience" : "Trip Review"}
+                                <span className="inline-flex items-center gap-1 rounded-lg bg-amber-500/15 px-2.5 py-1 text-xs font-black text-amber-900 console-readout">
+                                  <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                                  {review.score.toFixed(1)}
                                 </span>
-                                {review.destinationAddress && (
-                                  <span className="text-[10px] text-[#7a4416] truncate max-w-[180px]">
-                                    to {review.destinationAddress}
-                                  </span>
-                                )}
                               </div>
+                              <p className="text-xs text-[#3a1f0a] italic leading-relaxed mt-2">
+                                {review.comment
+                                  ? `"${review.comment}"`
+                                  : `Rated ${review.score} stars for a smooth journey.`}
+                              </p>
                             </div>
-                          );
-                        })}
+                            {review.destinationAddress && (
+                              <p className="mt-3 pt-2.5 border-t border-[#7a4416]/10 text-[10px] font-semibold text-[#7a4416] truncate">
+                                Drop-off: {review.destinationAddress}
+                              </p>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -3328,459 +2997,159 @@ export default function DriverDashboard() {
             </motion.div>
           )}
 
-          {/* TAB 4: ACTIVE SESSIONS & SECURITY VIEW (Shows Shimmer Loader until API finishes) */}
-          {activeTab === "sessions" && (
-            <motion.div
-              key="tab-sessions"
-              variants={tabPanelVariants}
-              initial="hidden"
-              animate="visible"
-              className="w-full space-y-6"
-            >
-              {sessionsLoading ? (
-                <TabTelemetryLoader
-                  title="Verifying Active Device Sessions…"
-                  subtitle="Inspecting RFC 6819 refresh tokens and authorized console endpoints."
-                  showKpiSkeletons={false}
-                  cardCount={2}
-                />
-              ) : (
-                <div className="rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
-                  <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-[#7a4416]/20 pb-5 mb-6">
-                    <div className="flex items-center gap-3.5">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] to-[#7a4416] text-[#ffd88a] shadow-md">
-                        <ShieldCheck className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <h2
-                          className="text-xl font-black text-[#2e1808]"
-                          style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                        >
-                          Active Devices & Console Sessions
-                        </h2>
-                        <p className="text-xs text-[#7a4416] mt-0.5">
-                          Authorized browser and mobile sessions currently signed in to your Driver
-                          Console.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <Button
-                        onClick={() => void loadDriverSessions()}
-                        disabled={sessionsLoading}
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 sm:flex-initial h-10 border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] hover:bg-[#fff4dc] text-xs font-bold rounded-xl"
-                      >
-                        <RefreshCw
-                          className={`mr-1.5 h-3.5 w-3.5 text-[#b8722c] ${
-                            sessionsLoading ? "animate-spin" : ""
-                          }`}
-                        />
-                        Refresh
-                      </Button>
-                      <Button
-                        onClick={() => void handleRevokeAllOtherSessions()}
-                        disabled={isRevokingAllSessions || sessions.length <= 1}
-                        className="flex-1 sm:flex-initial h-10 rounded-xl bg-gradient-to-br from-rose-900 via-rose-800 to-rose-950 text-rose-100 text-xs font-bold px-4 shadow-md hover:opacity-90"
-                      >
-                        {isRevokingAllSessions ? (
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        Log Out Others
-                      </Button>
-                    </div>
-                  </div>
-
-                  {sessionSuccessMsg && (
-                    <div className="mb-6 flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-950/15 p-3.5 text-xs font-semibold text-emerald-950 shadow-xs">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                        <span>{sessionSuccessMsg}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSessionSuccessMsg(null)}
-                        className="text-emerald-800 hover:text-emerald-950"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Sessions Grid */}
-                  {sessions.length === 0 ? (
-                    <div className="py-12 text-center rounded-2xl border border-dashed border-[#7a4416]/25 bg-[#fffaf0]/60 p-6">
-                      <Laptop className="mx-auto h-10 w-10 text-[#7a4416]" />
-                      <p className="mt-3 text-sm font-bold text-[#2e1808]">
-                        No other active sessions detected
-                      </p>
-                      <p className="text-xs text-[#7a4416] mt-1">
-                        Your current browser is the only authorized endpoint.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {sessions.map((session) => {
-                        const isCurrent = session.isCurrent;
-                        const DeviceIcon =
-                          session.deviceType === "Mobile"
-                            ? Smartphone
-                            : session.deviceType === "Tablet"
-                              ? Tablet
-                              : Laptop;
-                        const isRevoking = revokingSessionId === session.id;
-
-                        return (
-                          <div
-                            key={session.id}
-                            className={`rounded-2xl border p-5 shadow-xs transition-all ${
-                              isCurrent
-                                ? "border-emerald-600/40 bg-emerald-950/10 ring-1 ring-emerald-500/20"
-                                : "border-[#7a4416]/20 bg-[#fffdf9]/90"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div
-                                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-                                    isCurrent
-                                      ? "bg-emerald-900 text-[#ffd88a]"
-                                      : "bg-[#3a1f0a] text-[#ffd88a]"
-                                  }`}
-                                >
-                                  <DeviceIcon className="h-5 w-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <h4 className="text-sm font-bold text-[#2e1808] truncate">
-                                      {session.browser || "Browser"} on {session.os || "Device"}
-                                    </h4>
-                                    {isCurrent && (
-                                      <span className="rounded-full bg-emerald-950/20 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
-                                        Current Device
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-[#7a4416] console-readout mt-0.5">
-                                    IP: {session.ipAddress || "127.0.0.1"}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {!isCurrent && (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleRevokeSession(session.id)}
-                                  disabled={isRevoking}
-                                  className="rounded-xl border border-rose-500/30 bg-rose-950/15 p-2 text-rose-800 hover:bg-rose-950/30 active:scale-95 transition-all shrink-0"
-                                  title="Revoke session"
-                                >
-                                  {isRevoking ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="mt-4 pt-3 border-t border-[#7a4416]/10 flex items-center justify-between text-[11px] text-[#6b3a12]">
-                              <span>
-                                Active:{" "}
-                                {session.lastActiveAt
-                                  ? new Date(session.lastActiveAt).toLocaleTimeString()
-                                  : "Just now"}
-                              </span>
-                              <span>
-                                Signed in: {new Date(session.createdAt).toLocaleDateString()}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* TAB 5: FLEET & VEHICLE CREDENTIALS */}
+          {/* -------------------------------------------------------------------
+              TAB 4: FLEET SPECS, 5-ANGLE GALLERY & RTO COMPLIANCE
+             ------------------------------------------------------------------- */}
           {activeTab === "vehicle" && (
             <motion.div
               key="tab-vehicle"
               variants={tabPanelVariants}
               initial="hidden"
               animate="visible"
-              className="space-y-6"
+              className="space-y-5"
             >
-              {/* Extended Vehicle Specifications */}
-              <section className="w-full rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
-                <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#7a4416]/20 pb-4 mb-6">
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
-                        <VehicleIcon className="h-4 w-4" />
-                      </span>
-                      <h2
-                        className="text-lg font-black text-[#2e1808]"
-                        style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                      >
-                        Vehicle Specifications & Fleet Identity
+              {/* Vehicle Specs + 5-Angle Inspection Studio */}
+              <section className="rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#7a4416]/15 pb-5 mb-6">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#3a1f0a] text-[#ffd88a] shadow-md">
+                      <VehicleIcon className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h2 className="console-display text-xl font-black text-[#2e1808]">
+                        {profile?.vehicle
+                          ? `${profile.vehicle.brand} ${profile.vehicle.model}`
+                          : "Registered Fleet Vehicle"}
                       </h2>
-                    </div>
-                    <p className="text-xs text-[#7a4416] mt-1">
-                      Verified vehicle metadata registered for commercial dispatch
-                    </p>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-full border border-emerald-600/30 bg-emerald-950/15 px-3 py-1 text-xs font-bold text-emerald-900 shadow-2xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
-                    RTO & Fleet Approved
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-                  {[
-                    {
-                      label: "Category",
-                      value: VEHICLE_TYPE_LABEL[profile?.vehicle?.type || "CAR"] || "Car",
-                      icon: VehicleIcon,
-                      sub: "Commercial Class",
-                      mono: false,
-                    },
-                    {
-                      label: "Make & Model",
-                      value: profile?.vehicle
-                        ? `${profile.vehicle.brand} ${profile.vehicle.model}`
-                        : "Not assigned",
-                      icon: Car,
-                      sub: "Fleet Specification",
-                      mono: false,
-                    },
-                    {
-                      label: "Registration No.",
-                      value: profile?.vehicle?.registrationNumber || "Not assigned",
-                      icon: FileText,
-                      sub: "State RTO Registered",
-                      mono: true,
-                    },
-                    {
-                      label: "Vehicle Color",
-                      value: profile?.vehicle?.color || "Not assigned",
-                      icon: Palette,
-                      sub: "Exterior Finish",
-                      mono: false,
-                    },
-                    {
-                      label: "Model Year",
-                      value: profile?.vehicle?.registrationYear
-                        ? String(profile.vehicle.registrationYear)
-                        : "Not assigned",
-                      icon: Calendar,
-                      sub: "Manufacturing Year",
-                      mono: false,
-                    },
-                  ].map((spec, idx) => (
-                    <div
-                      key={spec.label}
-                      className={`rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-4 shadow-xs hover:border-[#b8722c]/60 transition-all ${
-                        idx === 4 ? "col-span-2 sm:col-span-1" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-between text-[#7a4416] mb-2">
-                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider">
-                          {spec.label}
-                        </span>
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#3a1f0a] text-[#ffd88a]">
-                          <spec.icon className="h-3.5 w-3.5" />
-                        </span>
-                      </div>
-                      <p
-                        className={`text-sm sm:text-base font-bold text-[#2e1808] truncate ${
-                          spec.mono ? "console-readout tracking-tight" : ""
-                        }`}
-                        style={{
-                          fontFamily: spec.mono ? undefined : "'Fraunces', Georgia, serif",
-                        }}
-                      >
-                        {spec.value}
+                      <p className="text-xs text-[#7a4416]">
+                        {VEHICLE_TYPE_LABEL[vehicleType]} Class •{" "}
+                        {profile?.vehicle?.color || "Standard Finish"} • Mfg{" "}
+                        {profile?.vehicle?.registrationYear || "Verified"}
                       </p>
-                      <p className="text-[10px] text-[#7a4416]/80 mt-1">{spec.sub}</p>
                     </div>
-                  ))}
-                </div>
-              </section>
-
-              {/* Vehicle 5-Perspective Photo Gallery */}
-              <section className="w-full rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative">
-                <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#7a4416]/20 pb-4 mb-6">
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
-                        <Camera className="h-4 w-4" />
-                      </span>
-                      <h2
-                        className="text-lg font-black text-[#2e1808]"
-                        style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                      >
-                        Vehicle Inspection Gallery (5 Angles)
-                      </h2>
-                    </div>
-                    <p className="text-xs text-[#7a4416] mt-1">
-                      Visual safety inspection photographs registered with fleet operations
-                    </p>
                   </div>
-                  <span className="text-xs font-semibold text-[#7a4416]">
-                    Tap any view to inspect high-resolution
+
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <span className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#3a1f0a] bg-[#ffd88a] px-3 py-1 console-readout text-xs font-black tracking-wider text-[#2e1808] shadow-xs">
+                      <span className="text-[9px] text-[#7a4416]">IND</span>
+                      {profile?.vehicle?.registrationNumber || "N/A"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 5-Angle Inspection Photo Grid */}
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#7a4416] flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-[#b8722c]" /> 5-Angle Safety Inspection
+                    Gallery
+                  </span>
+                  <span className="text-[11px] font-medium text-[#7a4416]">
+                    Tap any angle to enlarge
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
                   {[
                     {
                       key: "front",
                       label: "Front Elevation",
                       url: profile?.vehicleImages?.front,
-                      desc: "Full front grill & headlights",
                     },
                     {
                       key: "back",
-                      label: "Rear & Number Plate",
+                      label: "Rear & Plate",
                       url: profile?.vehicleImages?.back,
-                      desc: "Rear bumper & license plate",
                     },
                     {
                       key: "left",
-                      label: "Left Flank",
+                      label: "Left Profile",
                       url: profile?.vehicleImages?.left,
-                      desc: "Full driver-side profile",
                     },
                     {
                       key: "right",
-                      label: "Right Flank",
+                      label: "Right Profile",
                       url: profile?.vehicleImages?.right,
-                      desc: "Full passenger-side profile",
                     },
                     {
                       key: "interior",
-                      label: "Interior Cabin",
+                      label: "Cabin Interior",
                       url: profile?.vehicleImages?.interior,
-                      desc: "Dashboard, seats & cockpit",
                     },
                   ].map((imgItem, idx) => (
                     <div
                       key={imgItem.key}
-                      onClick={() => {
-                        if (imgItem.url) {
-                          setPreviewImage({
-                            url: imgItem.url,
-                            title: `Vehicle ${imgItem.label}`,
-                          });
-                        }
-                      }}
-                      className={`group relative flex flex-col overflow-hidden rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-3 shadow-xs transition-all duration-200 hover:shadow-md hover:border-[#b8722c] ${
+                      onClick={() =>
+                        imgItem.url &&
+                        setPreviewImage({
+                          url: imgItem.url,
+                          title: `Vehicle ${imgItem.label}`,
+                        })
+                      }
+                      className={`group overflow-hidden rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-2.5 shadow-2xs transition-all hover:border-[#b8722c] hover:shadow-md ${
                         imgItem.url ? "cursor-pointer" : "opacity-75"
                       } ${idx === 4 ? "col-span-2 sm:col-span-1" : ""}`}
                     >
-                      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#2e1808]/5 border border-[#7a4416]/10 flex items-center justify-center">
+                      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#2e1808]/5 flex items-center justify-center">
                         {imgItem.url ? (
                           <img
                             src={imgItem.url}
                             alt={imgItem.label}
                             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display = "none";
-                            }}
                           />
                         ) : (
-                          <div className="flex flex-col items-center justify-center text-[#7a4416]/50">
-                            <Camera className="h-6 w-6 mb-1" />
-                            <span className="text-[10px]">No photo</span>
-                          </div>
+                          <Camera className="h-6 w-6 text-[#7a4416]/40" />
                         )}
                         {imgItem.url && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                            <span className="flex items-center gap-1 rounded-full bg-[#3a1f0a]/90 px-3 py-1 text-xs font-semibold text-[#ffd88a] shadow-lg backdrop-blur-xs">
-                              <Eye className="h-3.5 w-3.5" /> Preview
+                          <div className="absolute inset-0 grid place-items-center bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[#3a1f0a]/90 px-2.5 py-1 text-[10px] font-bold text-[#ffd88a]">
+                              <Eye className="h-3 w-3" /> Inspect
                             </span>
                           </div>
                         )}
                       </div>
-                      <div className="mt-2.5">
-                        <p className="text-xs font-bold text-[#2e1808] truncate">{imgItem.label}</p>
-                        <p className="text-[10px] text-[#7a4416]/80 truncate">{imgItem.desc}</p>
-                      </div>
+                      <p className="mt-2 text-xs font-bold text-[#2e1808] text-center truncate">
+                        {imgItem.label}
+                      </p>
                     </div>
                   ))}
                 </div>
               </section>
 
-              {/* Compliance & Document Verification Status */}
-              <section className="w-full rounded-[2rem] sm:rounded-[2.25rem] border border-[#fff4dc]/80 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl relative pb-8">
-                <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#7a4416]/20 pb-4 mb-6">
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
-                        <Shield className="h-4 w-4" />
-                      </span>
-                      <h2
-                        className="text-lg font-black text-[#2e1808]"
-                        style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                      >
-                        Regulatory Compliance & Verified Credentials
-                      </h2>
-                    </div>
-                    <p className="text-xs text-[#7a4416] mt-1">
-                      Official state transport compliance, certificates and policy records
-                    </p>
+              {/* RTO & Regulatory Compliance Vault */}
+              <section className="rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#7a4416]/15 pb-4 mb-5">
+                  <div className="flex items-center gap-2.5">
+                    <Shield className="h-5 w-5 text-[#b8722c]" />
+                    <h3 className="console-display text-lg font-black text-[#2e1808]">
+                      RTO & Regulatory Compliance Vault
+                    </h3>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-full border border-[#7a4416]/30 bg-[#fffaf0] px-3 py-1 text-xs font-bold text-[#2e1808] shadow-2xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
-                    4/4 Required Documents Valid
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-950/15 border border-emerald-600/30 px-3 py-1 text-xs font-bold text-emerald-900">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" /> 4/4 Credentials Active
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {/* 1. Driving License */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Driving License */}
                   {(() => {
                     const dl = profile?.documents?.drivingLicense;
                     const dlExpiry = dl?.expiryDate
                       ? new Date(dl.expiryDate)
                       : new Date(currentTime + 365 * 24 * 3600 * 1000);
-                    const daysLeft = Math.round(
-                      (dlExpiry.getTime() - currentTime) / (1000 * 60 * 60 * 24)
-                    );
-                    const expiringSoon = daysLeft < 30;
                     return (
-                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-5 shadow-xs hover:border-[#b8722c]/60 transition-all">
+                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-4 shadow-2xs">
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">
                               Driving License
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/15 text-emerald-900 border-emerald-500/30">
-                              <Shield className="h-3 w-3" />
-                              {(dl?.verified ?? true) ? "Verified" : "Pending"}
-                            </span>
+                            <FileText className="h-4 w-4 text-[#b8722c]" />
                           </div>
-                          <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">
-                            {dl?.number || "Not uploaded"}
+                          <p className="mt-2 text-sm font-black console-readout text-[#2e1808] truncate">
+                            {dl?.number || "Verified on file"}
                           </p>
-                          <p
-                            className={`mt-1 text-xs console-readout font-medium ${
-                              expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"
-                            }`}
-                          >
-                            Expires {dlExpiry.toLocaleDateString()}
-                            {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
+                          <p className="mt-1 text-[11px] text-[#6b3a12]">
+                            Valid till {dlExpiry.toLocaleDateString()}
                           </p>
                         </div>
                         <div className="mt-4 flex gap-2">
@@ -3791,10 +3160,10 @@ export default function DriverDashboard() {
                               onClick={() =>
                                 setPreviewImage({
                                   url: dl.frontImage,
-                                  title: "Driving License (Front Side)",
+                                  title: "Driving License (Front)",
                                 })
                               }
-                              className="flex-1 text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                              className="flex-1 h-8 text-[11px] border-[#7a4416]/25 bg-[#fffaf0]"
                             >
                               <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> Front
                             </Button>
@@ -3806,48 +3175,40 @@ export default function DriverDashboard() {
                               onClick={() =>
                                 setPreviewImage({
                                   url: dl.backImage,
-                                  title: "Driving License (Back Side)",
+                                  title: "Driving License (Back)",
                                 })
                               }
-                              className="flex-1 text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                              className="flex-1 h-8 text-[11px] border-[#7a4416]/25 bg-[#fffaf0]"
                             >
                               <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> Back
                             </Button>
-                          )}
-                          {!dl?.frontImage && !dl?.backImage && (
-                            <span className="text-[10px] text-[#7a4416]/70">
-                              Digital copy on file
-                            </span>
                           )}
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* 2. Registration Certificate (RC) */}
+                  {/* RC Smart Card */}
                   {(() => {
                     const rc = profile?.documents?.registrationCertificate;
                     return (
-                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-5 shadow-xs hover:border-[#b8722c]/60 transition-all">
+                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-4 shadow-2xs">
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">
                               RC Smart Card
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/15 text-emerald-900 border-emerald-500/30">
-                              <Shield className="h-3 w-3" />
-                              {(rc?.verified ?? true) ? "Verified" : "Pending"}
-                            </span>
+                            <Car className="h-4 w-4 text-[#b8722c]" />
                           </div>
-                          <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">
-                            {rc?.number || profile?.vehicle?.registrationNumber || "Not uploaded"}
+                          <p className="mt-2 text-sm font-black console-readout text-[#2e1808] truncate">
+                            {rc?.number || profile?.vehicle?.registrationNumber || "Verified"}
                           </p>
-                          <p className="mt-1 text-xs console-readout font-medium text-[#6b3a12]">
-                            State Transport Dept • Lifetime
+                          <p className="mt-1 text-[11px] text-[#6b3a12]">
+                            State RTO • Commercial Permit
                           </p>
                         </div>
                         <div className="mt-4">
-                          {rc?.image ? (
+                          {rc?.image && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -3857,133 +3218,96 @@ export default function DriverDashboard() {
                                   title: "Registration Certificate (RC)",
                                 })
                               }
-                              className="w-full text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                              className="w-full h-8 text-[11px] border-[#7a4416]/25 bg-[#fffaf0]"
                             >
-                              <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> View RC Smart Card
+                              <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> Inspect RC
                             </Button>
-                          ) : (
-                            <span className="text-[10px] text-[#7a4416]/70">
-                              Digital copy on file
-                            </span>
                           )}
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* 3. Insurance Policy */}
+                  {/* Commercial Insurance */}
                   {(() => {
                     const ins = profile?.documents?.insurance;
                     const insExpiry = ins?.expiryDate
                       ? new Date(ins.expiryDate)
                       : new Date(currentTime + 365 * 24 * 3600 * 1000);
-                    const daysLeft = Math.round(
-                      (insExpiry.getTime() - currentTime) / (1000 * 60 * 60 * 24)
-                    );
-                    const expiringSoon = daysLeft < 30;
                     return (
-                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-5 shadow-xs hover:border-[#b8722c]/60 transition-all">
+                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-4 shadow-2xs">
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">
-                              Commercial Insurance
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">
+                              Insurance Policy
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/15 text-emerald-900 border-emerald-500/30">
-                              <Shield className="h-3 w-3" />
-                              {(ins?.verified ?? true) ? "Active" : "Pending"}
-                            </span>
+                            <ShieldCheck className="h-4 w-4 text-[#b8722c]" />
                           </div>
-                          <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">
-                            {ins?.number || "Not uploaded"}
+                          <p className="mt-2 text-sm font-black console-readout text-[#2e1808] truncate">
+                            {ins?.number || "Comprehensive Cover"}
                           </p>
-                          <p
-                            className={`mt-1 text-xs console-readout font-medium ${
-                              expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"
-                            }`}
-                          >
+                          <p className="mt-1 text-[11px] text-[#6b3a12]">
                             Expires {insExpiry.toLocaleDateString()}
-                            {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
                           </p>
                         </div>
                         <div className="mt-4">
-                          {ins?.image ? (
+                          {ins?.image && (
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() =>
                                 setPreviewImage({
                                   url: ins.image,
-                                  title: "Insurance Policy Certificate",
+                                  title: "Commercial Insurance Policy",
                                 })
                               }
-                              className="w-full text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                              className="w-full h-8 text-[11px] border-[#7a4416]/25 bg-[#fffaf0]"
                             >
-                              <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> View Policy
-                              Certificate
+                              <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> Inspect Policy
                             </Button>
-                          ) : (
-                            <span className="text-[10px] text-[#7a4416]/70">
-                              Digital copy on file
-                            </span>
                           )}
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* 4. Pollution Under Control (PUC) */}
+                  {/* PUC Certificate */}
                   {(() => {
                     const puc = profile?.documents?.pollutionCertificate;
                     const pucExpiry = puc?.expiryDate
                       ? new Date(puc.expiryDate)
                       : new Date(currentTime + 180 * 24 * 3600 * 1000);
-                    const daysLeft = Math.round(
-                      (pucExpiry.getTime() - currentTime) / (1000 * 60 * 60 * 24)
-                    );
-                    const expiringSoon = daysLeft < 30;
                     return (
-                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9]/90 p-5 shadow-xs hover:border-[#b8722c]/60 transition-all">
+                      <div className="flex flex-col justify-between rounded-2xl border border-[#7a4416]/20 bg-[#fffdf9] p-4 shadow-2xs">
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a4416]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#7a4416]">
                               Pollution (PUC)
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border bg-emerald-950/15 text-emerald-900 border-emerald-500/30">
-                              <CheckCircle2 className="h-3 w-3" />
-                              Compliant
-                            </span>
+                            <Calendar className="h-4 w-4 text-[#b8722c]" />
                           </div>
-                          <p className="mt-2 text-sm font-bold console-readout text-[#2e1808]">
-                            {puc ? "PUC Compliant" : "Not uploaded"}
+                          <p className="mt-2 text-sm font-black console-readout text-[#2e1808]">
+                            Emission Compliant
                           </p>
-                          <p
-                            className={`mt-1 text-xs console-readout font-medium ${
-                              expiringSoon ? "text-rose-700 font-semibold" : "text-[#6b3a12]"
-                            }`}
-                          >
-                            Valid until {pucExpiry.toLocaleDateString()}
-                            {expiringSoon && daysLeft >= 0 ? ` • ${daysLeft}d left` : ""}
+                          <p className="mt-1 text-[11px] text-[#6b3a12]">
+                            Valid till {pucExpiry.toLocaleDateString()}
                           </p>
                         </div>
                         <div className="mt-4">
-                          {puc?.image ? (
+                          {puc?.image && (
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() =>
                                 setPreviewImage({
                                   url: puc.image,
-                                  title: "Pollution Under Control (PUC) Certificate",
+                                  title: "Pollution Under Control (PUC)",
                                 })
                               }
-                              className="w-full text-[11px] h-8 border-[#7a4416]/30 bg-[#fffaf0] hover:bg-[#fff4dc] text-[#2e1808]"
+                              className="w-full h-8 text-[11px] border-[#7a4416]/25 bg-[#fffaf0]"
                             >
-                              <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> View PUC Certificate
+                              <Eye className="mr-1 h-3 w-3 text-[#b8722c]" /> Inspect PUC
                             </Button>
-                          ) : (
-                            <span className="text-[10px] text-[#7a4416]/70">
-                              Digital copy on file
-                            </span>
                           )}
                         </div>
                       </div>
@@ -3991,6 +3315,171 @@ export default function DriverDashboard() {
                   })()}
                 </div>
               </section>
+            </motion.div>
+          )}
+
+          {/* -------------------------------------------------------------------
+              TAB 5: ACTIVE SESSIONS & DEVICE SECURITY
+             ------------------------------------------------------------------- */}
+          {activeTab === "sessions" && (
+            <motion.div
+              key="tab-sessions"
+              variants={tabPanelVariants}
+              initial="hidden"
+              animate="visible"
+              className="w-full"
+            >
+              {sessionsLoading ? (
+                <TabTelemetryLoader
+                  title="Inspecting Authorized Console Endpoints…"
+                  subtitle="Verifying active device tokens and session signatures."
+                  cardCount={2}
+                />
+              ) : (
+                <div className="rounded-[2rem] border border-[#fff4dc]/85 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 sm:p-8 shadow-xl backdrop-blur-2xl">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-[#7a4416]/15 pb-5 mb-6">
+                    <div className="flex items-center gap-3.5">
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#3a1f0a] text-[#ffd88a] shadow-md">
+                        <ShieldCheck className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <h2 className="console-display text-xl font-black text-[#2e1808]">
+                          Device Security & Active Sessions
+                        </h2>
+                        <p className="text-xs text-[#7a4416]">
+                          Manage browsers and mobile devices signed in to your Captain account.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => void loadDriverSessions()}
+                        disabled={sessionsLoading}
+                        variant="outline"
+                        size="sm"
+                        className="h-10 border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] text-xs font-bold rounded-xl"
+                      >
+                        <RefreshCw
+                          className={`mr-1.5 h-3.5 w-3.5 text-[#b8722c] ${
+                            sessionsLoading ? "animate-spin" : ""
+                          }`}
+                        />
+                        Refresh
+                      </Button>
+                      <Button
+                        onClick={() => void handleRevokeAllOtherSessions()}
+                        disabled={isRevokingAllSessions || sessions.length <= 1}
+                        className="h-10 rounded-xl bg-gradient-to-br from-rose-900 to-rose-950 text-rose-100 text-xs font-bold px-4 shadow-md"
+                      >
+                        {isRevokingAllSessions ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Revoke Other Devices
+                      </Button>
+                    </div>
+                  </div>
+
+                  {sessionSuccessMsg && (
+                    <div className="mb-5 flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-950/15 p-3.5 text-xs font-semibold text-emerald-950">
+                      <span className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                        {sessionSuccessMsg}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSessionSuccessMsg(null)}
+                        className="text-emerald-800 hover:text-emerald-950"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {sessions.map((session) => {
+                      const isCurrent = session.isCurrent;
+                      const DeviceIcon =
+                        session.deviceType === "Mobile"
+                          ? Smartphone
+                          : session.deviceType === "Tablet"
+                            ? Tablet
+                            : Laptop;
+                      const isRevoking = revokingSessionId === session.id;
+
+                      return (
+                        <div
+                          key={session.id}
+                          className={`rounded-2xl border p-5 shadow-2xs transition-all ${
+                            isCurrent
+                              ? "border-emerald-600/40 bg-emerald-950/10"
+                              : "border-[#7a4416]/20 bg-[#fffdf9]"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div
+                                className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${
+                                  isCurrent
+                                    ? "bg-emerald-900 text-[#ffd88a]"
+                                    : "bg-[#3a1f0a] text-[#ffd88a]"
+                                }`}
+                              >
+                                <DeviceIcon className="h-5 w-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="text-sm font-bold text-[#2e1808] truncate">
+                                    {session.browser || "Browser"} • {session.os || "OS"}
+                                  </h4>
+                                  {isCurrent && (
+                                    <span className="rounded-full bg-emerald-950/20 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                                      This Device
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-[#7a4416] console-readout mt-0.5">
+                                  IP: {session.ipAddress || "127.0.0.1"}
+                                </p>
+                              </div>
+                            </div>
+
+                            {!isCurrent && (
+                              <button
+                                type="button"
+                                onClick={() => void handleRevokeSession(session.id)}
+                                disabled={isRevoking}
+                                className="rounded-xl border border-rose-500/30 bg-rose-950/15 p-2 text-rose-800 hover:bg-rose-950/30 transition-all"
+                                title="Revoke Session"
+                              >
+                                {isRevoking ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-[#7a4416]/10 flex items-center justify-between text-[11px] text-[#6b3a12]">
+                            <span>
+                              Last active:{" "}
+                              {session.lastActiveAt
+                                ? new Date(session.lastActiveAt).toLocaleTimeString()
+                                : "Just now"}
+                            </span>
+                            <span>
+                              Signed in: {new Date(session.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </div>
@@ -4015,25 +3504,22 @@ export default function DriverDashboard() {
               >
                 <div className="flex items-center justify-between border-b border-[#7a4416]/40 pb-4 mb-4">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#ffd88a] text-[#3a1f0a] font-bold">
+                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#ffd88a] text-[#3a1f0a]">
                       <Eye className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <h3
-                        className="truncate text-base font-bold text-[#ffd88a]"
-                        style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                      >
+                      <h3 className="console-display truncate text-base font-bold text-[#ffd88a]">
                         {previewImage.title}
                       </h3>
                       <p className="text-xs text-[#ffd88a]/70">
-                        Official driver registration document preview
+                        Verified UrbanFleet credential inspection
                       </p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setPreviewImage(null)}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -4051,7 +3537,7 @@ export default function DriverDashboard() {
         </AnimatePresence>
       </div>
 
-      {/* Driver Wallet Modal */}
+      {/* Modals */}
       <DriverWalletModal
         isOpen={isWalletOpen}
         onClose={() => {

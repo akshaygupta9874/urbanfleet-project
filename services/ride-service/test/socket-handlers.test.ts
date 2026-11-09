@@ -18,7 +18,7 @@ import {
 } from '../src/websocket/emitters/rider.emitter.js';
 import { ServerEvents } from '../src/websocket/event.constants.js';
 import { registerDispatcher } from '../src/websocket/handlers/dispatcher.js';
-import { AuthenticatedSocket } from '../src/websocket/types.js';
+import { AuthenticatedSocket } from '../src/websocket/types/index.js';
 import { getSocketRoles } from '../src/websocket/ride-socket.server.js';
 import type { RideDto } from '@urbanfleet/common';
 

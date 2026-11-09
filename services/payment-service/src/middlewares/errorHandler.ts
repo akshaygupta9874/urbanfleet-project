@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { AppError } from '../utils/AppError.js';
+import { AppError } from '../errors/index.js';
 import { createLogger } from '@urbanfleet/common';
 import { ZodError } from 'zod';
 

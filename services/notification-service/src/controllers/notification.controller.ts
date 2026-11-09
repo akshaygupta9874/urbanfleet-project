@@ -34,6 +34,7 @@ export class NotificationController {
 
     const userEmail = req.user?.email;
     const userId = req.userId;
+    const driverId = req.driverId;
     const roles: string[] = req.roles || [];
     const isPrivileged = roles.includes('ADMIN');
 
@@ -44,11 +45,12 @@ export class NotificationController {
     const isOwner =
       Boolean(userEmail && record.recipient.toLowerCase() === userEmail.toLowerCase()) ||
       Boolean(userId && record.recipient === userId) ||
+      Boolean(driverId && record.recipient === driverId) ||
       Boolean(userId && payload && (
         payload.userId === userId ||
-        payload.riderId === userId ||
-        payload.driverId === userId
-      ));
+        payload.riderId === userId
+      )) ||
+      Boolean(driverId && payload && payload.driverId === driverId);
 
     if (!isPrivileged && !isOwner) {
       return res.status(403).json({

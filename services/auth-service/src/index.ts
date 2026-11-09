@@ -13,7 +13,6 @@ import { UserService } from './services/user.service.js';
 import { AuthController } from './controllers/auth.controller.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { createAdminRouter } from './routes/admin.routes.js';
-import { createAdminRouter as createOperationsRouter } from './routes/operations.routes.js';
 import { AdminController } from './controllers/admin.controller.js';
 import { AdminService } from './services/admin.service.js';
 import { initAuthRedis, authRedisClient } from './redis/client.js';
@@ -50,10 +49,11 @@ const authController = new AuthController(authService, userService);
 const adminController = new AdminController(adminService);
 
 const authRouter = createAuthRouter(authController);
+const adminRouter = createAdminRouter(adminController);
 
 app.use('/v1/auth', authRouter);
-app.use('/v1/auth/admin', createAdminRouter(adminController));
-app.use('/v1/admin', createOperationsRouter(adminController));
+app.use('/v1/admin', adminRouter);
+app.use('/v1/auth/admin', adminRouter);
 
 app.use((err: unknown, req: express.Request, res: express.Response, next: NextFunction) => {
   if (err instanceof AppError) {

@@ -1,14 +1,14 @@
-import { AuthenticatedSocket } from '../types.js';
+import { AuthenticatedSocket } from '../types/index.js';
 import { createLogger } from '@urbanfleet/common';
-
-const logger = createLogger('rider-websocket-handler');
 import { RiderEvents, ServerEvents } from '../event.constants.js';
-import { sendSocketError } from '../utils/send-error.js';
+import { sendSocketError, sendSocketMessage } from '../utils/send-error.js';
 import { emitRideCancelled, emitToDriver } from '../emitters/driver.emitter.js';
 import type { RideService } from '../../services/ride.service.js';
 import type { DispatchService } from '../../services/dispatch.service.js';
 import { coordinatesSchema, requestRideSchema } from '../../validation/ride.validation.js';
 import { toRideDtoWithDriver } from '../../utils/ride-dto.js';
+
+const logger = createLogger('rider-websocket-handler');
 
 export interface RiderHandlerDeps {
   rideService?: RideService;
@@ -58,12 +58,11 @@ async function handleCancelRide(
           reason,
         });
       }
-      socket.send(
-        JSON.stringify({
-          event: ServerEvents.RIDE_CANCELLED,
-          data: { rideId: cancelled.id, cancelledBy: 'RIDER', reason },
-        })
-      );
+      sendSocketMessage(socket, ServerEvents.RIDE_CANCELLED, {
+        rideId: cancelled.id,
+        cancelledBy: 'RIDER',
+        reason,
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to cancel ride.';
       logger.error('Failed to cancel ride from rider socket', { riderId, rideId, error: message });
@@ -98,7 +97,7 @@ async function handleRequestRide(
 
       const rideDto = await toRideDtoWithDriver(ride);
       const otp = await deps.rideService.getRiderOtpForRide(ride.id, riderId);
-      socket.send(JSON.stringify({ event: ServerEvents.RIDE_CREATED, data: { ride: rideDto, otp } }));
+      sendSocketMessage(socket, ServerEvents.RIDE_CREATED, { ride: rideDto, otp });
       await deps.dispatchService.broadcastRideRequest(ride);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to request ride.';
@@ -131,7 +130,7 @@ async function handleRiderLocationUpdate(
           rideId,
           riderId,
           location: location.data,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
       }
     } catch (err: unknown) {
@@ -144,12 +143,9 @@ async function handleRiderLocationUpdate(
   }
 
   // Acknowledge telemetry
-  socket.send(
-    JSON.stringify({
-      event: ServerEvents.RIDER_LOCATION_ACK,
-      data: { timestamp: Date.now() },
-    })
-  );
+  sendSocketMessage(socket, ServerEvents.RIDER_LOCATION_ACK, {
+    timestamp: Date.now(),
+  });
 }
 
 export async function handleRiderEvent(

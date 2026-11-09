@@ -5,7 +5,7 @@ import { createLogger } from '@urbanfleet/common';
 const logger = createLogger('mail-service');
 
 export const APP_NAME = process.env.APP_NAME || 'UrbanFleet';
-export const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+export const FRONTEND_URL = process.env.FRONTEND_URL || 'https://urbanfleet.duckdns.org';
 
 export interface SendEmailOptions {
   to: string;

@@ -66,13 +66,17 @@ export async function initNotificationConsumer(
                 logger.info(`Staged login OTP email notification for ${payload.email}`);
               }
             } else if (envelope.eventType === 'USER_EMAIL_VERIFICATION_REQUESTED') {
-              const payload = envelope.payload as { email: string; verifyToken: string; userId?: string };
+              const payload = envelope.payload as { email: string; verifyToken: string; userId?: string; frontendUrl?: string };
               if (payload.email && payload.verifyToken) {
-                await notifService.sendVerificationEmail(payload.email, payload.verifyToken);
+                if (payload.frontendUrl) {
+                  await notifService.sendVerificationEmail(payload.email, payload.verifyToken, payload.frontendUrl);
+                } else {
+                  await notifService.sendVerificationEmail(payload.email, payload.verifyToken);
+                }
                 logger.info(`Staged email verification notification for ${payload.email}`);
               }
             } else if (envelope.eventType === 'USER_PASSWORD_RESET_REQUESTED') {
-              const payload = envelope.payload as { email: string; resetToken: string; userId?: string };
+              const payload = envelope.payload as { email: string; resetToken: string; userId?: string; frontendUrl?: string };
               if (payload.email && payload.resetToken) {
                 await prisma.notificationRecord.create({
                   data: {
@@ -80,16 +84,22 @@ export async function initNotificationConsumer(
                     channel: 'EMAIL',
                     template: 'PASSWORD_RESET',
                     idempotencyKey: `reset_${payload.email}_${payload.resetToken}`,
-                    payload: { token: payload.resetToken },
+                    payload: payload.frontendUrl
+                      ? { token: payload.resetToken, frontendUrl: payload.frontendUrl }
+                      : { token: payload.resetToken },
                     status: 'PENDING',
                   },
                 });
                 logger.info(`Staged password reset email notification for ${payload.email}`);
               }
             } else if (envelope.eventType === 'USER_REGISTERED') {
-              const payload = envelope.payload as UserRegisteredPayload & { verifyToken?: string };
+              const payload = envelope.payload as UserRegisteredPayload & { verifyToken?: string; frontendUrl?: string };
               if (payload.verifyToken) {
-                await notifService.sendVerificationEmail(payload.email, payload.verifyToken);
+                if (payload.frontendUrl) {
+                  await notifService.sendVerificationEmail(payload.email, payload.verifyToken, payload.frontendUrl);
+                } else {
+                  await notifService.sendVerificationEmail(payload.email, payload.verifyToken);
+                }
                 logger.info(`Staged verification email for ${payload.email}`);
               } else {
                 logger.info(`User registered event received for ${payload.email}; verification triggered via dedicated event.`);

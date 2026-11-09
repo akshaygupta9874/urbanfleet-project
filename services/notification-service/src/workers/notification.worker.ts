@@ -8,7 +8,7 @@ import {
   getRideReceiptHtml,
 } from '../services/email.service.js';
 
-const logger = createLogger('notification-dispatcher');
+const logger = createLogger('notification-worker');
 
 interface NotificationPayload {
   subject?: string;
@@ -24,9 +24,10 @@ interface NotificationPayload {
   destinationAddress?: string;
   driverName?: string;
   message?: string;
+  frontendUrl?: string;
 }
 
-export class NotificationDispatcher {
+export class NotificationWorker {
   private isRunning = false;
   private notifRepo: NotificationRepository;
 
@@ -36,7 +37,7 @@ export class NotificationDispatcher {
 
   start() {
     this.isRunning = true;
-    logger.info('Notification Dispatcher started.');
+    logger.info('Notification Worker started.');
     this.runLoop();
   }
 
@@ -52,13 +53,21 @@ export class NotificationDispatcher {
 
             if (item.template === 'EMAIL_VERIFICATION' && payload.token) {
               subject = 'Verify your UrbanFleet account';
-              html = getVerifyEmailHtml({ email: item.recipient, token: payload.token });
+              html = getVerifyEmailHtml({
+                email: item.recipient,
+                token: payload.token,
+                frontendUrl: payload.frontendUrl,
+              });
             } else if (item.template === 'OTP' && payload.otp) {
               subject = `${payload.otp} is your UrbanFleet verification code`;
               html = getOtpHtml({ email: item.recipient, otp: payload.otp });
             } else if (item.template === 'PASSWORD_RESET' && payload.token) {
               subject = 'Reset your UrbanFleet password';
-              html = getResetPasswordHtml({ email: item.recipient, token: payload.token });
+              html = getResetPasswordHtml({
+                email: item.recipient,
+                token: payload.token,
+                frontendUrl: payload.frontendUrl,
+              });
             } else if (item.template === 'RIDE_RECEIPT') {
               subject = `Your UrbanFleet Ride Receipt - Ride #${payload.rideId || item.id}`;
               html = getRideReceiptHtml({
@@ -90,7 +99,7 @@ export class NotificationDispatcher {
           }
         }
       } catch (err) {
-        logger.error('Error in dispatch loop:', err);
+        logger.error('Error in notification worker loop:', err);
       }
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
@@ -104,3 +113,5 @@ export class NotificationDispatcher {
     return this.isRunning;
   }
 }
+
+export { NotificationWorker as NotificationDispatcher };

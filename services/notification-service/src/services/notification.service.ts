@@ -54,14 +54,14 @@ export class NotificationService {
     });
   }
 
-  async sendVerificationEmail(to: string, token: string) {
+  async sendVerificationEmail(to: string, token: string, frontendUrl?: string) {
     const idempotencyKey = `verify_${to}_${token}`;
     return this.notifRepo.create({
       recipient: to,
       channel: 'EMAIL',
       template: 'EMAIL_VERIFICATION',
       idempotencyKey,
-      payload: { token },
+      payload: frontendUrl ? { token, frontendUrl } : { token },
       status: 'PENDING',
     });
   }

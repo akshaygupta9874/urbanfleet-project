@@ -53,8 +53,13 @@ export class UserRepository {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  async create(data: CreateUserData): Promise<User> {
-    return this.prisma.user.create({ data });
+  async create(data: CreateUserData, tx?: Prisma.TransactionClient): Promise<User> {
+    const client = tx || this.prisma;
+    return client.user.create({ data });
+  }
+
+  async executeTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(fn);
   }
 
   async update(id: string, data: Partial<User>): Promise<User> {

@@ -1,4 +1,4 @@
-import { AuthenticatedSocket } from '../types.js';
+import { AuthenticatedSocket } from '../types/index.js';
 import { registerDispatcher } from './dispatcher.js';
 
 export function registerSocketHandlers(socket: AuthenticatedSocket): void {

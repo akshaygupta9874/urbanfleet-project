@@ -5,7 +5,6 @@ import { paymentClient, PaymentClient } from '../clients/payment.client.js';
 import { authRedisClient } from '../redis/client.js';
 import { UserService } from './user.service.js';
 import { SessionRepository } from '../repositories/session.repository.js';
-import { config } from '../config/config.js';
 import type {
   DriverVerificationInput,
   PaginationQuery,
@@ -388,8 +387,7 @@ export class AdminService {
 
     for (const driver of drivers) {
       const activeRide = rides.find(
-        (r: any) =>
-          r.driverId === driver.userId || r.driverId === driver.id
+        (r: any) => r.driverId === driver.id
       );
 
       const vehicle = driver.vehicles?.[0] || null;
@@ -415,7 +413,7 @@ export class AdminService {
       } else {
         if (authRedisClient.isOpen) {
           try {
-            const driverKey = driver.id || driver.userId;
+            const driverKey = driver.id;
             const pos = await authRedisClient.geoPos('geo:drivers', driverKey);
             if (pos && pos[0]) {
               lat = Number(pos[0].latitude);
@@ -432,7 +430,7 @@ export class AdminService {
 
       fleet.push({
         id: `radar-veh-${driver.id}`,
-        driverId: driver.id || driver.userId,
+        driverId: driver.id,
         driverName,
         licenseNumber: driver.licenseNumber || 'N/A',
         vehicleType: vehicle?.category || vehicle?.type || 'SEDAN',
@@ -455,7 +453,12 @@ export class AdminService {
   }
 
   async getSystemHealth(): Promise<Record<string, ServiceHealthSummary>> {
-    const targets = Object.entries(config.services);
+    const targets: [string, string][] = [
+      ['driver', process.env.DRIVER_SERVICE_URL || 'http://driver-service:4002'],
+      ['ride', process.env.RIDE_SERVICE_URL || 'http://ride-service:4004'],
+      ['payment', process.env.PAYMENT_SERVICE_URL || 'http://payment-service:4005'],
+      ['notification', process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:4003'],
+    ];
     const checks = await Promise.all(
       targets.map(async ([name, baseURL]) => {
         const start = Date.now();

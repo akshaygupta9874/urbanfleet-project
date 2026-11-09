@@ -8,7 +8,7 @@ import { prisma } from './db/client.js';
 import { notificationRedisClient, initNotificationRedis, disconnectNotificationRedis } from './redis/client.js';
 import { NotificationRepository } from './repositories/notification.repository.js';
 import { NotificationService } from './services/notification.service.js';
-import { NotificationDispatcher } from './workers/notification.dispatcher.js';
+import { NotificationWorker } from './workers/notification.worker.js';
 import { initNotificationConsumer } from './consumers/notification.consumer.js';
 import { createNotificationRouter } from './routes/notification.routes.js';
 
@@ -17,14 +17,14 @@ const app = express();
 
 const port = process.env.NOTIFICATION_PORT || process.env.PORT || 4003;
 
-// Initialize Infrastructure: Redis, Dispatcher & Kafka Consumer
+// Initialize Infrastructure: Redis, Notification Worker & Kafka Consumer
 initNotificationRedis().catch(err => logger.error('Notification Redis startup error:', err));
 
 const notifRepo = new NotificationRepository(prisma);
 const notifService = new NotificationService(notifRepo);
 
-const dispatcher = new NotificationDispatcher(notifRepo);
-dispatcher.start();
+const notificationWorker = new NotificationWorker(notifRepo);
+notificationWorker.start();
 
 let notifConsumer: Consumer | null = null;
 initNotificationConsumer(prisma, notifService)
@@ -68,7 +68,8 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
     dependencies: {
       database: dbStatus,
       redis: redisStatus,
-      dispatcher: dispatcher.isHealthy() ? 'UP' : 'DOWN',
+      worker: notificationWorker.isHealthy() ? 'UP' : 'DOWN',
+      dispatcher: notificationWorker.isHealthy() ? 'UP' : 'DOWN',
       consumer: notifConsumer ? 'UP' : 'INITIALIZING',
     },
   });
@@ -102,7 +103,7 @@ const server = app.listen(port, () => {
 // Graceful Shutdown Handling
 const gracefulShutdown = async (signal: string) => {
   logger.info(`Received ${signal}. Shutting down Notification Service gracefully...`);
-  dispatcher.stop();
+  notificationWorker.stop();
   server.close(async () => {
     try {
       if (notifConsumer && typeof notifConsumer.disconnect === 'function') {

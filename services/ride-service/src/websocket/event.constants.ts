@@ -1,4 +1,3 @@
-// sockets/event.constants.ts
 export const DriverEvents = {
   GO_ONLINE: 'driver:go-online',
   GO_OFFLINE: 'driver:go-offline',

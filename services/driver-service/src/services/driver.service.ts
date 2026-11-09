@@ -87,7 +87,7 @@ export class DriverService {
       const vObj = v as Record<string, unknown>;
       const plateNumber = String(vObj.plateNumber || '');
       return {
-        id: (typeof vObj.id === 'string' ? vObj.id : undefined) as string | undefined,
+        id: (typeof vObj.id === 'string' ? vObj.id : '') as string,
         type: String(vObj.category || 'SEDAN'),
         category: String(vObj.category || 'SEDAN'),
         brand: String(vObj.make || ''),
@@ -96,13 +96,12 @@ export class DriverService {
         color: String(vObj.color || ''),
         plateNumber,
         registrationNumber: plateNumber,
-        registrationYear: Number(vObj.year ?? 0),
         year: Number(vObj.year ?? 0),
       };
     });
 
     const activeVehicleObj = activeVehicle ? {
-      id: activeVehicle.id,
+      id: String(activeVehicle.id || ''),
       type: String(activeVehicle.category || 'SEDAN'),
       category: String(activeVehicle.category || 'SEDAN'),
       brand: String(activeVehicle.make || ''),
@@ -111,9 +110,19 @@ export class DriverService {
       color: String(activeVehicle.color || ''),
       plateNumber: String(activeVehicle.plateNumber || ''),
       registrationNumber: String(activeVehicle.plateNumber || ''),
-      registrationYear: Number(activeVehicle.year ?? 0),
       year: Number(activeVehicle.year ?? 0),
-    } : null;
+    } : (sanitizedVehicles[0] || {
+      id: '',
+      type: 'SEDAN',
+      category: 'SEDAN',
+      brand: '',
+      make: '',
+      model: '',
+      color: '',
+      plateNumber: '',
+      registrationNumber: '',
+      year: 0,
+    });
 
     let photoUrl: string | null = null;
     if (typeof profile.profilePhoto === 'string') {
@@ -130,18 +139,19 @@ export class DriverService {
     return {
       id: profile.id,
       userId: profile.userId,
+      licenseNumber: profile.licenseNumber || '',
+      verificationStatus: profile.verificationStatus || 'PENDING',
+      isAvailable: Boolean(profile.isAvailable),
+      isOnline: Boolean((profile as unknown as { isOnline?: boolean }).isOnline ?? profile.isAvailable),
+      rating: Number(profile.rating || 5.0),
+      totalTrips: profile.totalTrips || 0,
       firstName,
       lastName,
       email,
-      rating: Number(profile.rating || 5.0),
-      totalTrips: profile.totalTrips || 0,
-      isAvailable: Boolean(profile.isAvailable),
-      isOnline: Boolean((profile as unknown as { isOnline?: boolean }).isOnline ?? profile.isAvailable),
-      verificationStatus: profile.verificationStatus,
       profilePhoto: photoUrl,
       profilePhotoUrl: photoUrl,
+      vehicleNumber: activeVehicleObj.plateNumber || '',
       vehicle: activeVehicleObj,
-      vehicleNumber: activeVehicleObj?.plateNumber || '',
       vehicles: sanitizedVehicles,
       user: {
         id: profile.userId,

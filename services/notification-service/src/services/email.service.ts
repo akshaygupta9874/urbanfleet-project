@@ -9,11 +9,13 @@ interface OtpEmailParams {
 interface VerifyEmailParams {
   email: string;
   token: string;
+  frontendUrl?: string;
 }
 
 interface ResetPasswordEmailParams {
   email: string;
   token: string;
+  frontendUrl?: string;
 }
 
 const ACCENT = "#111827"; 
@@ -112,8 +114,13 @@ export const getOtpHtml = ({ email, otp, expiresInMinutes = 5 }: OtpEmailParams)
 </html>`;
 };
 
-export const getVerifyEmailHtml = ({ email, token }: VerifyEmailParams): string => {
-  const verifyUrl = `${FRONTEND_URL.replace(/\/+$/, "")}/token/${encodeURIComponent(token)}`;
+export const resolveFrontendBaseUrl = (explicitUrl?: string): string => {
+  const url = explicitUrl || process.env.FRONTEND_URL || FRONTEND_URL || 'https://urbanfleet.duckdns.org';
+  return url.replace(/\/+$/, '');
+};
+
+export const getVerifyEmailHtml = ({ email, token, frontendUrl }: VerifyEmailParams): string => {
+  const verifyUrl = `${resolveFrontendBaseUrl(frontendUrl)}/token/${encodeURIComponent(token)}`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -142,8 +149,8 @@ export const getVerifyEmailHtml = ({ email, token }: VerifyEmailParams): string 
 </html>`;
 };
 
-export const getResetPasswordHtml = ({ email, token }: ResetPasswordEmailParams): string => {
-  const resetUrl = `${FRONTEND_URL.replace(/\/+$/, "")}/reset-password/${encodeURIComponent(token)}`;
+export const getResetPasswordHtml = ({ email, token, frontendUrl }: ResetPasswordEmailParams): string => {
+  const resetUrl = `${resolveFrontendBaseUrl(frontendUrl)}/reset-password/${encodeURIComponent(token)}`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -4,7 +4,6 @@ export * from './middlewares/validate.middleware.js';
 export * from './middlewares/async-handler.middleware.js';
 export * from './ledger/ledger-validator.js';
 export * from './middlewares/auth-request.interface.js';
-export * from './clients/service-client.js';
 export * from './utils/bigint-serializer.js';
 export * from './types/ride-contracts.js';
 export * from './middlewares/rate-limit.middleware.js';

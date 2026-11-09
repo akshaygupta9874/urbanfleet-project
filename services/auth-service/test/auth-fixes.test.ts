@@ -315,7 +315,7 @@ describe('End-to-End Auth Service Fixes & Security Verification', () => {
       userAgent: 'UrbanFleetTest/1.0',
     });
 
-    expect(mockOutboxRepo.stageEvent).toHaveBeenCalledWith(null, expect.objectContaining({
+    expect(mockOutboxRepo.stageEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       topic: 'urbanfleet.auth.events',
       eventType: 'USER_REGISTERED',
     }));

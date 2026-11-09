@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { authMiddleware } from '../src/middlewares/auth.middleware.js';
 import { authClient } from '../src/clients/auth.client.js';
 import { redisClient } from '../src/redis/client.js';
-import { AppError } from '../src/utils/AppError.js';
+import { AppError } from '../src/errors/index.js';
 import { ServiceUnavailableError } from '@urbanfleet/common';
 
 describe('Payment Service Auth Middleware Fail-Closed Session Validation', () => {

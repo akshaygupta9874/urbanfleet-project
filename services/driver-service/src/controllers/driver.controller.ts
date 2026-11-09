@@ -104,14 +104,19 @@ export function formatDriverProfileForFrontend(
   }
 ) {
   if (!profile) return null;
-  const vehicle = profile.vehicles?.[0] || profile.vehicle || {
+  const vehicle = (profile.vehicles?.[0] || profile.vehicle || {
+    id: '',
     type: 'CAR',
+    category: 'CAR',
     brand: 'Toyota',
+    make: 'Toyota',
     model: 'Etios',
     color: 'White',
+    plateNumber: profile.licenseNumber || 'KA-01-UF-1001',
     registrationNumber: profile.licenseNumber || 'KA-01-UF-1001',
     registrationYear: 2022,
-  };
+    year: 2022,
+  }) as Record<string, any>;
 
   const ratingObj = typeof profile.rating === 'object' && profile.rating !== null ? (profile.rating as { average?: number; totalRatings?: number }) : null;
   const ratingAvg = Number(ratingObj?.average ?? profile.rating ?? 5.0);
@@ -158,13 +163,19 @@ export function formatDriverProfileForFrontend(
       interior: '',
     },
     vehicle: {
-      type: vehicle.type || 'CAR',
-      brand: vehicle.brand || 'Toyota',
+      id: vehicle.id || '',
+      type: vehicle.type || vehicle.category || 'CAR',
+      category: vehicle.category || vehicle.type || 'CAR',
+      brand: vehicle.brand || vehicle.make || 'Toyota',
+      make: vehicle.make || vehicle.brand || 'Toyota',
       model: vehicle.model || 'Etios',
       color: vehicle.color || 'White',
-      registrationNumber: vehicle.registrationNumber || profile.licenseNumber || 'KA-01-UF-1001',
-      registrationYear: vehicle.registrationYear || 2022,
+      plateNumber: vehicle.plateNumber || vehicle.registrationNumber || profile.licenseNumber || 'KA-01-UF-1001',
+      registrationNumber: vehicle.registrationNumber || vehicle.plateNumber || profile.licenseNumber || 'KA-01-UF-1001',
+      registrationYear: vehicle.registrationYear || vehicle.year || 2022,
+      year: vehicle.year || vehicle.registrationYear || 2022,
     },
+    vehicleNumber: vehicle.plateNumber || vehicle.registrationNumber || profile.licenseNumber || 'KA-01-UF-1001',
     documents: profile.documents || {},
     verificationStatus: profile.verificationStatus || 'PENDING',
     isVerified:
@@ -797,15 +808,17 @@ export class DriverController {
       });
     }
 
+    const sanitized = this.driverService.sanitizePublicProfile(profile, userDetails);
     const data = isPrivileged
       ? {
+          ...sanitized,
           ...profile,
-          firstName: userDetails?.firstName || 'Captain',
-          lastName: userDetails?.lastName || '',
-          email: userDetails?.email || '',
-          user: userDetails,
+          firstName: sanitized?.firstName || userDetails?.firstName || 'Captain',
+          lastName: sanitized?.lastName || userDetails?.lastName || '',
+          email: sanitized?.email || userDetails?.email || '',
+          user: sanitized?.user || userDetails,
         }
-      : this.driverService.sanitizePublicProfile(profile, userDetails);
+      : sanitized;
     res.status(200).json({ success: true, data });
   });
 
@@ -827,15 +840,17 @@ export class DriverController {
       });
     }
 
+    const sanitized = this.driverService.sanitizePublicProfile(profile, userDetails);
     const data = isPrivileged
       ? {
+          ...sanitized,
           ...profile,
-          firstName: userDetails?.firstName || 'Captain',
-          lastName: userDetails?.lastName || '',
-          email: userDetails?.email || '',
-          user: userDetails,
+          firstName: sanitized?.firstName || userDetails?.firstName || 'Captain',
+          lastName: sanitized?.lastName || userDetails?.lastName || '',
+          email: sanitized?.email || userDetails?.email || '',
+          user: sanitized?.user || userDetails,
         }
-      : this.driverService.sanitizePublicProfile(profile, userDetails);
+      : sanitized;
     res.status(200).json({ success: true, data });
   });
 

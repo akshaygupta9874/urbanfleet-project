@@ -24,9 +24,9 @@ export interface FormattedDriver {
   lastName: string;
   vehicleNumber: string;
   email: string;
-  profilePhoto?: string | null;
-  rating?: number;
-  totalTrips?: number;
+  profilePhoto: string | null;
+  rating: number;
+  totalTrips: number;
   user: {
     firstName: string;
     lastName: string;
@@ -34,12 +34,12 @@ export interface FormattedDriver {
   };
   vehicle: {
     registrationNumber: string;
-    plateNumber?: string;
-    brand?: string;
-    make?: string;
+    plateNumber: string;
+    brand: string;
+    make: string;
     model: string;
     color: string;
-    type?: string;
+    type: string;
   };
 }
 

@@ -68,12 +68,9 @@ export async function initDriverConsumer(prisma: PrismaClient): Promise<Consumer
               );
             } else if (envelope.eventType === 'RIDE_COMPLETED') {
               const payload = envelope.payload as RideCompletedPayload;
-              const profile = await tx.driverProfile.findFirst({
+              const profile = await tx.driverProfile.findUnique({
                 where: {
-                  OR: [
-                    { id: payload.driverId },
-                    { userId: payload.driverId },
-                  ],
+                  id: payload.driverId,
                 },
               });
               if (profile) {

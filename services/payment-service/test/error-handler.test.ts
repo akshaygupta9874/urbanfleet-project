@@ -3,7 +3,7 @@ import { errorHandler, notFoundHandler } from '../src/middlewares/errorHandler.j
 import {
   NonRetryablePaymentError,
   PaymentNotFoundError,
-} from '../src/errors/payment.errors.js';
+} from '../src/errors/index.js';
 import { z } from 'zod';
 
 describe('Payment Service Centralized Error Handler Middleware', () => {

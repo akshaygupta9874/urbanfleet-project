@@ -3,7 +3,7 @@ import { prisma, Payout, type Prisma } from '../db/client.js';
 import { IPayout } from "../types/payment.models.js";
 import { PayoutMode, PayoutStatus } from "../types/payment.types.js";
 import { LIVE_PAYOUT_STATUSES } from "../constants/payment.constants.js";
-import { AppError } from '../utils/AppError.js';
+import { AppError } from '../errors/index.js';
 
 export interface CreatePayoutInput {
     driver?: string;

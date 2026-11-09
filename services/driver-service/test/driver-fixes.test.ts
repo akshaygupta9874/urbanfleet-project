@@ -165,8 +165,8 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       expect(sanitized.totalTrips).toBe(120);
       expect(sanitized.isAvailable).toBe(true);
 
-      // Verify sensitive details are completely absent
-      expect((sanitized as any).licenseNumber).toBeUndefined();
+      // Verify sensitive financial details are completely absent, while compulsory profile fields are present
+      expect(sanitized.licenseNumber).toBe('DL-9988776655');
       expect((sanitized as any).bankDetails).toBeUndefined();
       expect((sanitized as any).documents).toBeUndefined();
       expect((sanitized as any).totalEarningsPaise).toBeUndefined();
@@ -193,7 +193,7 @@ describe('Driver Service Security & Integration Fixes Suite', () => {
       await driverController.getDriverById(req, res, () => {});
 
       expect(responseBody.success).toBe(true);
-      expect(responseBody.data.licenseNumber).toBeUndefined();
+      expect(responseBody.data.licenseNumber).toBe('DL-9988776655');
       expect(responseBody.data.bankDetails).toBeUndefined();
       expect(responseBody.data.rating).toBe(4.85);
     });

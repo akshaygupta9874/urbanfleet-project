@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { AppError } from '../utils/AppError.js';
+import { AppError } from '../errors/index.js';
 import { ServiceUnavailableError, asyncHandler, createLogger } from '@urbanfleet/common';
 import { redisClient } from '../redis/client.js';
 import { authClient } from '../clients/auth.client.js';

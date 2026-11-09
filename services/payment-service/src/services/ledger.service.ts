@@ -3,8 +3,7 @@ import { randomUUID } from "crypto";
 
 import { ledgerRepository } from "../repositories/ledger.repository.js";
 
-import { AppError } from '../utils/AppError.js';
-import { isDuplicateKeyError } from "../errors/payment.errors.js";
+import { AppError, isDuplicateKeyError } from '../errors/index.js';
 
 import {
     LedgerEntryInput,

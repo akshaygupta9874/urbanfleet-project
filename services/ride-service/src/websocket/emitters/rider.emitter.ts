@@ -1,31 +1,46 @@
-import { socketRegistry } from '../registry/socket.registry.js';
+import type { RedisClientType } from 'redis';
+import { createLogger } from '@urbanfleet/common';
 import { ServerEvent, ServerEvents } from '../event.constants.js';
-import { DriverLocationPayload, RideCancelledPayload, PaymentCapturedPayload, RideLifecyclePayload } from '../types.js';
+import {
+  DriverLocationPayload,
+  RideCancelledPayload,
+  PaymentCapturedPayload,
+  RideLifecyclePayload,
+} from '../types/index.js';
+import { socketRegistry } from '../registry/socket.registry.js';
 
-export type { DriverLocationPayload };
+const logger = createLogger('rider-emitter');
 
-export type { RideCancelledPayload };
-
-export type { PaymentCapturedPayload };
+export type { DriverLocationPayload, RideCancelledPayload, PaymentCapturedPayload };
 
 export interface NoDriversAvailablePayload {
   rideId: string;
 }
 
-export function emitToRider<T>(riderId: string, event: ServerEvent, data: T): void {
-  const sockets = socketRegistry.getRiderSockets(riderId);
-  if (!sockets) return;
+let globalRedisPublisher: RedisClientType | null = null;
 
-  const message = JSON.stringify({
-    event,
-    data,
-  });
+export function configureRiderEmitter(redisPub?: RedisClientType | null): void {
+  globalRedisPublisher = redisPub ?? null;
+}
 
-  for (const socket of sockets) {
-    if (socket.readyState === socket.OPEN) {
-      socket.send(message);
-    }
+/**
+ * Publishes an event to `ws:rider:<riderId>` across the cluster via Redis Pub/Sub.
+ * Falls back to local socket delivery if Redis is unavailable or in unit tests.
+ */
+export function emitToRider<T>(riderId: string, event: ServerEvent | string, data: T): void {
+  const message = JSON.stringify({ event, data });
+
+  if (!globalRedisPublisher?.isOpen) {
+    logger.debug('Redis publisher unavailable; falling back to local rider delivery');
+    socketRegistry.deliverToRider(riderId, message);
+    return;
   }
+
+  const channel = `ws:rider:${riderId}`;
+  globalRedisPublisher.publish(channel, message).catch((err) => {
+    logger.error(`Failed to publish message to ${channel}; delivering locally`, { error: err });
+    socketRegistry.deliverToRider(riderId, message);
+  });
 }
 
 export function emitRideAccepted(riderId: string, payload: RideLifecyclePayload): void {
