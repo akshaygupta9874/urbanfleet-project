@@ -1050,11 +1050,13 @@ export default function RideDetails() {
   const vehicleColor = ride.driver?.vehicle?.color || "";
   const vehicleType = ride.driver?.vehicle?.type || ride.vehicleCategory || "Car";
 
-  const activeFareValue = ride.fare.final ?? ride.fare.estimated ?? 0;
+  const activeFareValue = ride.fare?.final ?? ride.fare?.estimated ?? 0;
 
-  const liveRiderMetrics = useMemo(() => {
-    const estTripDist = ride.distance.actual ?? ride.distance.estimated ?? 0;
-    const estTripDur = ride.duration.actual ?? ride.duration.estimated ?? 0;
+  const liveRiderMetrics = (() => {
+    const distObj = typeof ride.distance === "object" && ride.distance !== null ? ride.distance : null;
+    const durObj = typeof ride.duration === "object" && ride.duration !== null ? ride.duration : null;
+    const estTripDist = distObj?.actual ?? distObj?.estimated ?? (typeof ride.distance === "number" ? ride.distance : 0);
+    const estTripDur = durObj?.actual ?? durObj?.estimated ?? (typeof ride.duration === "number" ? ride.duration : 0);
 
     if (ride.status === "DRIVER_ASSIGNED" || ride.status === "DRIVER_ARRIVING") {
       if (driverLocation && ride.pickup?.coordinates) {
@@ -1121,7 +1123,7 @@ export default function RideDetails() {
       distanceLabel: "Est. Distance",
       distanceValue: formatDistance(estTripDist),
     };
-  }, [ride, driverLocation]);
+  })();
 
   const canCancel =
     ride.status === "SEARCHING" ||

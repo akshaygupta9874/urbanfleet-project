@@ -139,16 +139,20 @@ export function formatDuration(
  * Calculate the great-circle distance between two geographic coordinates using Haversine formula in Kilometers.
  */
 export function calculateHaversineDistanceKm(
-  p1: { latitude: number; longitude: number } | { lat: number; lng: number } | null | undefined,
-  p2: { latitude: number; longitude: number } | { lat: number; lng: number } | null | undefined
+  p1: { latitude?: number; longitude?: number } | { lat?: number; lng?: number } | null | undefined,
+  p2: { latitude?: number; longitude?: number } | { lat?: number; lng?: number } | null | undefined
 ): number {
-  if (!p1 || !p2) return 0;
-  const lat1 = "latitude" in p1 ? p1.latitude : p1.lat;
-  const lng1 = "longitude" in p1 ? p1.longitude : p1.lng;
-  const lat2 = "latitude" in p2 ? p2.latitude : p2.lat;
-  const lng2 = "longitude" in p2 ? p2.longitude : p2.lng;
+  if (!p1 || !p2 || typeof p1 !== "object" || typeof p2 !== "object") return 0;
+  const lat1 = "latitude" in p1 ? p1.latitude : "lat" in p1 ? (p1 as { lat?: number }).lat : undefined;
+  const lng1 = "longitude" in p1 ? p1.longitude : "lng" in p1 ? (p1 as { lng?: number }).lng : undefined;
+  const lat2 = "latitude" in p2 ? p2.latitude : "lat" in p2 ? (p2 as { lat?: number }).lat : undefined;
+  const lng2 = "longitude" in p2 ? p2.longitude : "lng" in p2 ? (p2 as { lng?: number }).lng : undefined;
 
   if (
+    lat1 == null ||
+    lng1 == null ||
+    lat2 == null ||
+    lng2 == null ||
     !Number.isFinite(lat1) ||
     !Number.isFinite(lng1) ||
     !Number.isFinite(lat2) ||

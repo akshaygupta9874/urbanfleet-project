@@ -1560,10 +1560,12 @@ export default function DriverDashboard() {
     : 0;
   const breakdownData = currentRide?.fare?.breakdown ?? null;
 
-  const liveDriverMetrics = useMemo(() => {
+  const liveDriverMetrics = (() => {
     if (!currentRide) return null;
-    const estTripDist = currentRide.distance?.actual ?? currentRide.distance?.estimated ?? 0;
-    const estTripDur = currentRide.duration?.actual ?? currentRide.duration?.estimated ?? 0;
+    const distObj = typeof currentRide.distance === "object" && currentRide.distance !== null ? currentRide.distance : null;
+    const durObj = typeof currentRide.duration === "object" && currentRide.duration !== null ? currentRide.duration : null;
+    const estTripDist = distObj?.actual ?? distObj?.estimated ?? (typeof currentRide.distance === "number" ? currentRide.distance : 0);
+    const estTripDur = durObj?.actual ?? durObj?.estimated ?? (typeof currentRide.duration === "number" ? currentRide.duration : 0);
 
     if (currentRide.status === "DRIVER_ASSIGNED" || currentRide.status === "DRIVER_ARRIVING") {
       if (driverLocation && currentRide.pickup?.coordinates) {
@@ -1621,7 +1623,7 @@ export default function DriverDashboard() {
       timeLabel: "Trip Duration",
       timeValue: formatDuration(estTripDur),
     };
-  }, [currentRide, driverLocation]);
+  })();
 
   const statusDotColor =
     driverStatus === "AVAILABLE"
