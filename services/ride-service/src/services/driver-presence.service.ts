@@ -75,8 +75,12 @@ export class DriverPresenceService {
       EX: HEARTBEAT_TTL_SECONDS,
     });
 
-    if (!available && this.geoService) {
-      await this.geoService.removeDriverLocation(driverId);
+    if (this.geoService) {
+      if (typeof this.geoService.onDriverAvailabilityChanged === 'function') {
+        await this.geoService.onDriverAvailabilityChanged(driverId, available);
+      } else if (!available) {
+        await this.geoService.removeDriverLocation(driverId);
+      }
     }
 
     logger.info(`Driver ${driverId} availability set to: ${available}.`);
@@ -98,7 +102,11 @@ export class DriverPresenceService {
     });
 
     if (this.geoService) {
-      await this.geoService.removeDriverLocation(driverId);
+      if (typeof this.geoService.onDriverAvailabilityChanged === 'function') {
+        await this.geoService.onDriverAvailabilityChanged(driverId, false);
+      } else {
+        await this.geoService.removeDriverLocation(driverId);
+      }
     }
 
     logger.info(`Driver ${driverId} marked as BUSY (on active ride).`);

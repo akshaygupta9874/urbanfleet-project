@@ -21,7 +21,9 @@ export {
   emitNewRideRequest,
   emitRideCancelled as emitDriverRideCancelled,
   emitPaymentCaptured as emitDriverPaymentCaptured,
+  emitOfferExpired,
   type NewRideRequestPayload,
+  type RideOfferExpiredPayload,
 } from './emitters/driver.emitter.js';
 
 export {

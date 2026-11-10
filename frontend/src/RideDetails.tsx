@@ -165,7 +165,7 @@ const STATUS_META: Record<RideStatus, { title: string; subtitle: string; accent:
     accent: "#d4a359",
   },
   RIDE_STARTED: {
-    title: "En route to destination",
+    title: "In route to destination",
     subtitle: "Sit back and enjoy a tracked, secure journey",
     accent: "#047857",
   },

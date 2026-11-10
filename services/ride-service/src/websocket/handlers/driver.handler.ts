@@ -262,9 +262,24 @@ async function handleAcceptRide(
   const driverId = getDriverId(socket);
   if (!driverId) return;
 
+  if (deps?.dispatchService) {
+    const offerCheck = deps.dispatchService.validateDriverOffer(result.data.rideId, driverId);
+    if (!offerCheck.valid) {
+      sendSocketError(
+        socket,
+        offerCheck.reason || 'The time limit is expired and you cannot accept the ride.',
+        'OFFER_EXPIRED'
+      );
+      return;
+    }
+  }
+
   if (deps?.rideService) {
     try {
       const ride = await deps.rideService.acceptRide(result.data.rideId, driverId);
+      if (deps.dispatchService) {
+        await deps.dispatchService.handleDriverAccepted(ride.id, driverId);
+      }
       const rideDto = await toRideDtoWithDriver(ride);
       emitRideAccepted(ride.riderId, { rideId: ride.id, ride: rideDto });
       sendSocketMessage(socket, ServerEvents.RIDE_ACCEPTED, { ride: rideDto });

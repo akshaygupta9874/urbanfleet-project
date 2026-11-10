@@ -11,6 +11,7 @@ import type { EstimateFareDTO, RequestRideDTO } from '../validation/ride.validat
 import { toRideDto, toRideDtoWithDriver } from '../utils/ride-dto.js';
 import { emitPaymentCaptured as emitPaymentCapturedToDriver } from '../websocket/emitters/driver.emitter.js';
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from '../websocket/emitters/rider.emitter.js';
+import { driverClient } from '../clients/driver.client.js';
 
 function extractRecord(val: unknown): Record<string, unknown> | undefined {
   return val && typeof val === 'object' ? (val as Record<string, unknown>) : undefined;
@@ -22,6 +23,18 @@ function getUserId(req: AuthenticatedRequest): string {
     throw new AppError('Unauthorized: User ID required', 401, 'UNAUTHORIZED');
   }
   return userId;
+}
+
+async function resolveDriverId(req: AuthenticatedRequest): Promise<string> {
+  if (req.driverId) return req.driverId;
+  const userId = getUserId(req);
+  try {
+    const driverProfile = await driverClient.getDriverByUserId(userId);
+    if (driverProfile?.id) return driverProfile.id;
+  } catch {
+    // fallback
+  }
+  throw new ForbiddenError('Driver profile not found for this account.');
 }
 
 function getRideId(req: Request): string {
@@ -106,6 +119,14 @@ export class RideController {
       ? body.cancellationReason
       : 'Ride cancelled by user';
 
+    if (this.dispatchService) {
+      try {
+        await this.dispatchService.cancelDispatch(rideId, reason);
+      } catch (err: unknown) {
+        logger.warn('Failed to cancel dispatch session for ride', { rideId, error: err });
+      }
+    }
+
     const ride = await this.rideService.cancelRide(rideId, userId, reason);
     if (!ride) {
       throw new AppError('Failed to cancel ride', 500, 'INTERNAL_SERVER_ERROR');
@@ -115,14 +136,14 @@ export class RideController {
   });
 
   cancelRideByDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
+    const driverId = await resolveDriverId(req);
     const rideId = getRideId(req);
     const body = extractRecord(req.body);
     const reason = typeof body?.cancellationReason === 'string' && body.cancellationReason.trim()
       ? body.cancellationReason
       : 'Ride cancelled by driver';
 
-    const ride = await this.rideService.cancelRideByDriver({ rideId, driverId: userId, reason });
+    const ride = await this.rideService.cancelRideByDriver({ rideId, driverId, reason });
     if (!ride) {
       throw new AppError('Failed to cancel ride', 500, 'INTERNAL_SERVER_ERROR');
     }
@@ -162,10 +183,10 @@ export class RideController {
   });
 
   getDriverHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
+    const driverId = await resolveDriverId(req);
     const [history, metrics] = await Promise.all([
-      this.rideService.getDriverHistory(userId),
-      this.rideService.getDriverRideMetrics(userId),
+      this.rideService.getDriverHistory(driverId),
+      this.rideService.getDriverRideMetrics(driverId),
     ]);
     const formattedList = (history || []).map((r) => toRideDto(r));
     res.status(200).json({
@@ -177,8 +198,8 @@ export class RideController {
   });
 
   getDriverMetrics = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
-    const metrics = await this.rideService.getDriverRideMetrics(userId);
+    const driverId = await resolveDriverId(req);
+    const metrics = await this.rideService.getDriverRideMetrics(driverId);
     res.status(200).json({ success: true, data: metrics });
   });
 
@@ -204,8 +225,8 @@ export class RideController {
   });
 
   getCurrentRideOfDriver = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
-    const activeRide = await this.rideService.getActiveRideForUser(userId, true);
+    const driverId = await resolveDriverId(req);
+    const activeRide = await this.rideService.getActiveRideForUser(driverId, true);
     const formatted = activeRide ? await toRideDtoWithDriver(activeRide) : null;
     res.status(200).json({ success: true, data: formatted });
   });
@@ -224,20 +245,37 @@ export class RideController {
   });
 
   driverAcceptRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
+    const driverId = await resolveDriverId(req);
     const rideId = getRideId(req);
-    const ride = await this.rideService.acceptRide(rideId, userId);
+
+    if (this.dispatchService) {
+      const offerCheck = this.dispatchService.validateDriverOffer(rideId, driverId);
+      if (!offerCheck.valid) {
+        throw new AppError(
+          offerCheck.reason || 'The time limit is expired and you cannot accept the ride.',
+          400,
+          'OFFER_EXPIRED'
+        );
+      }
+    }
+
+    const ride = await this.rideService.acceptRide(rideId, driverId);
     if (!ride) {
       throw new AppError('Failed to accept ride', 500, 'INTERNAL_SERVER_ERROR');
     }
+
+    if (this.dispatchService) {
+      await this.dispatchService.handleDriverAccepted(ride.id, driverId);
+    }
+
     const formatted = await toRideDtoWithDriver(ride);
     res.status(200).json({ success: true, data: formatted });
   });
 
   driverArrived = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
+    const driverId = await resolveDriverId(req);
     const rideId = getRideId(req);
-    const ride = await this.rideService.driverArrived(rideId, userId);
+    const ride = await this.rideService.driverArrived(rideId, driverId);
     if (!ride) {
       throw new AppError('Failed to update driver arrival', 500, 'INTERNAL_SERVER_ERROR');
     }
@@ -246,9 +284,9 @@ export class RideController {
   });
 
   driverArrivedAtDestination = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
+    const driverId = await resolveDriverId(req);
     const rideId = getRideId(req);
-    const ride = await this.rideService.arriveAtDestination({ rideId, driverId: userId });
+    const ride = await this.rideService.arriveAtDestination({ rideId, driverId });
     if (!ride) {
       throw new AppError('Failed to arrive at destination', 500, 'INTERNAL_SERVER_ERROR');
     }
@@ -257,11 +295,11 @@ export class RideController {
   });
 
   startRide = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const userId = getUserId(req);
+    const driverId = await resolveDriverId(req);
     const rideId = getRideId(req);
     const body = extractRecord(req.body) || {};
     const otp = typeof body.otp === 'string' ? body.otp : '';
-    const ride = await this.rideService.startRide(rideId, userId, otp);
+    const ride = await this.rideService.startRide(rideId, driverId, otp);
     if (!ride) {
       throw new AppError('Failed to start ride', 500, 'INTERNAL_SERVER_ERROR');
     }

@@ -15,6 +15,8 @@ export type { DriverLocationPayload, RideCancelledPayload, PaymentCapturedPayloa
 
 export interface NoDriversAvailablePayload {
   rideId: string;
+  message?: string;
+  suggestion?: string;
 }
 
 let globalRedisPublisher: RedisClientType | null = null;

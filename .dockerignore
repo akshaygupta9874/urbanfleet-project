@@ -1,10 +1,47 @@
-node_modules/
-dist/
-build/
+# Monorepo Build Artifacts & Caches
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+.cache
+**/.cache
+.turbo
+**/.turbo
+.next
+**/.next
+coverage
+**/coverage
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Secrets and Local Environment Files
 .env
-.git
-.github
-*.log
+.env.*
+!**/.env.example
 certs/
 *.pem
 *.key
+
+# Git and Tooling Metadata
+.git
+**/.git
+.github
+**/.github
+.gitignore
+.gitattributes
+.idea
+**/.idea
+.vscode
+**/.vscode
+.DS_Store
+**/.DS_Store
+Thumbs.db
+**/Thumbs.db
+
+# Logs
+*.log
+**/*.log
+npm-debug.log*
+yarn-debug.log*

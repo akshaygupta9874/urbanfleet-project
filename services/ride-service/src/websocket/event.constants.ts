@@ -27,6 +27,7 @@ export const ServerEvents = {
   RIDE_ACCEPTED: 'server:ride-accepted',
   RIDE_REJECTED: 'server:ride-rejected',
   RIDE_NO_DRIVERS_AVAILABLE: 'server:ride-no-drivers-available',
+  RIDE_OFFER_EXPIRED: 'server:ride-offer-expired',
   DRIVER_LOCATION: 'server:driver-location',
   DRIVER_ARRIVED: 'server:driver-arrived',
   ARRIVED_AT_DESTINATION: 'server:ride-arrived-at-destination',

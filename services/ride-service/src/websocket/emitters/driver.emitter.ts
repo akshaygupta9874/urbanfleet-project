@@ -8,6 +8,12 @@ const logger = createLogger('driver-emitter');
 
 export interface NewRideRequestPayload {
   ride: RideDto;
+  expiresInSeconds?: number;
+}
+
+export interface RideOfferExpiredPayload {
+  rideId: string;
+  message?: string;
 }
 
 export type { RideCancelledPayload, PaymentCapturedPayload };
@@ -48,4 +54,14 @@ export function emitRideCancelled(driverId: string, payload: RideCancelledPayloa
 
 export function emitPaymentCaptured(driverId: string, payload: PaymentCapturedPayload): void {
   emitToDriver(driverId, ServerEvents.PAYMENT_CAPTURED, payload);
+}
+
+export function emitOfferExpired(driverId: string, payload: RideOfferExpiredPayload): void {
+  emitToDriver(driverId, ServerEvents.RIDE_OFFER_EXPIRED, payload);
+  emitToDriver(driverId, ServerEvents.RIDE_REJECTED, { rideId: payload.rideId });
+  emitToDriver(driverId, ServerEvents.RIDE_CANCELLED, {
+    rideId: payload.rideId,
+    cancelledBy: 'SYSTEM',
+    reason: payload.message || 'Ride offer expired (time limit exceeded)',
+  });
 }

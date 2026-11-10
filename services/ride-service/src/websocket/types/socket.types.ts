@@ -44,7 +44,7 @@ export interface RideCancelPayload {
 
 export interface RideCancelledPayload {
   rideId: string;
-  cancelledBy: 'RIDER' | 'DRIVER';
+  cancelledBy: 'RIDER' | 'DRIVER' | 'SYSTEM';
   reason?: string;
 }
 

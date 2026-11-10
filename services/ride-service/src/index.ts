@@ -51,6 +51,7 @@ const driverPresenceService = new DriverPresenceService(redis);
 const geoService = new GeoService(redis, driverPresenceService);
 const dispatchService = new DispatchService(geoService);
 const rideService = new RideService(rideRepo, ratingRepo, outboxRepo, fareService, otpService);
+dispatchService.setRideService(rideService);
 const rideController = new RideController(rideService, fareService, dispatchService);
 
 // Native WebSocket Server Initialization

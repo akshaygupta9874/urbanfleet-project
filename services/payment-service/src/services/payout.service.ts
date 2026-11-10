@@ -294,14 +294,14 @@ export class PayoutService {
   }
 
   /** How much the platform owes a driver and how much of it is already spoken for. */
-  async getDriverBalance(driverId: string): Promise<DriverBalance> {
+  async getDriverBalance(driverId: string | string[]): Promise<DriverBalance> {
     const owner = await ledgerService.getOwnerBalance(
       LedgerAccount.DRIVER,
       driverId
     );
 
     const reservedPaise = await payoutRepository.sumAmountByDriver(
-      driverId.toString(),
+      driverId,
       [PayoutStatus.PENDING, PayoutStatus.PROCESSING]
     );
 

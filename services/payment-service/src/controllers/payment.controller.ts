@@ -160,12 +160,15 @@ export const listPayments = asyncHandler(async (req: AuthenticatedRequest, res: 
 
 /** Get driver's ledger balance and available earnings */
 export const getDriverBalance = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const driverId = req.driverId;
-  if (!driverId) {
+  const candidateIds = Array.from(
+    new Set([req.driverId, req.userId].filter(Boolean) as string[])
+  );
+  if (candidateIds.length === 0 || (!req.driverId && !req.roles?.includes('DRIVER') && !req.roles?.includes('ADMIN'))) {
     throw new AppError("Driver identity required", 403, "FORBIDDEN");
   }
 
-  const balance = await payoutService.getDriverBalance(driverId);
+  const lookupId = candidateIds.length === 1 ? candidateIds[0] : candidateIds;
+  const balance = await payoutService.getDriverBalance(lookupId);
   res.status(200).json({
     success: true,
     data: balance,
@@ -174,7 +177,7 @@ export const getDriverBalance = asyncHandler(async (req: AuthenticatedRequest, r
 
 /** Request a payout from driver's available earnings */
 export const requestPayout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const driverId = req.driverId;
+  const driverId = req.driverId || (req.roles?.includes('DRIVER') ? req.userId : undefined);
   if (!driverId) {
     throw new AppError("Driver identity required", 403, "FORBIDDEN");
   }
@@ -213,12 +216,16 @@ export const listPayouts = asyncHandler(async (req: AuthenticatedRequest, res: R
     return res.status(200).json({ success: true, data: payouts });
   }
 
-  const driverId = req.driverId;
-  if (!driverId) {
+  const candidateIds = Array.from(
+    new Set([req.driverId, req.userId].filter(Boolean) as string[])
+  );
+  if (candidateIds.length === 0 || (!req.driverId && !req.roles?.includes('DRIVER') && !req.roles?.includes('ADMIN'))) {
     throw new AppError("Driver identity required", 403, "FORBIDDEN");
   }
 
-  const payouts = await payoutRepository.findByDriver(driverId);
+  const payouts = await payoutRepository.findByDriver(
+    candidateIds.length === 1 ? candidateIds[0] : candidateIds
+  );
 
   res.status(200).json({
     success: true,

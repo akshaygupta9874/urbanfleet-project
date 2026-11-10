@@ -48,6 +48,14 @@ async function handleCancelRide(
     return;
   }
 
+  if (deps?.dispatchService) {
+    try {
+      await deps.dispatchService.cancelDispatch(rideId, reason);
+    } catch (err: unknown) {
+      logger.warn('Failed to cancel dispatch session for ride', { rideId, error: err });
+    }
+  }
+
   if (deps?.rideService) {
     try {
       const cancelled = await deps.rideService.cancelRide(rideId, riderId, reason);

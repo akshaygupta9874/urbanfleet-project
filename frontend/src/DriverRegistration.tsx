@@ -538,10 +538,10 @@ export default function DriverRegistration() {
                     Application Under Review
                   </div>
                   <h2 className="text-3xl sm:text-4xl font-black text-[#3a1f0a] tracking-tight" style={{ fontFamily: DISPLAY_FONT }}>
-                    Dossier Submitted Successfully
+                    Application Submitted Successfully
                   </h2>
                   <p className="text-base text-[#6b3a12] font-medium leading-relaxed">
-                    Thank you, <span className="font-bold text-[#3a1f0a]">{user?.firstName || "Captain"}</span>. Your captain registration dossier has been logged in our fleet dispatch registry under reference <span className="font-mono font-bold text-[#3a1f0a]">{referenceCode}</span>.
+                    Thank you, <span className="font-bold text-[#3a1f0a]">{user?.firstName || "Captain"}</span>. Your driver registration application has been received and logged under reference <span className="font-mono font-bold text-[#3a1f0a]">{referenceCode}</span>.
                   </p>
                 </div>
 

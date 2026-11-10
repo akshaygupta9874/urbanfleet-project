@@ -196,7 +196,7 @@ const RIDE_STATUS_CONFIG: Record<
     step: 0,
   },
   DRIVER_ASSIGNED: {
-    label: "En Route to Pickup",
+    label: "In Route to Pickup",
     badge: "bg-[#3a1f0a]/90 text-[#ffd88a] border border-[#c58a3a]/50",
     description: "Navigate to the passenger pickup location.",
     step: 1,
@@ -211,7 +211,7 @@ const RIDE_STATUS_CONFIG: Record<
     label: "In Transit",
     badge:
       "bg-emerald-950/90 text-emerald-200 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]",
-    description: "En route to destination drop-off.",
+    description: "In route to destination drop-off.",
     step: 3,
   },
   ARRIVED_AT_DESTINATION: {
@@ -3613,6 +3613,9 @@ export default function DriverDashboard() {
           });
         }}
         onOpenBankDetails={() => setIsBankDetailsOpen(true)}
+        initialBalance={walletBalance}
+        driverId={profile?.id}
+        effectiveEarningsPaise={effectiveNetEarningsPaise}
       />
       <DriverBankDetailsModal
         isOpen={isBankDetailsOpen}
