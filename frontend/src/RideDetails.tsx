@@ -474,6 +474,9 @@ function DriverCard({
   vehicleModel,
   vehicleColor,
   vehicleType = "Car",
+  driverLocation,
+  liveMetrics,
+  rideStatus,
 }: {
   firstName: string;
   lastName: string;
@@ -485,6 +488,9 @@ function DriverCard({
   vehicleModel?: string;
   vehicleColor?: string;
   vehicleType?: string;
+  driverLocation?: Coordinates | null;
+  liveMetrics?: { etaLabel: string; etaValue: string; distanceLabel: string; distanceValue: string } | null;
+  rideStatus?: string;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
   const fullName = `${firstName} ${lastName}`.trim() || "Captain";
@@ -576,6 +582,46 @@ function DriverCard({
           </div>
         )}
       </div>
+
+      {/* Live GPS Telemetry Status Strip */}
+      {rideStatus &&
+        ["DRIVER_ASSIGNED", "DRIVER_ARRIVING", "RIDE_STARTED", "ARRIVED_AT_DESTINATION"].includes(
+          rideStatus
+        ) && (
+          <div className="mt-3 pt-3 border-t border-[#c58a3a]/30 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="relative flex h-3 w-3 shrink-0">
+                {driverLocation ? (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500 shadow-sm"></span>
+                  </>
+                ) : (
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500 animate-pulse"></span>
+                )}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#7a4416]">
+                  {driverLocation ? "Live Captain GPS Active" : "GPS Telemetry Tracking"}
+                </p>
+                <p className="text-xs font-bold text-[#2e1808] truncate">
+                  {driverLocation
+                    ? liveMetrics
+                      ? `${liveMetrics.distanceValue} away • ${liveMetrics.etaValue}`
+                      : "Live coordinates transmitting"
+                    : "Connecting to vehicle telemetry…"}
+                </p>
+              </div>
+            </div>
+
+            {driverLocation && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/50 bg-[#0f172a] px-2.5 py-1 text-[10px] font-black text-sky-300 shadow-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-ping" />
+                LIVE GPS
+              </span>
+            )}
+          </div>
+        )}
     </div>
   );
 }
@@ -668,6 +714,13 @@ export default function RideDetails() {
       const currentRide = response.data.data;
       if (currentRide) {
         setRide(currentRide);
+        const loc =
+          (currentRide as any).driverLocation ||
+          (currentRide as any).driver?.currentLocation ||
+          (currentRide as any).driver?.coordinates;
+        if (loc?.latitude != null && loc?.longitude != null) {
+          setDriverLocation({ latitude: loc.latitude, longitude: loc.longitude });
+        }
         return currentRide;
       }
     } catch {
@@ -1072,9 +1125,9 @@ export default function RideDetails() {
       }
       return {
         etaLabel: "Captain ETA",
-        etaValue: "2-4 min",
+        etaValue: "Locating…",
         distanceLabel: "Distance Away",
-        distanceValue: formatDistance(estTripDist),
+        distanceValue: "Locating…",
       };
     }
 
@@ -1093,7 +1146,7 @@ export default function RideDetails() {
       return {
         etaLabel: "Trip ETA",
         etaValue: formatDuration(estTripDur),
-        distanceLabel: "Trip Distance",
+        distanceLabel: "Estimated Dist",
         distanceValue: formatDistance(estTripDist),
       };
     }
@@ -1199,7 +1252,8 @@ export default function RideDetails() {
                       lng: ride.pickup.coordinates.longitude,
                     },
                     label: "P",
-                    title: "Pickup",
+                    type: "pickup",
+                    title: ride.pickup.address || "Pickup Location",
                   },
                   {
                     position: {
@@ -1207,7 +1261,8 @@ export default function RideDetails() {
                       lng: ride.destination.coordinates.longitude,
                     },
                     label: "D",
-                    title: "Destination",
+                    type: "destination",
+                    title: ride.destination.address || "Destination Location",
                   },
                   ...(driverLocation
                     ? [
@@ -1217,7 +1272,23 @@ export default function RideDetails() {
                             lng: driverLocation.longitude,
                           },
                           label: "🚗",
-                          title: "Driver",
+                          type: "driver" as const,
+                          title: `Captain ${driverFirstName}`,
+                          popupHtml: `
+                            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-width: 175px; padding: 4px;">
+                              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                                <span style="font-weight: 800; font-size: 13px; color: #0f172a;">Captain ${driverFirstName}</span>
+                                <span style="font-size: 10px; font-weight: 700; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 999px;">★ ${driverRating}</span>
+                              </div>
+                              <div style="font-size: 11px; color: #475569; margin-bottom: 6px;">
+                                ${vehicleColor ? `${vehicleColor} ` : ""}${vehicleBrand} ${vehicleModel} • <b>${vehicleNo || "UrbanFleet"}</b>
+                              </div>
+                              <div style="display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd; padding: 4px 8px; border-radius: 8px;">
+                                <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #0284c7; box-shadow: 0 0 6px #0284c7;"></span>
+                                Live GPS Telemetry Connected
+                              </div>
+                            </div>
+                          `,
                         },
                       ]
                     : []),
@@ -1226,19 +1297,28 @@ export default function RideDetails() {
               />
 
               {/* Floating Map Legend Overlay */}
-              <div className="pointer-events-none absolute bottom-3.5 left-3.5 right-3.5 sm:bottom-4 sm:left-4 sm:right-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="pointer-events-none absolute bottom-3.5 left-3.5 right-3.5 sm:bottom-4 sm:left-4 sm:right-4 flex flex-wrap items-center justify-between gap-2 z-20">
                 <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 rounded-xl border border-[#fff4dc]/60 bg-[#2e1808]/85 px-3.5 py-2 text-[10.5px] sm:text-[11px] font-semibold text-[#ffe9be] shadow-lg backdrop-blur-md">
                   <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" /> P: Pickup
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-sm" /> P: Pickup
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-amber-400" /> D: Drop-off
+                    <span className="h-2.5 w-2.5 rounded-full bg-rose-500 shadow-sm" /> D: Drop-off
                   </span>
-                  {driverLocation && (
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-sky-400 animate-ping" /> Live driver
-                      location
+                  {driverLocation ? (
+                    <span className="flex items-center gap-1.5 text-sky-300">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-400"></span>
+                      </span>
+                      Live Captain GPS Active
                     </span>
+                  ) : (
+                    ride.driver && (
+                      <span className="flex items-center gap-1.5 text-amber-300">
+                        <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" /> Connecting GPS…
+                      </span>
+                    )
                   )}
                 </div>
               </div>
@@ -1315,6 +1395,9 @@ export default function RideDetails() {
                 vehicleModel={vehicleModel}
                 vehicleColor={vehicleColor}
                 vehicleType={vehicleType}
+                driverLocation={driverLocation}
+                liveMetrics={liveRiderMetrics}
+                rideStatus={ride.status}
               />
             )}
 

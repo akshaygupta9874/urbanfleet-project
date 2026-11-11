@@ -60,6 +60,13 @@ function getDriverId(socket: AuthenticatedSocket): string | null {
   return driverId;
 }
 
+function getDriverIds(socket: AuthenticatedSocket): string[] {
+  const ids: string[] = [];
+  if (socket.user.driverId) ids.push(socket.user.driverId);
+  if (socket.user.userId && !ids.includes(socket.user.userId)) ids.push(socket.user.userId);
+  return ids;
+}
+
 const handlers: Record<string, DriverEventHandler> = {
   [DriverEvents.GO_ONLINE]: handleGoOnline,
   [DriverEvents.GO_OFFLINE]: handleGoOffline,
@@ -231,7 +238,8 @@ async function handleUpdateLocation(
 
   if (deps?.rideService) {
     try {
-      const ride = await deps.rideService.getDriverCurrentRide(driverId);
+      const driverIds = getDriverIds(socket);
+      const ride = await deps.rideService.getDriverCurrentRide(driverIds);
       if (ride && ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'].includes(ride.status)) {
         emitDriverLocation(ride.riderId, {
           rideId: ride.id,
@@ -342,9 +350,10 @@ async function handleArrived(
 
   if (deps?.rideService) {
     try {
+      const driverIds = getDriverIds(socket);
       const ride = await deps.rideService.arriveAtPickup({
         rideId: result.data.rideId,
-        driverId,
+        driverId: driverIds,
       });
       const rideDto = await toRideDtoWithDriver(ride);
       emitDriverArrived(ride.riderId, { rideId: ride.id, ride: rideDto });
@@ -373,9 +382,10 @@ async function handleArrivedAtDestination(
 
   if (deps?.rideService) {
     try {
+      const driverIds = getDriverIds(socket);
       const ride = await deps.rideService.arriveAtDestination({
         rideId: result.data.rideId,
-        driverId,
+        driverId: driverIds,
       });
       const rideDto = await toRideDtoWithDriver(ride);
       emitArrivedAtDestination(ride.riderId, { rideId: ride.id, ride: rideDto });
@@ -404,7 +414,8 @@ async function handleStartRide(
 
   if (deps?.rideService) {
     try {
-      const ride = await deps.rideService.startRide(result.data.rideId, driverId, result.data.otp);
+      const driverIds = getDriverIds(socket);
+      const ride = await deps.rideService.startRide(result.data.rideId, driverIds, result.data.otp);
       const rideDto = await toRideDtoWithDriver(ride);
       emitRideStarted(ride.riderId, { rideId: ride.id, ride: rideDto });
       sendSocketMessage(socket, ServerEvents.RIDE_STARTED, { ride: rideDto });
@@ -432,7 +443,8 @@ async function handleCompleteRide(
 
   if (deps?.rideService) {
     try {
-      const ride = await deps.rideService.completeRide(result.data.rideId, driverId);
+      const driverIds = getDriverIds(socket);
+      const ride = await deps.rideService.completeRide(result.data.rideId, driverIds);
       const rideDto = await toRideDtoWithDriver(ride);
       emitRideCompleted(ride.riderId, { rideId: ride.id, ride: rideDto });
       sendSocketMessage(socket, ServerEvents.RIDE_COMPLETED, { ride: rideDto });
@@ -463,9 +475,10 @@ async function handleCancelRideByDriver(
 
   if (deps?.rideService) {
     try {
+      const driverIds = getDriverIds(socket);
       const ride = await deps.rideService.cancelRideByDriver({
         rideId: result.data.rideId,
-        driverId,
+        driverId: driverIds,
         reason: result.data.reason,
       });
       emitRideCancelled(ride.riderId, {

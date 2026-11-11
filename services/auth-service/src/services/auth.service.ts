@@ -339,8 +339,6 @@ export class AuthService {
       );
       if (storedOtp && storedOtp === submittedOtp) {
         isValid = true;
-      } else if (submittedOtp === "123456") {
-        isValid = true;
       }
     } catch (err: unknown) {
       if (err instanceof ServiceUnavailableError) throw err;

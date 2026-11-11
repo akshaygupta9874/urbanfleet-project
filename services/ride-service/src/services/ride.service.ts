@@ -189,7 +189,7 @@ export class RideService {
     return this.rideRepo.findActiveRide(riderId);
   }
 
-  async getDriverCurrentRide(driverId: string): Promise<Ride | null> {
+  async getDriverCurrentRide(driverId: string | string[]): Promise<Ride | null> {
     return this.rideRepo.findActiveRideByDriverId(driverId);
   }
 
@@ -197,15 +197,15 @@ export class RideService {
     return this.rideRepo.findHistoryByRiderId(riderId);
   }
 
-  async getDriverHistory(driverId: string): Promise<Ride[]> {
+  async getDriverHistory(driverId: string | string[]): Promise<Ride[]> {
     return this.rideRepo.findHistoryByDriverId(driverId);
   }
 
-  async getDriverRideMetrics(driverId: string) {
+  async getDriverRideMetrics(driverId: string | string[]) {
     return this.rideRepo.getDriverRideAggregates(driverId);
   }
 
-  async getDriverRatingsSummary(driverUserId: string) {
+  async getDriverRatingsSummary(driverUserId: string | string[]) {
     const ratings = await this.rideRepo.findRatingsForDriver(driverUserId);
 
     const totalRatings = ratings.length;
@@ -250,10 +250,10 @@ export class RideService {
     };
   }
 
-  async getActiveRideForUser(userId: string, isDriver: boolean): Promise<RideWithOtp | null> {
+  async getActiveRideForUser(userId: string | string[], isDriver: boolean): Promise<RideWithOtp | null> {
     const activeRide = await (isDriver
       ? this.rideRepo.findActiveRideByDriverId(userId)
-      : this.rideRepo.findActiveRideByRiderId(userId));
+      : this.rideRepo.findActiveRideByRiderId(Array.isArray(userId) ? userId[0] : userId));
     if (!activeRide) return null;
     return {
       ...activeRide,
@@ -263,10 +263,23 @@ export class RideService {
 
   async acceptRide(rideId: string, driverId: string, otp?: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
+      let driverCandidateIds = [driverId];
+      try {
+        const driverProf = await driverClient.getDriver(driverId);
+        if (driverProf) {
+          if (driverProf.userId === rideId || driverProf.id === rideId) {
+            // sanity
+          }
+          driverCandidateIds = Array.from(new Set([driverId, driverProf.id, driverProf.userId].filter(Boolean) as string[]));
+        }
+      } catch (err) {
+        if (err instanceof ConflictError) throw err;
+      }
+
       // 1. Enforce single active ride per driver
       const existingActive = await tx.ride.findFirst({
         where: {
-          driverId,
+          driverId: { in: driverCandidateIds },
           status: { in: ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] }
         }
       });
@@ -280,21 +293,13 @@ export class RideService {
       if (ride.status !== 'SEARCHING') {
         throw new ConflictError('Ride is no longer available for acceptance');
       }
-      if (ride.driverId && ride.driverId !== driverId) {
+      if (ride.driverId && !driverCandidateIds.includes(ride.driverId)) {
         throw new ConflictError('Ride has already been accepted by another driver');
       }
 
       // 3. Prevent self-acceptance blunder (driver cannot be the passenger/rider)
-      if (ride.riderId === driverId) {
+      if (driverCandidateIds.includes(ride.riderId)) {
         throw new ConflictError('A driver cannot accept their own ride request');
-      }
-      try {
-        const driverProf = await driverClient.getDriver(driverId);
-        if (driverProf && (driverProf.userId === ride.riderId || driverProf.id === ride.riderId)) {
-          throw new ConflictError('A driver cannot accept their own ride request');
-        }
-      } catch (err) {
-        if (err instanceof ConflictError) throw err;
       }
 
       const nextSequence = ride.rideSequence + 1;
@@ -323,12 +328,13 @@ export class RideService {
     });
   }
 
-  async driverArrived(rideId: string, driverId: string): Promise<Ride> {
+  async driverArrived(rideId: string, driverId: string | string[]): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
 
-      if (ride.driverId && ride.driverId !== driverId) {
+      const allowedDriverIds = Array.isArray(driverId) ? driverId : [driverId];
+      if (ride.driverId && !allowedDriverIds.includes(ride.driverId)) {
         throw new AppError('Unauthorized: Only assigned driver can update arrival status', 403, 'FORBIDDEN');
       }
 
@@ -355,23 +361,24 @@ export class RideService {
         aggregateType: 'RIDE',
         aggregateId: ride.id,
         aggregateSequence: nextSequence,
-        payload: { rideId: ride.id, driverId, arrivedAt: updated.arrivedAt }
+        payload: { rideId: ride.id, driverId: ride.driverId || allowedDriverIds[0], arrivedAt: updated.arrivedAt }
       });
 
       return updated;
     });
   }
 
-  async arriveAtPickup(input: { rideId: string; driverId: string }): Promise<Ride> {
+  async arriveAtPickup(input: { rideId: string; driverId: string | string[] }): Promise<Ride> {
     return this.driverArrived(input.rideId, input.driverId);
   }
 
-  async arriveAtDestination(input: { rideId: string; driverId: string }): Promise<Ride> {
+  async arriveAtDestination(input: { rideId: string; driverId: string | string[] }): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: input.rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
 
-      if (ride.driverId && ride.driverId !== input.driverId) {
+      const allowedDriverIds = Array.isArray(input.driverId) ? input.driverId : [input.driverId];
+      if (ride.driverId && !allowedDriverIds.includes(ride.driverId)) {
         throw new AppError('Unauthorized: Only assigned driver can arrive at destination', 403, 'FORBIDDEN');
       }
 
@@ -396,23 +403,24 @@ export class RideService {
         aggregateType: 'RIDE',
         aggregateId: ride.id,
         aggregateSequence: nextSequence,
-        payload: { rideId: ride.id, driverId: input.driverId, arrivedAtDestination: new Date() }
+        payload: { rideId: ride.id, driverId: ride.driverId || allowedDriverIds[0], arrivedAtDestination: new Date() }
       });
 
       return updated;
     });
   }
 
-  async cancelRideByDriver(input: { rideId: string; driverId: string; reason?: string }): Promise<CancelledRideResult> {
+  async cancelRideByDriver(input: { rideId: string; driverId: string | string[]; reason?: string }): Promise<CancelledRideResult> {
     return this.cancelRide(input.rideId, input.driverId, input.reason);
   }
 
-  async startRide(rideId: string, driverId: string, otp?: string): Promise<Ride> {
+  async startRide(rideId: string, driverId: string | string[], otp?: string): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
 
-      if (ride.driverId && ride.driverId !== driverId) {
+      const allowedDriverIds = Array.isArray(driverId) ? driverId : [driverId];
+      if (ride.driverId && !allowedDriverIds.includes(ride.driverId)) {
         throw new AppError('Unauthorized: Only assigned driver can start this ride', 403, 'FORBIDDEN');
       }
 
@@ -450,19 +458,20 @@ export class RideService {
         aggregateType: 'RIDE',
         aggregateId: ride.id,
         aggregateSequence: nextSequence,
-        payload: { rideId: ride.id, driverId, startedAt: updated.startedAt }
+        payload: { rideId: ride.id, driverId: ride.driverId || allowedDriverIds[0], startedAt: updated.startedAt }
       });
 
       return updated;
     });
   }
 
-  async completeRide(rideId: string, driverId: string): Promise<Ride> {
+  async completeRide(rideId: string, driverId: string | string[]): Promise<Ride> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
 
-      if (ride.driverId && ride.driverId !== driverId) {
+      const allowedDriverIds = Array.isArray(driverId) ? driverId : [driverId];
+      if (ride.driverId && !allowedDriverIds.includes(ride.driverId)) {
         throw new AppError('Unauthorized: Only assigned driver can complete this ride', 403, 'FORBIDDEN');
       }
 
@@ -512,13 +521,14 @@ export class RideService {
     });
   }
 
-  async cancelRide(rideId: string, userId: string, reason?: string): Promise<CancelledRideResult> {
+  async cancelRide(rideId: string, userId: string | string[], reason?: string): Promise<CancelledRideResult> {
     return this.rideRepo.executeTransaction(async (tx) => {
       const ride = await tx.ride.findUnique({ where: { id: rideId } });
       if (!ride) throw new NotFoundError('Ride not found');
 
-      const isRider = userId === ride.riderId;
-      const isDriver = userId === ride.driverId;
+      const allowedUserIds = Array.isArray(userId) ? userId : [userId];
+      const isRider = allowedUserIds.includes(ride.riderId);
+      const isDriver = ride.driverId ? allowedUserIds.includes(ride.driverId) : false;
 
       if (!isRider && !isDriver) {
         throw new AppError('Unauthorized: Only rider or assigned driver can cancel this ride', 403, 'FORBIDDEN');

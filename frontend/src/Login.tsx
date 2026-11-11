@@ -157,7 +157,7 @@ export default function LoginPage() {
       const receivedDevOtp = data.data?.devOtp ?? data.devOtp;
       setStatusTone("info");
       if (receivedDevOtp) {
-        setStatus(`Verification code sent! (Dev code: ${receivedDevOtp} or 123456)`);
+        setStatus(`Verification code sent! (Dev code: ${receivedDevOtp})`);
         setOtp(receivedDevOtp);
       } else {
         setStatus("Verification code sent to your email. Please enter it below.");

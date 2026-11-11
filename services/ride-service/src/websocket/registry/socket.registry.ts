@@ -14,6 +14,7 @@ function resolveUserRoles(user: AuthenticatedSocketUser): string[] {
 
 export class SocketRegistry {
   private readonly driverSockets = new Map<string, Set<AuthenticatedSocket>>();
+  private readonly driverAliases = new Map<string, string>();
   private readonly riderSockets = new Map<string, Set<AuthenticatedSocket>>();
   private readonly socketUsers = new Map<AuthenticatedSocket, AuthenticatedSocketUser>();
 
@@ -69,6 +70,10 @@ export class SocketRegistry {
       }
       dSockets.add(socket);
 
+      if (user.userId && user.userId !== driverId) {
+        this.driverAliases.set(user.userId, driverId);
+      }
+
       const channel = `ws:driver:${driverId}`;
       tasks.push(
         this.syncChannel(
@@ -77,6 +82,17 @@ export class SocketRegistry {
           (message) => this.deliverToDriver(driverId, message)
         )
       );
+
+      if (user.userId && user.userId !== driverId) {
+        const userChannel = `ws:driver:${user.userId}`;
+        tasks.push(
+          this.syncChannel(
+            userChannel,
+            () => (this.driverSockets.get(driverId)?.size ?? 0) > 0,
+            (message) => this.deliverToDriver(user.userId, message)
+          )
+        );
+      }
     }
 
     await Promise.all(tasks);
@@ -119,6 +135,9 @@ export class SocketRegistry {
         dSockets.delete(socket);
         if (dSockets.size === 0) {
           this.driverSockets.delete(driverId);
+          if (user.userId && this.driverAliases.get(user.userId) === driverId) {
+            this.driverAliases.delete(user.userId);
+          }
         }
         const channel = `ws:driver:${driverId}`;
         tasks.push(
@@ -128,6 +147,17 @@ export class SocketRegistry {
             (message) => this.deliverToDriver(driverId, message)
           )
         );
+
+        if (user.userId && user.userId !== driverId) {
+          const userChannel = `ws:driver:${user.userId}`;
+          tasks.push(
+            this.syncChannel(
+              userChannel,
+              () => (this.driverSockets.get(driverId)?.size ?? 0) > 0,
+              (message) => this.deliverToDriver(user.userId, message)
+            )
+          );
+        }
       }
     }
 
@@ -182,7 +212,7 @@ export class SocketRegistry {
   }
 
   deliverToDriver(driverId: string, message: string): void {
-    this.broadcastToSet(this.driverSockets.get(driverId), message);
+    this.broadcastToSet(this.getDriverSockets(driverId), message);
   }
 
   deliverToRider(riderId: string, message: string): void {
@@ -204,7 +234,7 @@ export class SocketRegistry {
   }
 
   getDriverSockets(driverId: string): Set<AuthenticatedSocket> | undefined {
-    return this.driverSockets.get(driverId);
+    return this.driverSockets.get(driverId) || (this.driverAliases.has(driverId) ? this.driverSockets.get(this.driverAliases.get(driverId)!) : undefined);
   }
 
   getRiderSockets(riderId: string): Set<AuthenticatedSocket> | undefined {
@@ -216,7 +246,7 @@ export class SocketRegistry {
   }
 
   isDriverOnline(driverId: string): boolean {
-    return (this.driverSockets.get(driverId)?.size ?? 0) > 0;
+    return (this.getDriverSockets(driverId)?.size ?? 0) > 0;
   }
 
   isRiderOnline(riderId: string): boolean {
@@ -244,7 +274,7 @@ export class SocketRegistry {
   }
 
   disconnectDriver(driverId: string): void {
-    const sockets = this.driverSockets.get(driverId);
+    const sockets = this.getDriverSockets(driverId);
     if (!sockets) return;
 
     for (const socket of sockets) {

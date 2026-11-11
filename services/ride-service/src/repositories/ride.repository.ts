@@ -43,10 +43,11 @@ export class RideRepository {
     });
   }
 
-  async findActiveRideByDriverId(driverId: string): Promise<Ride | null> {
+  async findActiveRideByDriverId(driverId: string | string[]): Promise<Ride | null> {
+    const driverFilter = Array.isArray(driverId) ? { in: driverId } : driverId;
     return this.prisma.ride.findFirst({
       where: {
-        driverId,
+        driverId: driverFilter,
         status: { in: ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'RIDE_STARTED', 'ARRIVED_AT_DESTINATION'] },
       },
       orderBy: { createdAt: 'desc' },
@@ -62,9 +63,10 @@ export class RideRepository {
     });
   }
 
-  async findHistoryByDriverId(driverId: string): Promise<Array<Ride & { ratings: Rating[] }>> {
+  async findHistoryByDriverId(driverId: string | string[]): Promise<Array<Ride & { ratings: Rating[] }>> {
+    const driverFilter = Array.isArray(driverId) ? { in: driverId } : driverId;
     return this.prisma.ride.findMany({
-      where: { driverId },
+      where: { driverId: driverFilter },
       include: { ratings: true },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -154,11 +156,12 @@ export class RideRepository {
     };
   }
 
-  async getDriverRideAggregates(driverId: string) {
+  async getDriverRideAggregates(driverId: string | string[]) {
+    const driverFilter = Array.isArray(driverId) ? { in: driverId } : driverId;
     const [completedStats, cancelledTrips, totalTrips] = await Promise.all([
       this.prisma.ride.aggregate({
         where: {
-          driverId,
+          driverId: driverFilter,
           status: 'COMPLETED',
         },
         _sum: {
@@ -169,13 +172,13 @@ export class RideRepository {
       }),
       this.prisma.ride.count({
         where: {
-          driverId,
+          driverId: driverFilter,
           status: 'CANCELLED',
         },
       }),
       this.prisma.ride.count({
         where: {
-          driverId,
+          driverId: driverFilter,
         },
       }),
     ]);
@@ -196,12 +199,13 @@ export class RideRepository {
     };
   }
 
-  async findRatingsForDriver(driverId: string) {
+  async findRatingsForDriver(driverId: string | string[]) {
+    const ids = Array.isArray(driverId) ? driverId : [driverId];
     return this.prisma.rating.findMany({
       where: {
         OR: [
-          { toId: driverId },
-          { ride: { driverId } },
+          { toId: { in: ids } },
+          { ride: { driverId: { in: ids } } },
         ],
       },
       include: {
