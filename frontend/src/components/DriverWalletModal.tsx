@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -114,7 +114,7 @@ export default function DriverWalletModal({
       ? rawAvailable
       : Math.max(0, effectiveTotalEarned - effectiveDebited - effectiveReserved);
 
-  const fetchWalletData = async () => {
+  const fetchWalletData = useCallback(async () => {
     try {
       setError("");
       const payoutsUrl = driverId ? `/payments/payouts?driverId=${encodeURIComponent(driverId)}` : "/payments/payouts";
@@ -148,13 +148,13 @@ export default function DriverWalletModal({
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [driverId]);
 
   useEffect(() => {
     if (isOpen) {
       void Promise.resolve().then(() => fetchWalletData());
     }
-  }, [isOpen]);
+  }, [isOpen, fetchWalletData]);
 
   const handleRefresh = () => {
     setRefreshing(true);

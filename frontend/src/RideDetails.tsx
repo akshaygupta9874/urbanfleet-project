@@ -714,10 +714,17 @@ export default function RideDetails() {
       const currentRide = response.data.data;
       if (currentRide) {
         setRide(currentRide);
+        const extendedRide = currentRide as Ride & {
+          driverLocation?: Coordinates;
+          driver?: {
+            currentLocation?: Coordinates;
+            coordinates?: Coordinates;
+          };
+        };
         const loc =
-          (currentRide as any).driverLocation ||
-          (currentRide as any).driver?.currentLocation ||
-          (currentRide as any).driver?.coordinates;
+          extendedRide.driverLocation ||
+          extendedRide.driver?.currentLocation ||
+          extendedRide.driver?.coordinates;
         if (loc?.latitude != null && loc?.longitude != null) {
           setDriverLocation({ latitude: loc.latitude, longitude: loc.longitude });
         }
@@ -898,8 +905,9 @@ export default function RideDetails() {
         await appApi.post(`/rides/${ride.id}/cancel`, {
           cancellationReason: "Rider cancelled from ride details",
         });
-      } catch (err: any) {
-        if (err?.response?.status === 404 || err?.response?.status === 405) {
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 404 || status === 405) {
           await appApi.patch(`/rides/${ride.id}/cancel`, {
             cancellationReason: "Rider cancelled from ride details",
           });

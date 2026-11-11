@@ -146,9 +146,9 @@ export default function MapView({
           ? "rider"
           : "default");
 
-      let iconHtml = "";
-      let iconSize: [number, number] = [32, 32];
-      let iconAnchor: [number, number] = [16, 16];
+      let iconHtml: string;
+      let iconSize: [number, number];
+      let iconAnchor: [number, number];
       let zIndexOffset = 500;
 
       if (type === "driver") {
